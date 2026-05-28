@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "omo_slim_modifications",
+  "project_id": "0c64a3e5-3419-4979-a814-f6d45207daa4"
+}

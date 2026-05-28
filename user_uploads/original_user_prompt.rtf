@@ -1,0 +1,99 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2870
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fnil\fcharset0 HelveticaNeue;}
+{\colortbl;\red255\green255\blue255;}
+{\*\expandedcolortbl;;}
+{\*\listtable{\list\listtemplateid1\listhybrid{\listlevel\levelnfc23\levelnfcn23\leveljc0\leveljcn0\levelfollow0\levelstartat1\levelspace360\levelindent0{\*\levelmarker \{hyphen\}}{\leveltext\leveltemplateid1\'01\uc0\u8259 ;}{\levelnumbers;}\fi-360\li720\lin720 }{\listname ;}\listid1}}
+{\*\listoverridetable{\listoverride\listid1\listoverridecount0\ls1}}
+\margl1440\margr1440\vieww11520\viewh8400\viewkind0
+\deftab560
+\pard\pardeftab560\pardirnatural\partightenfactor0
+\ls1\ilvl0
+\f0\fs24 \cf0 {\listtext	\uc0\u8259 	}
+\fs26 I\'92d like your help designing an orchestration framework that works similarly to oh-my-opencode-slim (referred to going forward as omo-slim), but the orchestrator delegates all work. It doesn\'92t have permission to write or edit files, with the exception of files needed for specialist context. Its role is to route, delegate, synthesize. It doesn't plan, it doesn't implement, it doesn't explore. It's a dispatcher with read access to make better routing decisions. I\'92m not clear on whether omo-slim supports permissions restrictions like this.\
+\ls1\ilvl0
+\fs24 {\listtext	\uc0\u8259 	}
+\fs26 Draw inspiration from omo-slim ({\field{\*\fldinst{HYPERLINK "https://github.com/alvinunreal/oh-my-opencode-slim"}}{\fldrslt https://github.com/alvinunreal/oh-my-opencode-slim}}), GSD ({\field{\*\fldinst{HYPERLINK "https://github.com/gsd-build/get-shit-done"}}{\fldrslt https://github.com/gsd-build/get-shit-done}}), Swarm ({\field{\*\fldinst{HYPERLINK "https://github.com/zaxbysauce/opencode-swarm"}}{\fldrslt https://github.com/zaxbysauce/opencode-swarm}}), ECC ({\field{\*\fldinst{HYPERLINK "https://github.com/affaan-m/ECC"}}{\fldrslt https://github.com/affaan-m/ECC}}), Sandcastle ({\field{\*\fldinst{HYPERLINK "https://github.com/mattpocock/sandcastle"}}{\fldrslt https://github.com/mattpocock/sandcastle}}), tempont\'92s small-opencode-orchestrator ({\field{\*\fldinst{HYPERLINK "https://github.com/tempont/small-opencode-orchestrator"}}{\fldrslt https://github.com/tempont/small-opencode-orchestrator}}), YoelCieno\'92s settings-opencode ({\field{\*\fldinst{HYPERLINK "https://github.com/YoelCieno/settings-opencode"}}{\fldrslt https://github.com/YoelCieno/settings-opencode}}), gc-victor\'92s supersimple ({\field{\*\fldinst{HYPERLINK "https://github.com/gc-victor/supersimple"}}{\fldrslt https://github.com/gc-victor/supersimple}}), OpenSpec ({\field{\*\fldinst{HYPERLINK "https://github.com/Fission-AI/OpenSpec"}}{\fldrslt https://github.com/Fission-AI/OpenSpec}}), and Archon ({\field{\*\fldinst{HYPERLINK "https://github.com/coleam00/archon"}}{\fldrslt https://github.com/coleam00/archon}}). Many of these resources are quite different from what we\'92re likely to build here, but they are well designed and powerful frameworks nonetheless and there may be valuable ideas we can glean from them. Familiarize yourself with OpenCode\'92s documentation ({\field{\*\fldinst{HYPERLINK "https://opencode.ai/docs/"}}{\fldrslt https://opencode.ai/docs/}}) to ensure all code eventually written is clean and efficient, and takes advantage of all of the features available in OpenCode. Also be sure to look through the skills, plugins, MCP servers, etc that are currently installed. (Some of these are bundled with the currently-installed omo-slim plugin, and would need to be manually reinstalled when this new plugin replaces it.) The resources currently installed should be integrated into the new plugin.\
+\ls1\ilvl0
+\fs24 {\listtext	\uc0\u8259 	}
+\fs26 There is as omo-slim beta ({\field{\*\fldinst{HYPERLINK "https://github.com/alvinunreal/oh-my-opencode-slim/tree/v2-beta"}}{\fldrslt https://github.com/alvinunreal/oh-my-opencode-slim/tree/v2-beta}}) that shifts the orchestrator to a primarily delegation role, but it also still serves as the primary planning agent. I don\'92t want my orchestrator to plan. We\'92ll likely need a dedicated planning agent.\
+\ls1\ilvl0
+\fs24 {\listtext	\uc0\u8259 	}
+\fs26 I\'92d like the orchestrator to prompt me to initialize the project (/init) at the beginning of a new session if the project directory is not initialized. I care about version control, but often forget to initialize manually. It should also prompt to initialize beads (/beads:init). It should not initialize on its own, since there are occasions where I prefer not to set that up in a project.\
+\ls1\ilvl0
+\fs24 {\listtext	\uc0\u8259 	}
+\fs26 I want all of the agents to use skills, tools, MCP servers, plugins, etc, intelligently, without my needing to explicitly call for them. Agents should be aware of what resources they have available to them and use them whenever appropriate. This is essentially implicit discovery, but at the start of a new session, an agent may not know that, for example, opencode-beads is available and is the preferred issue tracker over markdown TODOs, or that the /diagnose command is available for debugging. I was considering using AGENTS.md as the integration point. A well-written AGENTS.md at the workspace root would: List all available skills with brief trigger descriptions (the same text from each skill's frontmatter description field, list all active plugins and what they provide (beads = issue tracker, DCP = context pruning, etc.), state the default expectation: "Use these tools whenever they're relevant to the task at hand.\'94 This gives subagents the awareness without requiring the orchestrator to manually propagate tool references in every delegation. I\'92d like you to consider other ways to solve this issue as well.\
+\ls1\ilvl0
+\fs24 {\listtext	\uc0\u8259 	}
+\fs26 Access to skills, plugins, MCP servers, tools, etc should be restricted on a per-agent basis. This includes ensuring access to the tools provided by the AFT plugin are modified for each agent.\
+\ls1\ilvl0
+\fs24 {\listtext	\uc0\u8259 	}
+\fs26 When it comes to skills, I have a number installed already, mostly acquired from {\field{\*\fldinst{HYPERLINK "https://github.com/mattpocock/skills"}}{\fldrslt https://github.com/mattpocock/skills}} and {\field{\*\fldinst{HYPERLINK "https://github.com/obra/superpowers"}}{\fldrslt https://github.com/obra/superpowers}}, and I would like for you to assist with determining what skills are beneficial. I do not want the framework weighed down by a bunch of skills that largely overlap with others, and many that simply never get used. There\'92s an excellent resource for finding new downloadable skills here: {\field{\*\fldinst{HYPERLINK "https://www.skills.sh/"}}{\fldrslt https://www.skills.sh/}}. There are a couple of skills bundled with omo-slim that will likely need to be replaced when this new framework replaces it, similar to what I said earlier about a couple of MCP servers.\
+\ls1\ilvl0
+\fs24 {\listtext	\uc0\u8259 	}
+\fs26 I want all agent prompts to be concise and specific, with clear instructions outlining their roles. I want the agent lineup itself to be streamlined, and I want the framework itself to be lightweight. I prefer doing something right the first time, so if there\'92s a feature we are considering adding but it\'92s a \'93not yet\'94 feature, I\'92d prefer to go ahead and do it now, if it\'92s an objectively better implementation than whatever we\'92d use as a temporary measure. On the other hand, if we\'92re weighing two different executions of equal quality, and one of them is significantly simpler than the other, I will usually opt for the simpler method. Lightweight, streamlined, efficient and effective.\
+\ls1\ilvl0
+\fs24 {\listtext	\uc0\u8259 	}
+\fs26 I am looking for a framework that is more deterministic than not, that prioritizes retrieval-led reasoning over pretrained-knowledge-led reasoning.\
+\ls1\ilvl0
+\fs24 {\listtext	\uc0\u8259 	}
+\fs26 I want to make sure that when things are delegated to specialists, information is delivered accurately. This informs my preference for fewer agents, because re-using the same session allows the specialist to grow their context and understanding in a way that having lots of small sessions delegated to lots of very niche agents does not. I\'92d like to have persistent specialist sessions within a "work stream" (e.g., a feature or a phase), and fresh sessions between streams. The orchestrator decides when to start a new session vs. continue an existing one. \
+\ls1\ilvl0
+\fs24 {\listtext	\uc0\u8259 	}
+\fs26 A shared persistent context solution is something that, as far as I can tell, omo-slim lacks. Other frameworks use files (for example, though to be clear I am not married to this setup, plan.md, state.md, and notes.md files) written and updated for persistent context sharing between agents. I\'92m open to other executions of this idea, but the method I had envisioned was for a global AGENTS.md file to mandate the read (so it's always done), but have the orchestrator also include a brief summary in task delegations (so context is immediately available without waiting for the agent to read the file). The AGENTS.md rule ensures no agent can "forget" to read context. The orchestrator's brief summary in the delegation prompt gives the subagent immediate orientation without a round-trip read. The summary is compressed \'97 not the full file content \'97 to keep delegation tokens manageable. You should investigate other options for this, including researching how other frameworks manage this issue. The more the orchestrator delegates, the more important it becomes to ensure accurate and shared persistent context when agents communicate with one another.\
+\ls1\ilvl0
+\fs24 {\listtext	\uc0\u8259 	}
+\fs26 I want to avoid a game of \'93telephone\'94 when agents are passing information back and forth, thus leading to miscommunication and degraded quality of work. I\'92d like you to investigate options for this as well, but one method I have considered is a structured delegation envelope carrying a verbatim originalRequest field, backed by a spec artifact, with a reviewer that validates against original intent. Every time the orchestrator delegates, it fills out a template that includes a verbatim_request field where the user's exact language is pasted unchanged, plus structured fields for task, acceptance_criteria, context_summary, and files. The specialist always sees what the user actually said, not just the orchestrator's interpretation. The planner agent writes a .opencode/plan.md that serves as the canonical intent document. When the user's request is complex enough to warrant a plan, the plan becomes the source of truth and subagents read it directly. The envelope is used for simple one-off delegations; the plan is used for multi-step work. The reviewer validates output against both. The reviewer closes the loop by validating that what was built matches what was asked. Without the reviewer check, there's no feedback mechanism to catch when the orchestrator's interpretation was wrong. The reviewer should always receive the verbatim_request field from the envelope.\
+\ls1\ilvl0
+\fs24 {\listtext	\uc0\u8259 	}
+\fs26 How do we handle return protocols for specialist+orchestrator communication? The Matt Pocock skill /handoff seems valuable here. Investigate options, but once again I\'92ll provide a single possibility that I am not married to. When a specialist finishes its work, it could return a <subtask_summary> with Status/What changed/Files touched/Validation/Risks. But if the specialist encountered complications, rejections, or unexpected discoveries, it would also write a handoff document. The orchestrator's prompt would instruct it to check for handoff documents after every delegation. Most delegations are straightforward and the summary is sufficient. The handoff is reserved for when things got interesting \'97 which is exactly when context loss is most dangerous. This keeps things lightweight for the common case while preserving detail for the hard cases. This handoff process takes advantage of the /handoff skill, obtained from {\field{\*\fldinst{HYPERLINK "https://github.com/mattpocock/skills"}}{\fldrslt https://github.com/mattpocock/skills}}, the same place I got the grill-with-docs skill and many other skills.\
+\ls1\ilvl0
+\fs24 {\listtext	\uc0\u8259 	}
+\fs26 Thinking about Matt Pocock skills, there is a skill called setup-matt-pocock-skills, and I believe it\'92s intended to be run in every new project directory. Is there a way to initialize this skill at a global level, perhaps inside of a global AGENTS.md file? If not, can the orchestrator check to see whether it\'92s been initialized and, if not, prompt the user to run the skill in every new project directory, much like I\'92ve asked for with /init and /beads:init?\
+\ls1\ilvl0
+\fs24 {\listtext	\uc0\u8259 	}
+\fs26 Another Matt Pocock skill is /grill-with-docs. I\'92d like the orchestrator to invoke this skill in response to a user request anytime there is any ambiguity. Grill aggressively, delegate only when confident. The cost of a 5-minute grilling session is negligible compared to an hour of agents building the wrong thing. My assumption, though again please consider other possibilities, is that this would go into the orchestrator\'92s prompt. The prompt could encode the decision heuristic explicitly: \'93If there is any ambiguity in the user's request, invoke the grill-with-docs skill before delegating. Only delegate when you can state the user's intent back to them and they would agree with your statement.\'94\
+\ls1\ilvl0
+\fs24 {\listtext	\uc0\u8259 	}
+\fs26 For multi-part user requests, the orchestrator might grill once, then have the planning agent decompose the whole request into a single plan.md with ordered tasks. This lets the planner reason about dependencies between the parts. The orchestrator then executes the plan task-by-task. If it\'92s a single clear task, the orchestrator could delegate directly to a coding agent, no planning needed. The planning agent likely only needs to be invoked for multi-part or complex requests.\
+\ls1\ilvl0
+\fs24 {\listtext	\uc0\u8259 	}
+\fs26 How do we handle escalation in the event of a failed specialist task? I think I\'92d like to have the specialist retry the task, but probably only once or twice. At which point the task likely needs to be simplified or broken down into smaller parts, which would be a job for the planning agents. We need a process for that.\
+\ls1\ilvl0
+\fs24 {\listtext	\uc0\u8259 	}
+\fs26 If we use context files for persistent shared context, we\'92ll need to discuss ownership of those files and under what circumstances they\'92re triggered. Some of those files would need to be updated upon every delegation, not just when something goes wrong, to ensure up-to-date and accurate information.\
+\ls1\ilvl0
+\fs24 {\listtext	\uc0\u8259 	}
+\fs26 We\'92ll need to decide the actual agent architecture - how many, their scope of responsibilities, and most importantly what goes into their prompts. I don\'92t have a lot of confidence in my own ability to create agents, so I\'92d like to draw a lot of inspiration from the frameworks I\'92d previously mentioned, as well as agentget.sh ({\field{\*\fldinst{HYPERLINK "https://agentget.sh"}}{\fldrslt https://agentget.sh}}), which lists tons of agents and also has several builtin agents of its own. I\'92m completely open to using another framework\'92s agents verbatim, changing only enough to make them compatible with our new plugin and ensure all of the skills, plugins, MCP servers, tools, etc are incorporated.\
+\ls1\ilvl0
+\fs24 {\listtext	\uc0\u8259 	}
+\fs26 Similarly, the content of the AGENTS.md file, whether it is global or project-specific (or both), will need to be decided on. Once again I\'92m going to encourage lots of theft from well-established frameworks.\
+\ls1\ilvl0
+\fs24 {\listtext	\uc0\u8259 	}
+\fs26 I\'92d like to incorporate omo-slim\'92s Council feature. The councillors in this feature should be separate from the agents we\'92ll setup as specialists, so that they can be configured as different models. There should be a governing council synthsizer agent, like omo-slim\'92s feature has, which will interface with the orchestrator, hear the individual responses from each council member, synthesize the response, and deliver it back to the orchestrator. The council should be able to be called by the orchestrator when it determines it\'92s appropriate, as well as asked for by the user.\
+\ls1\ilvl0
+\fs24 {\listtext	\uc0\u8259 	}
+\fs26 Timeouts for specialists will need to be determined.\
+\ls1\ilvl0
+\fs24 {\listtext	\uc0\u8259 	}
+\fs26 I\'92d like to enable parallelization, perhaps with worktrees. Sandcastle has a dedicated Merger, I know, so it may be worth looking into that.\
+\ls1\ilvl0
+\fs24 {\listtext	\uc0\u8259 	}
+\fs26 How can live context be injected into a specialist delegation? Sandcastle has cmd shell expansion for this, but that\'92s likely not a good fit for us. I\'92d like to explore possibilities.\
+\ls1\ilvl0
+\fs24 {\listtext	\uc0\u8259 	}
+\fs26 How do specialist agents communicate that they\'92re done with a task? I believe OpenCode has something built in for this, we should investigate.\
+\ls1\ilvl0
+\fs24 {\listtext	\uc0\u8259 	}
+\fs26 Since I\'92d like fallback chains for agents, like omo-slim has, we\'92ll need fallback triggers. Availability seems like an obvious one. Should there be other triggers? What are the criteria for availability?\
+\ls1\ilvl0
+\fs24 {\listtext	\uc0\u8259 	}
+\fs26 Model configuration should include the ability to specify reasoningEffort and temperature, and possibly other variables that OpenCode supports, like textVerbosity, top_P, Max Steps, etc.\
+\ls1\ilvl0
+\fs24 {\listtext	\uc0\u8259 	}
+\fs26 This should probably be a separate config file, not part of opencode.jsonc. That\'92s how omo-slim does it.\
+\ls1\ilvl0
+\fs24 {\listtext	\uc0\u8259 	}
+\fs26 I have read that MCP servers can waste a lot of tokens. I am hoping to be pretty token-efficient, so if that\'92s the case, it might be worth looking into seeing if MCP servers that we are considering using, like context7 (bundled with omo-slim, so it will need to be replaced when we replace omo-slim), have equivalent skills that can be downloaded instead. \
+\ls1\ilvl0
+\fs24 {\listtext	\uc0\u8259 	}
+\fs26 On a related note, I\'92d like to look into the difference between preloading skills and loading them on-demand. I\'92m guessing that would have a pretty significant impact on token use as well. }
