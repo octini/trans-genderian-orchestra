@@ -1,8 +1,8 @@
-# OMO-Slim Modifications — Project State
+# trans-genderian-orchestra — Project State
 
-## Status: Implementation Phase Complete — Critical fixes applied; 1008 tests passing
+## Status: Implementation complete — 1090 tests passing; plugin directory renamed to `trans-genderian-orchestra`; oracle 24 + internal quality audit complete; Divoom/Observer removed; CI green; new features live
 
-This file tracks the current state of the omo-slim modifications project. Updated after every session.
+This file tracks the current state of the Dispatcher plugin project. Updated after every session.
 
 ## Current Phase
 - ~~Phase 1: Requirements gathering and design~~ ✅ COMPLETE
@@ -41,6 +41,51 @@ This file tracks the current state of the omo-slim modifications project. Update
 | 23 | Critical fixes: orchestrator permissions, config deep-merge, default model chains, prompt tightening | @fixer | 2026-05-28 |
 | 24 | Startup init feature + config-level path gating implementation | @fixer | 2026-05-28 |
 | 25 | Context files refreshed and initial project state committed | @fixer | 2026-05-28 |
+| 26 | Fix session tracking for child subagent sessions (1sa) | @fixer | 2026-05-28 |
+| 27 | Add task() exemplar to orchestrator prompt (cqe) | @fixer | 2026-05-28 |
+| 28 | Extend post-tool nudge for read/research tools (2ax) | @fixer | 2026-05-28 |
+| 29 | Soften delegation envelope enforcement — log vs inject (rzq) | @fixer | 2026-05-28 |
+| 30 | Implement orchestrator read-budget hook (lwc) | @fixer | 2026-05-28 |
+| 31 | Add per-session metrics logging (yu8) | @fixer | 2026-05-28 |
+| 32 | Thorough review of specialist agent permissions (dpb) | @oracle | 2026-05-28 |
+| 33 | Add git remote configuration guidance (4c0) | @fixer | 2026-05-28 |
+| 34 | Rename plugin to trans-genderian-orchestra (zkv) | @fixer | 2026-05-28 |
+| 35 | Adapt self-improvement skill for Dispatcher plugin (jha) | @fixer | 2026-05-28 |
+| 36 | Fix package URLs and attribution — octini confirmed (osr) | @fixer | 2026-05-28 |
+| 37 | Implement plan approval gate with user-skip option (lh1) | @fixer | 2026-05-28 |
+| 38 | Implement mandatory reviewer enforcement + escalation loop (lh1) | @fixer | 2026-05-28 |
+| 36 | Fix apply_patch path-gating gap (aqb) | @fixer | 2026-05-28 |
+| 37 | Fix planner write permissions (am9) | @fixer | 2026-05-28 |
+| 38 | Replace builder '*' allow with explicit allowlist (aqe) | @fixer | 2026-05-28 |
+| 39 | Default custom agents to constrained permissions (6k6) | @fixer | 2026-05-28 |
+| 40 | Remove reviewer write dead code from path-gating (j19) | @fixer | 2026-05-28 |
+| 41 | Fix researcher notes write permissions (107) | @fixer | 2026-05-28 |
+| 42 | Grill-with-docs rule, timeouts, stream commands (14u) | @fixer | 2026-05-28 |
+| 43 | npx typosquat hardening + rename audit test (mlj) | @fixer | 2026-05-28 |
+| 44 | Oracle L-item fixes: deeper config merge, council permissions, docs/tests | @fixer | 2026-05-28 |
+| 45 | Oracle review — 24 critical/medium/low findings across plugin codebase | @oracle | 2026-05-29 |
+| 46 | CI investigation — confirmed green (3rd run succeeded at 065326c7) | @explorer | 2026-05-29 |
+| 47 | Divoom removal + Observer docs cleanup | @fixer | 2026-05-29 |
+| 48 | Wish list research (worktrees, grill enforcement, failure→planner, tiers, ping) | @explorer | 2026-05-29 |
+| 49 | Oracle C1 fix — read-budget output mutation made log-only | @fixer | 2026-05-29 |
+| 50 | Oracle H4 fix — setActiveRuntimePreset tracks previousRuntimePreset | @fixer | 2026-05-29 |
+| 51 | Oracle M4/M5 fix — delegation envelope error typing + logged failures | @fixer | 2026-05-29 |
+| 52 | Oracle M8/M9 fix — startup-init write race + Bun dependency removal | @fixer | 2026-05-29 |
+| 53 | Oracle C2/H1/H3/M1/M6/L12/M2 fix — path-gating, orchestrator plan.md, hook ordering | @fixer | 2026-05-29 |
+| 54 | Oracle H5/M7 fix — reviewer trivial-flag skip + reset logging | @fixer | 2026-05-29 |
+| 55 | Oracle L1-L10/L13 fix — config merge, constants, council perms, docs, tests | @fixer | 2026-05-29 |
+| 57 | Oracle internal quality audit — 2 bugs, 6 warnings, 7 suggestions, 5 notes, 8 clean | @oracle | 2026-05-29 |
+| 58 | Oracle audit fixes — B1+B2 (chat.message hook, prompt sentinel) | @fixer | 2026-05-29 |
+| 59 | Oracle audit fixes — S2 (dead envelope exports deprecated) | @fixer | 2026-05-29 |
+| 60 | Oracle audit fixes — W3+W5+S7 (reviewer-enforcement improvements) | @fixer | 2026-05-29 |
+| 61 | Oracle audit fixes — W6+S3+S5+S6 (fail-closed, shared types, cancel-task) | @fixer | 2026-05-29 |
+| 62 | Oracle audit fixes — B1+W1+W2+W4+S4 (index.ts cleanup, hooks extraction) | @fixer | 2026-05-29 |
+| 63 | Rename repository plugin directory to `trans-genderian-orchestra/` and update path references | @fixer | 2026-05-29 |
+| 64 | Smoke test findings analysis — 4 bugs, 2 warnings, 1 suggestion | @explorer | 2026-05-29 |
+| 65 | Smoke test fixes — startup-init beads package + skills fallback | @fixer | 2026-05-29 |
+| 66 | Smoke test fixes — state.md subtask_summary parsing | @fixer | 2026-05-29 |
+| 67 | Smoke test fixes — delegation envelope markdown code-fence stripping | @fixer | 2026-05-29 |
+| 68 | Follow-up oracle audit — all 15 previous findings verified, no regressions | @oracle | 2026-05-29 |
 
 ## Framework Research Results
 
@@ -237,7 +282,7 @@ Status: **🟢 Unconditional Green Light** (94% confidence) — all 9 issues res
 | Default model fallback chains + variants | ✅ | `src/config/constants.ts`, `src/agents/index.ts` |
 | Orchestrator prompt tightening (pure delegation, no direct implementation path) | ✅ | `src/agents/orchestrator.ts` |
 | 4-Tier Resilience (circuit breaker, trajectory guard, JSON correction) | ✅ | Various hooks |
-| 1008 tests passing, build clean | ✅ | — |
+| 1085 tests passing, Biome check clean | ✅ | — |
 
 ### ✅ Complete — Startup Init
 | Feature | Status | Files |
@@ -245,9 +290,9 @@ Status: **🟢 Unconditional Green Light** (94% confidence) — all 9 issues res
 | Audit (git, beads, skills) | ✅ | `src/hooks/startup-init/index.ts` |
 | `/init` command (git init + AGENTS.md seed) | ✅ | `src/hooks/startup-init/index.ts` |
 | `/beads:init` command | ✅ | `src/hooks/startup-init/index.ts` |
-| `/setup-skills` installer execution | ✅ | `src/hooks/setup-skills/index.ts` |
+| `/setup-matt-pocock-skills` installer execution | ✅ | `src/hooks/setup-skills/index.ts` |
 | AGENTS.md template | ✅ | `templates/AGENTS.md` |
-| Tests (19 pass) | ✅ | `src/hooks/startup-init/index.test.ts` |
+| Tests (1085 tests passing) | ✅ | `src/hooks/startup-init/index.test.ts` |
 
 ### ✅ Complete — Config-Level Gating
 | Feature | Status | Files |
@@ -255,16 +300,112 @@ Status: **🟢 Unconditional Green Light** (94% confidence) — all 9 issues res
 | `agentGating` schema in PluginConfig | ✅ | `src/config/schema.ts` |
 | Deep merge support for gating | ✅ | `src/config/loader.ts` |
 | Path-gating hook reads config overrides | ✅ | `src/hooks/path-gating/hook.ts` |
-| Config-level tests (6 new) | ✅ | `src/hooks/path-gating/index.test.ts` |
+| Config-level tests | ✅ | `src/hooks/path-gating/index.test.ts` |
 | Wired into plugin entry point | ✅ | `src/index.ts` |
 
+### ✅ Complete — 10 Beads Issues (2026-05-28)
+| Feature | Issue | Status | Agent | Tests |
+|---------|-------|--------|-------|-------|
+| Fix session tracking for child subagent sessions | 1sa | ✅ | @fixer | 1085 tests passing |
+| Add task() exemplar to orchestrator prompt | cqe | ✅ | @fixer | 1085 tests passing |
+| Extend post-tool nudge for read/research tools | 2ax | ✅ | @fixer | 1085 tests passing |
+| Soften delegation envelope enforcement (log vs inject) | rzq | ✅ | @fixer | 1085 tests passing |
+| Implement orchestrator read-budget hook | lwc | ✅ | @fixer | 1085 tests passing |
+| Add per-session metrics logging | yu8 | ✅ | @fixer | 1085 tests passing |
+| Thorough review of specialist agent permissions | dpb | ✅ | @oracle | Findings: 7 issues found |
+| Add git remote configuration guidance to startup | 4c0 | ✅ | @fixer | 1085 tests passing |
+| Rename plugin to trans-genderian-orchestra | zkv | ✅ | @fixer | 0 old-name refs remain |
+| Adapt self-improvement skill for Dispatcher | jha | ✅ | @fixer | 1085 tests passing |
+
+**Notable Oracle findings from dpb:**
+1. 🔴 `apply_patch` bypasses path-gating (not in WRITE_TOOLS)
+2. 🔴 Planner cannot write plan.md (SDK denies write but design expects it)
+3. 🟡 Builder `'*': 'allow'` could be explicit allowlist
+4. 🟡 Custom agents default to full permissions
+
+### ✅ Complete — Oracle Permission Fixes (2026-05-28)
+| Oracle Finding | Issue | Fix | Status | Tests |
+|----------------|-------|-----|--------|-------|
+| `apply_patch` bypasses path-gating | aqb | Added to WRITE_TOOLS + extractFilePath extended | ✅ | 1085 tests passing |
+| Planner cannot write plan.md | am9 | Added `PLANNER_TOOL_PERMISSIONS` with write/edit | ✅ | 1085 tests passing |
+| Builder `'*': 'allow'` too broad | aqe | Replaced with explicit allowlist | ✅ | 1085 tests passing |
+| Custom agents default to full perms | 6k6 | Fallback changed to `READ_BASH_TOOL_PERMISSIONS` | ✅ | 1085 tests passing |
+| Reviewer write dead code | j19 | Removed unreachable path-gating case | ✅ | 1085 tests passing |
+| Researcher notes write gap | 107 | Added `RESEARCHER_TOOL_PERMISSIONS` with write/edit | ✅ | 1085 tests passing |
+
+### ✅ Complete — Oracle 24 Findings (2026-05-29)
+| Finding | Priority | Fix | Status | Tests |
+|---------|----------|-----|--------|-------|
+| C1 read-budget output mutation | 🔴 Critical | Warnings are log-only; denial behavior unchanged | ✅ | 1085 tests passing |
+| C2 apply_patch path-gating args | 🔴 Critical | Test uses production `patchText` shape; gating covers all patch targets | ✅ | 1085 tests passing |
+| H1 orchestrator plan.md access | 🟠 High | Path-gating allows `.opencode/plans/plan.md` for orchestrator status updates | ✅ | 1085 tests passing |
+| H3 plan approval gate mechanism | 🟠 High | Orchestrator prompt consistent with path-gating; can read/set plan status | ✅ | 1085 tests passing |
+| H4 setActiveRuntimePreset tracking | 🟠 High | Previous preset tracking moved into `setActiveRuntimePreset` | ✅ | 1085 tests passing |
+| H5 reviewer trivial escape | 🟠 High | Added `trivial: true` flag to delegation envelope; enforcement hook skips on flag | ✅ | 1085 tests passing |
+| M1 path-gating asymmetry | 🟡 Medium | Documented role policies; empty pattern handling; tightened suffix matching | ✅ | 1085 tests passing |
+| M2 read-budget casing | 🟡 Medium | Tool casing normalized for read-budget checks | ✅ | 1085 tests passing |
+| M3 health check thresholds | 🟡 Medium | Verified with current agent/tool/MCP counts — thresholds are correct | ✅ | 1085 tests passing |
+| M4 envelope error swallowing | 🟡 Medium | Typed parse results with error logging; silent catches replaced | ✅ | 1085 tests passing |
+| M5 envelope wrapped sender | 🟡 Medium | Normalized error typing/wrapping on invalid orchestrator delegations | ✅ | 1085 tests passing |
+| M6 hook ordering | 🟡 Medium | Path-gating runs first; remaining hooks in correct dependency order | ✅ | 1085 tests passing |
+| M7 reviewer state loss | 🟡 Medium | Reset method logs state discard; hooked into plugin reinit | ✅ | 1085 tests passing |
+| M8 startup-init write race | 🟡 Medium | Atomic temp-file + hard-link publish for AGENTS.md seeding | ✅ | 1085 tests passing |
+| M9 Bun dependency | 🟡 Medium | Runtime detection with Node child_process.spawn fallback | ✅ | 1085 tests passing |
+| L1 config merge depth | 🟢 Low | Recursive deepMerge for nested permission/options in agent config | ✅ | 1085 tests passing |
+| L2 constants cleanup | 🟢 Low | Removed unused config constants, exports, stale codemap refs | ✅ | 1085 tests passing |
+| L3 dead code (isSubagent export) | 🟢 Low | Removed unused `isSubagent` export from agents/index.ts | ✅ | 1085 tests passing |
+| L4 council config check | 🟢 Low | Council/councillor denied write/edit/apply_patch/bash/task | ✅ | 1085 tests passing |
+| L5 docs update | 🟢 Low | Refreshed codemap, CONTEXT.md, templates, project state | ✅ | 1085 tests passing |
+| L6-L8 test gaps | 🟢 Low | Added coverage for merge, path-gating, reviewer, startup-init | ✅ | 1085 tests passing |
+| L9 stale test counts | 🟢 Low | Updated throughout to 1085 | ✅ | 1085 tests passing |
+| L10 index formatting | 🟢 Low | Deep-merge simplified; Biome clean | ✅ | 1085 tests passing |
+| L12 path-gating comment | 🟢 Low | Added documented role path policy to hook | ✅ | 1085 tests passing |
+| L13 template exists | 🟢 Low | Confirmed templates/AGENTS.md; package publish includes templates/ | ✅ | 1085 tests passing |
+
+### ✅ Complete — Oracle Internal Quality Audit (2026-05-29)
+| Finding | Severity | Issue | Fix | Status | Tests |
+|---------|----------|-------|-----|--------|-------|
+| B1 | 🔴 Bug | chat.message hook agent rewrite not idempotent | Added guard to skip reassign when agent matches | ✅ | 1085 tests passing |
+| B2 | 🔴 Bug | Orchestrator prompt sentinel uses substring match | Embedded unique sentinel comment; matched on that | ✅ | 1085 tests passing |
+| W1 | 🟠 Warning | Dead fallback in mergeAgentConfig | Removed unreachable `??` fallback | ✅ | 1085 tests passing |
+| W2 | 🟠 Warning | Path-gating ordering comment misleading | Tightened comment to describe real contract | ✅ | 1085 tests passing |
+| W3 | 🟠 Warning | Rejection counter needs clarifying comment | Added comments on count-bump invariant | ✅ | 1085 tests passing |
+| W4 | 🟠 Warning | Session/multiplexer ordering undocumented | Added ordering contract comment | ✅ | 1085 tests passing |
+| W5 | 🟠 Warning | Envelope re-parse spam per delegation | Memoized envelope parse by call ID | ✅ | 1085 tests passing |
+| W6 | 🟠 Warning | Path-gating fails open on crash | Changed to fail-closed (no try/catch) | ✅ | 1085 tests passing |
+| S1 | 🟡 Suggestion | Dead ORCHESTRATOR_PROMPT export | Removed deprecated export | ✅ | 1085 tests passing |
+| S2 | 🟡 Suggestion | Dead envelope exports | Deprecated + removed barrel re-exports | ✅ | 1085 tests passing |
+| S3 | 🟡 Suggestion | Shared formatters | Created `src/hooks/_messages.ts` | ✅ | 1085 tests passing |
+| S4 | 🟡 Suggestion | Closure allocation on every invocation | Extracted to module-level `runHook` function | ✅ | 1085 tests passing |
+| S5 | 🟡 Suggestion | Shared hook types | Created `src/hooks/types.ts`; reduced `as` casts | ✅ | 1085 tests passing |
+| S6 | 🟡 Suggestion | Cancel-task SDK cast comments | Added clarifying comments with SDK reason | ✅ | 1085 tests passing |
+| S7 | 🟡 Suggestion | WorkAgent type duplication | Derived type from WORK_AGENTS set | ✅ | 1085 tests passing |
+
+### ✅ Complete — Oracle L-Item Fixes (2026-05-28)
+| Finding | Fix | Status | Tests |
+|---------|-----|--------|-------|
+| L1 config merge depth | Plugin agent config merge now recursively preserves nested `permission.skill` and `options`; loader deep-merge coverage expanded | ✅ | 1085 tests passing |
+| L2 constants cleanup | Removed unused config constants/exports and stale agent codemap references | ✅ | 1085 tests passing |
+| L4 council config check | Council/councillor permissions explicitly deny write/edit/apply_patch/bash/task while allowing `council_session` only for council | ✅ | 1085 tests passing |
+| L5 docs update | Refreshed agent codemap, `CONTEXT.md`, template `AGENTS.md`, and this project state | ✅ | 1085 tests passing |
+| L6-L8 test gaps | Added coverage for plugin merge, path-gating apply_patch/root behavior, reviewer verification/advisory handling, startup init wiring/template seeding | ✅ | 1085 tests passing |
+| L9 stale test counts | Updated project state from stale 1075/1082 counts to 1080 passing | ✅ | 1085 tests passing |
+| L10 index formatting | Removed unused helper, deep-merge simplified, Biome clean | ✅ | 1085 tests passing |
+| L13 template exists | Confirmed `templates/AGENTS.md`; package publish includes `templates/` | ✅ | 1085 tests passing |
+
+### ✅ Complete — GitHub Remote + CI (2026-05-28)
+- **Remote configured**: `origin → https://github.com/octini/trans-genderian-orchestra.git`
+- **Code pushed**: Force-pushed dispatcher master to origin/master (commit `692b879`)
+- **CI workflow**: `.github/workflows/ci.yml` — runs `bun check:ci`, `bun run typecheck`, `bun test` on push/PR to master
+
 ### ❌ Not Yet Implemented
-- **GitHub remote setup** (push fork, CI config)
 - **End-to-end manual smoke test** in a live OpenCode session — validate full delegation cycle with envelope enforcement, path gating, startup init prompts, and state/handoff logging
 - **Release/packaging validation** — verify published artifact contents after the fork rename/config docs are finalized
+
+### 🔵 Design Question Remaining (517)
+- **Read-budget reset behavior** — read-budget resets to zero on every task delegation. If orchestrator reads 4, delegates, reads 4, delegates, it never trips the threshold despite 8 total reads. Options: (a) track cumulative reads across session, (b) keep consecutive-only tracking, (c) add both. Low priority — current behavior works as designed for its purpose of preventing runaway self-research.
 
 ## Next Likely Steps
 
 1. **Run live smoke test** — Configure local plugin, launch orchestrator, execute a delegation cycle, and verify delegation envelope + path-gating + startup init + state.md/handoff.md behavior.
-2. **Prepare GitHub remote/CI** — Push fork, set up remote tracking, and add CI for `bun run check:ci`, `bun run typecheck`, and `bun test`.
-3. **Package/release validation** — Verify templates, skills, hooks, generated schema, and built artifacts are included correctly before any beta publish.
+2. **Package/release validation** — Verify templates, skills, hooks, generated schema, and built artifacts are included correctly before any beta publish.

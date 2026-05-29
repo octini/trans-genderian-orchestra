@@ -1,6 +1,6 @@
-# OMO-Slim Modifications Agent Guide
+# trans-genderian-orchestra Agent Guide
 
-This repository is the Dispatcher plugin fork of `oh-my-opencode-slim`. It turns the original orchestrator into a pure dispatcher with specialist agents, approval-aware planning, shared context files, and reviewer/council verification gates.
+This repository contains the trans-genderian-orchestra Dispatcher plugin for OpenCode. It provides a pure dispatcher with specialist agents, approval-aware planning, shared context files, and reviewer/council verification gates.
 
 ## Current Agent Roles
 
@@ -40,14 +40,14 @@ This repository is the Dispatcher plugin fork of `oh-my-opencode-slim`. It turns
 
 ## Current Implementation State
 
-- Startup init is implemented: environment audit, `/init`, `/beads:init`, `/setup-skills`, and AGENTS.md seeding.
+- Startup init is implemented: environment audit, `/init`, `/beads:init`, `/setup-matt-pocock-skills`, and AGENTS.md seeding.
 - Path gating is implemented: per-agent write/edit constraints with config-level override support.
 - Critical fixes are applied: orchestrator can delegate via `task`, config/permissions deep-merge correctly, default model fallback chains are configured, and the orchestrator prompt is tightened around pure delegation.
-- Last recorded validation state: 1008 tests passing and build clean.
+- Last recorded validation state: 1090 tests passing.
 
 ## Commands
 
-Run from `dispatcher-plugin/` unless noted otherwise:
+Run from `trans-genderian-orchestra/` unless noted otherwise:
 
 | Command | Description |
 |---------|-------------|
@@ -63,7 +63,7 @@ Run from `dispatcher-plugin/` unless noted otherwise:
 - `PROJECT_STATE.md`: high-level project status, decisions, implementation checklist, and next steps.
 - `.opencode/implementation-spec.md`: critical-fix implementation tracker.
 - `CONTEXT.md`: domain glossary for Dispatcher concepts.
-- `dispatcher-plugin/templates/AGENTS.md`: project-local AGENTS.md seed used by Dispatcher `/init`.
+- `trans-genderian-orchestra/templates/AGENTS.md`: project-local AGENTS.md seed used by Dispatcher `/init`.
 
 ## Project-Specific Rules
 

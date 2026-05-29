@@ -1,0 +1,66 @@
+/**
+ * Post-tool nudge - queues a delegation reminder after file/research tools.
+ * Catches the "inspect/edit files → implement myself" anti-pattern.
+ */
+
+import { PHASE_REMINDER_TEXT } from '../../config/constants';
+import { formatInternalReminder } from '../_messages';
+import type { ToolExecuteInput, ToolExecuteOutput } from '../types';
+
+const POST_FILE_TOOL_NUDGE = PHASE_REMINDER_TEXT;
+
+type ToolExecuteAfterInput = ToolExecuteInput;
+type ToolExecuteAfterOutput = ToolExecuteOutput;
+
+interface PostFileToolNudgeOptions {
+  shouldInject?: (sessionID: string) => boolean;
+}
+
+const MONITORED_TOOLS = new Set([
+  'Read',
+  'read',
+  'Write',
+  'write',
+  'glob',
+  'grep',
+  'ast_grep_search',
+  'lsp_diagnostics',
+  'lsp',
+]);
+
+export function createPostFileToolNudgeHook(
+  options: PostFileToolNudgeOptions = {},
+) {
+  function appendReminder(output: ToolExecuteAfterOutput): void {
+    if (typeof output.output !== 'string') {
+      return;
+    }
+
+    if (output.output.includes(POST_FILE_TOOL_NUDGE)) {
+      return;
+    }
+
+    output.output = [
+      output.output,
+      '',
+      formatInternalReminder(POST_FILE_TOOL_NUDGE),
+    ].join('\n');
+  }
+
+  return {
+    'tool.execute.after': async (
+      input: ToolExecuteAfterInput,
+      output: ToolExecuteAfterOutput,
+    ): Promise<void> => {
+      if (!MONITORED_TOOLS.has(input.tool) || !input.sessionID) {
+        return;
+      }
+
+      if (options.shouldInject && !options.shouldInject(input.sessionID)) {
+        return;
+      }
+
+      appendReminder(output);
+    },
+  };
+}

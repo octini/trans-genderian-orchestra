@@ -1,7 +1,7 @@
 # OMO-Slim Modifications — Domain Glossary
 
 ## Project
-**OMO-Slim Modifications (codename: "Dispatcher")** — A fork of oh-my-opencode-slim that transforms the orchestrator into a pure dispatcher (read-only router with no file writes, no planning, no implementation). Uses a hybrid strategy borrowing patterns from small-opencode-orchestrator (token-conscious context pruning), OpenSpec/GSD (structured spec files with approval gates), and Swarm (gatekeeper verification).
+**OMO-Slim Modifications (codename: "Dispatcher")** — A fork of oh-my-opencode-slim that transforms the orchestrator into a pure dispatcher (read-only router with no file writes, no planning, no implementation). The plugin lives in the repository directory `trans-genderian-orchestra/`, matching the internal package name. Uses a hybrid strategy borrowing patterns from small-opencode-orchestrator (token-conscious context pruning), OpenSpec/GSD (structured spec files with approval gates), and Swarm (gatekeeper verification).
 
 ## Core Concepts
 
@@ -35,6 +35,14 @@
 
 **Council Trigger** — Condition that causes orchestrator to invoke council. Two-tier: direct-to-council (user request, critical risk, reviewer loop) and advisor-first escalation (source disagreement, security architecture, plan-intent conflict).
 
+**Path-Gating Hook** — Pre-tool enforcement that checks write/edit/apply_patch targets against per-agent path allowlists. Defaults keep the orchestrator limited to `.opencode/state.md`, `.opencode/handoff.md`, and `.opencode/plans/plan.md` status updates; planner to `.opencode/plans/`; researcher to notes/scratchpad files; builder broadly writable; and council/councillors read-only.
+
+**Startup Init** — Dispatcher startup workflow that audits Git, Beads, and Matt Pocock skills, registers `/init`, `/init:all`, `/beads:init`, `/new-stream`, and `/close-stream`, and seeds project `AGENTS.md` from `templates/AGENTS.md` when absent.
+
+**Ping-All Command** — `/ping-all` slash command that spawns concurrent lightweight `task` calls to all enabled specialist agents. Each receives a simple prompt; results collected with 10s timeout and displayed as a markdown table with ✅/❌ per agent.
+
+**Worktree Reconciliation** — Skeleton architecture in `src/hooks/worktree-reconciliation/` for reviewer-led parallel work merging. Designed around: reviewer verifies each worktree's output and runs `git merge` on success, with conflict resolution escalating to the user.
+
 ## Agent Roles
 - **Orchestrator** — Pure dispatcher (no code, no plans, no writes except state.md)
 - **Planner** — Decomposes requests into structured plan.md
@@ -42,3 +50,4 @@
 - **Builder** — Design + implementation (merged Designer + Fixer)
 - **Reviewer** — Dual-persona verification gatekeeper + strategic advisor
 - **Council** — Multi-model consensus (escalation-only, 3 councillors + synthesizer)
+- **Councillor** — Internal read-only council participant spawned only by the council workflow
