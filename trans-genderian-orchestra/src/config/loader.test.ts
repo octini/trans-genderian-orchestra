@@ -2,8 +2,28 @@ import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+
+import { DEFAULT_AGENT_OVERRIDES } from './constants';
 import type { ConfigLoadWarning } from './loader';
-import { loadAgentPrompt, loadPluginConfig } from './loader';
+import {
+  ensureUserConfigExists,
+  loadAgentPrompt,
+  loadPluginConfig,
+} from './loader';
+
+function expectDefaultUserConfig(config: unknown): void {
+  expect(config).toMatchObject({
+    preset: 'default',
+    presets: { default: DEFAULT_AGENT_OVERRIDES },
+    agents: DEFAULT_AGENT_OVERRIDES,
+    disabled_agents: [],
+    multiplexer: {
+      type: 'auto',
+      layout: 'main-vertical',
+      main_pane_size: 60,
+    },
+  });
+}
 
 // Test deepMerge indirectly through loadPluginConfig behavior
 // since deepMerge is not exported
@@ -27,11 +47,18 @@ describe('loadPluginConfig', () => {
     process.env = originalEnv;
   });
 
-  test('returns empty config when no config files exist', () => {
+  test('creates and loads default user config when no config files exist', () => {
     const projectDir = path.join(tempDir, 'project');
     fs.mkdirSync(projectDir, { recursive: true });
     const config = loadPluginConfig(projectDir);
-    expect(config).toEqual({});
+    const createdConfigPath = path.join(
+      userConfigDir,
+      'opencode',
+      'trans-genderian-orchestra.jsonc',
+    );
+
+    expect(fs.existsSync(createdConfigPath)).toBe(true);
+    expectDefaultUserConfig(config);
   });
 
   test('loads project config from .opencode directory', () => {
@@ -49,6 +76,39 @@ describe('loadPluginConfig', () => {
 
     const config = loadPluginConfig(projectDir);
     expect(config.agents?.reviewer?.model).toBe('test/model');
+  });
+
+  test('ensureUserConfigExists writes default JSONC config once', () => {
+    ensureUserConfigExists();
+
+    const configPath = path.join(
+      userConfigDir,
+      'opencode',
+      'trans-genderian-orchestra.jsonc',
+    );
+    expect(fs.existsSync(configPath)).toBe(true);
+
+    const content = fs.readFileSync(configPath, 'utf-8');
+    expect(content).toStartWith('// trans-genderian-orchestra user config');
+
+    const rawConfig = JSON.parse(
+      content
+        .split('\n')
+        .filter((line) => !line.startsWith('//'))
+        .join('\n'),
+    );
+    expect(rawConfig.preset).toBe('default');
+    expect(rawConfig.presets.default).toEqual(DEFAULT_AGENT_OVERRIDES);
+    expect(rawConfig.disabled_agents).toEqual([]);
+    expect(rawConfig.multiplexer).toEqual({
+      type: 'auto',
+      layout: 'main-vertical',
+      main_pane_size: 60,
+    });
+
+    fs.writeFileSync(configPath, '{"preset":"custom"}');
+    ensureUserConfigExists();
+    expect(fs.readFileSync(configPath, 'utf-8')).toBe('{"preset":"custom"}');
   });
 
   test('loads scoringEngineVersion flag when configured', () => {
@@ -169,14 +229,14 @@ describe('loadPluginConfig', () => {
       path.join(projectConfigDir, 'trans-genderian-orchestra.json'),
       JSON.stringify({ agents: { reviewer: { temperature: 5 } } }),
     );
-    expect(loadPluginConfig(projectDir)).toEqual({});
+    expectDefaultUserConfig(loadPluginConfig(projectDir));
 
     // Test 2: Malformed JSON
     fs.writeFileSync(
       path.join(projectConfigDir, 'trans-genderian-orchestra.json'),
       '{ invalid json }',
     );
-    expect(loadPluginConfig(projectDir)).toEqual({});
+    expectDefaultUserConfig(loadPluginConfig(projectDir));
   });
 
   test('rejects custom-only prompt fields on built-in agents in config files', () => {
@@ -196,7 +256,7 @@ describe('loadPluginConfig', () => {
       }),
     );
 
-    expect(loadPluginConfig(projectDir)).toEqual({});
+    expectDefaultUserConfig(loadPluginConfig(projectDir));
   });
 
   test('respects OPENCODE_CONFIG_DIR for user config location', () => {
@@ -287,7 +347,7 @@ describe('onWarning callback', () => {
       path.join(projectConfigDir, 'trans-genderian-orchestra.json'),
     );
     expect(warnings[0]?.message).toBe('Config does not match schema');
-    expect(config).toEqual({});
+    expectDefaultUserConfig(config);
   });
 
   test('invalid JSON calls onWarning with invalid-json', () => {
@@ -309,7 +369,7 @@ describe('onWarning callback', () => {
     expect(warnings[0]?.path).toBe(
       path.join(projectConfigDir, 'trans-genderian-orchestra.json'),
     );
-    expect(config).toEqual({});
+    expectDefaultUserConfig(config);
   });
 
   test('silent option suppresses console warnings', () => {
@@ -330,7 +390,7 @@ describe('onWarning callback', () => {
       });
 
       expect(warnings).toHaveLength(1);
-      expect(config).toEqual({});
+      expectDefaultUserConfig(config);
       expect(warnSpy).not.toHaveBeenCalled();
     } finally {
       warnSpy.mockRestore();
@@ -371,7 +431,7 @@ describe('onWarning callback', () => {
       expect(warnings[0]?.kind).toBe('read-error');
       expect(warnings[0]?.path).toBe(configPath);
       expect(warnings[0]?.message).toBe('Permission denied');
-      expect(config).toEqual({});
+      expectDefaultUserConfig(config);
     } finally {
       readSpy.mockRestore();
     }
@@ -837,7 +897,7 @@ describe('preset resolution', () => {
 
     const config = loadPluginConfig(projectDir);
     expect(config.agents?.reviewer?.model).toBe('direct-model');
-    expect(config.preset).toBeUndefined();
+    expect(config.preset).toBe('default');
   });
 
   test("preset applied: preset + presets returns preset's agents", () => {
@@ -937,8 +997,8 @@ describe('preset resolution', () => {
       }),
     );
 
-    // Should return empty config due to validation failure
-    expect(loadPluginConfig(projectDir)).toEqual({});
+    // Should fall back to auto-created user config due to validation failure
+    expectDefaultUserConfig(loadPluginConfig(projectDir));
   });
 
   test('nonexistent preset from config warns and falls back to root agents', () => {

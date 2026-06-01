@@ -1,10 +1,15 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { BackgroundJobBoard } from '../../utils';
 import { createContextOrchestratorHook } from '../context-orchestrator';
-import { createStartupInitHook, type ExecResult, execCommand } from './index';
+import {
+  createStartupInitHook,
+  type ExecResult,
+  execCommand,
+  runAuditSync,
+} from './index';
 
 function successfulExecutor(): () => Promise<ExecResult> {
   return async () => ({ success: true, stdout: 'ok', stderr: '' });
@@ -254,9 +259,13 @@ describe('startup init hook command handling', () => {
 
     expect(output.parts).toHaveLength(1);
     expect(output.parts[0].text).toContain('`/beads:init` RESULT');
-    expect(output.parts[0].text).toContain('npx --yes @beads/bd init');
+    expect(output.parts[0].text).toContain(
+      'npx --yes --package @beads/bd beads init',
+    );
     expect(output.parts[0].text).toContain('beads ready');
-    expect(calls).toEqual([['npx', '--yes', '@beads/bd', 'init']]);
+    expect(calls).toEqual([
+      ['npx', '--yes', '--package', '@beads/bd', 'beads', 'init'],
+    ]);
   });
 
   test('handles /init:all command', async () => {
@@ -271,7 +280,7 @@ describe('startup init hook command handling', () => {
           if (cmd[0] === 'git') {
             return { success: true, stdout: 'git ready', stderr: '' };
           }
-          if (cmd[2] === '@beads/bd') {
+          if (cmd[3] === '@beads/bd') {
             return { success: true, stdout: 'beads ready', stderr: '' };
           }
           return { success: true, stdout: 'skills ready', stderr: '' };
@@ -294,14 +303,16 @@ describe('startup init hook command handling', () => {
       );
       expect(output.parts[0].text).toContain('AGENTS.md seed');
       expect(output.parts[0].text).toContain('Created AGENTS.md');
-      expect(output.parts[0].text).toContain('npx --yes @beads/bd init');
+      expect(output.parts[0].text).toContain(
+        'npx --yes --package @beads/bd beads init',
+      );
       expect(output.parts[0].text).toContain(
         'npx --yes @opencode-ai/skills-installer setup-matt-pocock-skills',
       );
       expect(output.parts[0].text).toContain('skills ready');
       expect(calls).toEqual([
         ['git', 'init'],
-        ['npx', '--yes', '@beads/bd', 'init'],
+        ['npx', '--yes', '--package', '@beads/bd', 'beads', 'init'],
         [
           'npx',
           '--yes',
@@ -324,7 +335,7 @@ describe('startup init hook command handling', () => {
           if (cmd[0] === 'git') {
             return { success: true, stdout: 'git ready', stderr: '' };
           }
-          if (cmd[2] === '@beads/bd') {
+          if (cmd[3] === '@beads/bd') {
             return { success: true, stdout: 'beads ready', stderr: '' };
           }
           if (cmd[2] === '@opencode-ai/skills-installer') {
@@ -350,7 +361,7 @@ describe('startup init hook command handling', () => {
       expect(output.parts[0].text).toContain('skills ready');
       expect(calls).toEqual([
         ['git', 'init'],
-        ['npx', '--yes', '@beads/bd', 'init'],
+        ['npx', '--yes', '--package', '@beads/bd', 'beads', 'init'],
         [
           'npx',
           '--yes',
@@ -375,7 +386,7 @@ describe('startup init hook command handling', () => {
           if (cmd[0] === 'git') {
             return { success: true, stdout: 'git ready', stderr: '' };
           }
-          if (cmd[2] === '@beads/bd') {
+          if (cmd[3] === '@beads/bd') {
             return { success: true, stdout: 'beads ready', stderr: '' };
           }
           return { success: true, stdout: 'skills ready', stderr: '' };
@@ -399,7 +410,7 @@ describe('startup init hook command handling', () => {
       ]);
       expect(calls).toEqual([
         ['git', 'init'],
-        ['npx', '--yes', '@beads/bd', 'init'],
+        ['npx', '--yes', '--package', '@beads/bd', 'beads', 'init'],
         ['npx', '--yes', 'setup-matt-pocock-skills'],
       ]);
       expect(output.parts[0].text).toContain(
@@ -578,6 +589,19 @@ describe('startup init command executor', () => {
 });
 
 describe('startup init audit dialog', () => {
+  test('runAuditSync uses filesystem marker directories without shelling out', async () => {
+    await withTempDir(async (dir) => {
+      await mkdir(path.join(dir, '.git'));
+      await mkdir(path.join(dir, '.skills'));
+
+      expect(runAuditSync(dir)).toEqual({
+        git: true,
+        beads: false,
+        skills: true,
+      });
+    });
+  });
+
   test('checks git remotes when git is initialized', async () => {
     const calls: string[][] = [];
     const hook = createStartupInitHook('/tmp/project', {

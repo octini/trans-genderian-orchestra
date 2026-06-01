@@ -2,9 +2,26 @@ import { describe, expect, test } from 'bun:test';
 import {
   buildOrchestratorPrompt,
   ORCHESTRATOR_PROMPT_SENTINEL,
+  setOrchestratorAuditDialog,
 } from './orchestrator';
 
 describe('buildOrchestratorPrompt', () => {
+  test('appends configured audit dialog into the static prompt body', () => {
+    setOrchestratorAuditDialog('## AUDIT DIALOG TEST');
+
+    try {
+      const prompt = buildOrchestratorPrompt();
+
+      expect(prompt).toContain('## AUDIT DIALOG TEST');
+      expect(prompt.indexOf('## AUDIT DIALOG TEST')).toBeLessThan(
+        prompt.indexOf(ORCHESTRATOR_PROMPT_SENTINEL),
+      );
+      expect(prompt.endsWith(ORCHESTRATOR_PROMPT_SENTINEL)).toBe(true);
+    } finally {
+      setOrchestratorAuditDialog('');
+    }
+  });
+
   test('shows delegation envelope inside the task prompt parameter', () => {
     const prompt = buildOrchestratorPrompt();
 

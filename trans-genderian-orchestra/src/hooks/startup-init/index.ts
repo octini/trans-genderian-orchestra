@@ -35,7 +35,14 @@ const FALLBACK_SKILLS_INSTALL_COMMAND = [
   NPX_YES_FLAG,
   FALLBACK_SKILLS_INSTALL_PACKAGE,
 ];
-const BEADS_INIT_COMMAND = ['npx', NPX_YES_FLAG, BEADS_PACKAGE_NAME, 'init'];
+const BEADS_INIT_COMMAND = [
+  'npx',
+  NPX_YES_FLAG,
+  '--package',
+  BEADS_PACKAGE_NAME,
+  'beads',
+  'init',
+];
 const MANUAL_SKILLS_INSTALL_URL = 'https://github.com/mattpocock/skills';
 const DISABLE_BUN_SPAWN_ENV = 'DISPATCHER_DISABLE_BUN_SPAWN';
 
@@ -216,6 +223,14 @@ export async function runAudit(
     gitRemote,
     beads: auditBeads(projectDir),
     skills: auditSkills(projectDir),
+  };
+}
+
+export function runAuditSync(projectDir: string): AuditResults {
+  return {
+    git: existsSync(path.join(projectDir, '.git')),
+    beads: existsSync(path.join(projectDir, '.beads')),
+    skills: existsSync(path.join(projectDir, '.skills')),
   };
 }
 
@@ -514,6 +529,7 @@ export function createStartupInitHook(
     auditResults: null,
     getAuditDialog,
     runAudit: async () => {
+      if (hook.auditResults) return hook.auditResults;
       const results = await runAudit(projectDir, executor);
       hook.auditResults = results;
       return results;

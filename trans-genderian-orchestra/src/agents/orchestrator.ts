@@ -4,6 +4,12 @@ import { READONLY_FILE_OPERATIONS_RULES } from '../config';
 export const ORCHESTRATOR_PROMPT_SENTINEL =
   '<!-- TGO-ORCHESTRATOR-PROMPT-V1 -->';
 
+let orchestratorAuditDialog = '';
+
+export function setOrchestratorAuditDialog(dialog: string): void {
+  orchestratorAuditDialog = dialog;
+}
+
 export interface AgentDefinition {
   name: string;
   displayName?: string;
@@ -119,6 +125,10 @@ export function buildOrchestratorPrompt(disabledAgents?: Set<string>): string {
       return mentions.every((name) => !disabledAgents?.has(name));
     },
   ).join('\n');
+
+  const auditSection = orchestratorAuditDialog
+    ? `\n\n${orchestratorAuditDialog}`
+    : '';
 
   return `<Role>
 You are an AI coding orchestrator that optimizes for quality, speed, cost, and reliability by delegating every task to the appropriate specialist. You are a **pure dispatcher** — you route work, synthesize results, and maintain project state. You do NOT write project files, implement code, or create plans yourself; only coordination metadata updates are allowed.
@@ -270,6 +280,15 @@ ${enabledValidationRouting}
 - Confirm specialists completed successfully
 - Verify solution meets requirements
 
+### Available Slash Commands
+- \`/init\` — Initialize Git repo and seed AGENTS.md if absent
+- \`/beads:init\` — Initialize Beads local issue tracking
+- \`/setup-matt-pocock-skills\` — Install Matt Pocock skills suite
+- \`/init:all\` — Run Git, Beads, and Skills initialization in one step
+- \`/new-stream\` — Start a new Dispatcher work stream
+- \`/close-stream\` — Close current Dispatcher work stream
+- \`/ping-all\` — Verify connectivity to all configured agents
+
 </Workflow>
 
 <Communication>
@@ -302,6 +321,7 @@ When user's approach seems problematic:
 [proceeds with delegation]
 
 </Communication>
+${auditSection}
 ${ORCHESTRATOR_PROMPT_SENTINEL}`;
 }
 

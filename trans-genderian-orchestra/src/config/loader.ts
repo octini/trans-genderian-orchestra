@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { stripJsonComments } from '../cli/config-io';
 import { getConfigSearchDirs } from '../cli/paths';
+import { DEFAULT_AGENT_OVERRIDES } from './constants';
 import {
   DEFAULT_SPECIALIST_TIMEOUTS,
   type PluginConfig,
@@ -44,7 +45,54 @@ export interface LoadPluginConfigOptions {
   silent?: boolean;
 }
 
-const PROMPTS_DIR_NAME = 'trans-genderian-orchestra';
+const PLUGIN_CONFIG_BASENAME = 'trans-genderian-orchestra';
+const PROMPTS_DIR_NAME = PLUGIN_CONFIG_BASENAME;
+
+function createDefaultUserConfigContent(): string {
+  const config = {
+    preset: 'default',
+    presets: {
+      default: DEFAULT_AGENT_OVERRIDES,
+    },
+    disabled_agents: [],
+    multiplexer: {
+      type: 'auto',
+      layout: 'main-vertical',
+      main_pane_size: 60,
+    },
+  };
+
+  return [
+    '// trans-genderian-orchestra user config',
+    '// Edit this file to customize agent model lineups, disabled agents, and multiplexer behavior.',
+    '// The default preset is generated from the plugin defaults as a starting point.',
+    JSON.stringify(config, null, 2),
+    '',
+  ].join('\n');
+}
+
+/**
+ * Ensure a starter user config exists in the primary OpenCode config directory.
+ * Auto-creates trans-genderian-orchestra.jsonc once per install with the
+ * current default model lineup so users have an editable baseline config.
+ */
+export function ensureUserConfigExists(): void {
+  const configSearchDirs = getConfigSearchDirs();
+  const [userConfigDir] = configSearchDirs;
+  if (!userConfigDir) return;
+
+  const userConfigPath = path.join(
+    userConfigDir,
+    `${PLUGIN_CONFIG_BASENAME}.jsonc`,
+  );
+
+  if (findConfigPathInDirs(configSearchDirs, PLUGIN_CONFIG_BASENAME)) {
+    return;
+  }
+
+  fs.mkdirSync(userConfigDir, { recursive: true });
+  fs.writeFileSync(userConfigPath, createDefaultUserConfigContent());
+}
 
 /**
  * Load and validate plugin configuration from a specific file path.
@@ -178,13 +226,13 @@ export function findPluginConfigPaths(directory: string): {
 } {
   const userConfigPath = findConfigPathInDirs(
     getConfigSearchDirs(),
-    'trans-genderian-orchestra',
+    PLUGIN_CONFIG_BASENAME,
   );
 
   const projectConfigBasePath = path.join(
     directory,
     '.opencode',
-    'trans-genderian-orchestra',
+    PLUGIN_CONFIG_BASENAME,
   );
 
   const projectConfigPath = findConfigPath(projectConfigBasePath);
@@ -309,6 +357,8 @@ export function loadPluginConfig(
   directory: string,
   options?: LoadPluginConfigOptions,
 ): PluginConfig {
+  ensureUserConfigExists();
+
   const { userConfigPath, projectConfigPath } =
     findPluginConfigPaths(directory);
 

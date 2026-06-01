@@ -86,6 +86,12 @@ This file tracks the current state of the Dispatcher plugin project. Updated aft
 | 66 | Smoke test fixes — state.md subtask_summary parsing | @fixer | 2026-05-29 |
 | 67 | Smoke test fixes — delegation envelope markdown code-fence stripping | @fixer | 2026-05-29 |
 | 68 | Follow-up oracle audit — all 15 previous findings verified, no regressions | @oracle | 2026-05-29 |
+| 69 | Init prompt visibility — runAuditSync + setOrchestratorAuditDialog (3 attempts) | @fixer | 2026-05-29 |
+| 70 | Plugin auto-config creation (ensureUserConfigExists in loader.ts) | @fixer | 2026-05-29 |
+| 71 | Model lineup updates — mimo-v2.5, claude-opus-4.7/4.8, builder→GPT | @fixer | 2026-05-29 |
+| 72 | Init commands: beads binary fix, package-verify trusted allowlist | @explorer + @fixer | 2026-05-29 |
+| 73 | Oracle follow-up fixes (B1-B2, W1-W6, S1-S7) — shared types, messages, fail-close | @fixer | 2026-05-29 |
+| 74 | Comprehensive README rewrite (61→266 lines) + docs/README.md hub | @fixer | 2026-05-29 |
 
 ## Framework Research Results
 

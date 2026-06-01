@@ -104,6 +104,38 @@ describe('plugin config hook', () => {
     expect(commands['ping-all']).toBeDefined();
   });
 
+  test('injects missing environment audit into orchestrator agent prompt at plugin init', async () => {
+    const projectDir = path.join(tempDir, 'project');
+    fs.mkdirSync(path.join(projectDir, '.git'), { recursive: true });
+
+    const plugin = await TransGenderianOrchestra(
+      createPluginContext(projectDir),
+    );
+
+    const orchestrator = (plugin.agent as Record<string, { prompt?: string }>)
+      .orchestrator;
+    expect(orchestrator.prompt).toContain('DISPATCHER ENVIRONMENT AUDIT');
+    expect(orchestrator.prompt).toContain('Beads Issue Tracker');
+    expect(orchestrator.prompt).toContain('Matt Pocock Skills');
+    expect(orchestrator.prompt).toContain('/beads:init');
+    expect(orchestrator.prompt).toContain('/setup-matt-pocock-skills');
+  });
+
+  test('omits environment audit from orchestrator prompt when all markers are present', async () => {
+    const projectDir = path.join(tempDir, 'project');
+    fs.mkdirSync(path.join(projectDir, '.git'), { recursive: true });
+    fs.mkdirSync(path.join(projectDir, '.beads'), { recursive: true });
+    fs.mkdirSync(path.join(projectDir, '.skills'), { recursive: true });
+
+    const plugin = await TransGenderianOrchestra(
+      createPluginContext(projectDir),
+    );
+
+    const orchestrator = (plugin.agent as Record<string, { prompt?: string }>)
+      .orchestrator;
+    expect(orchestrator.prompt).not.toContain('DISPATCHER ENVIRONMENT AUDIT');
+  });
+
   test('startup init ignores unknown command after plugin wiring', async () => {
     const projectDir = path.join(tempDir, 'project');
     fs.mkdirSync(projectDir, { recursive: true });

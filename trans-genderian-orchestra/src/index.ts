@@ -4,6 +4,7 @@ import { createAgents, getAgentConfigs, getDisabledAgents } from './agents';
 import {
   buildOrchestratorPrompt,
   ORCHESTRATOR_PROMPT_SENTINEL,
+  setOrchestratorAuditDialog,
 } from './agents/orchestrator';
 import { createPingAllCommand } from './commands/ping-all';
 import {
@@ -41,6 +42,7 @@ import {
   createTaskSessionManagerHook,
   ForegroundFallbackManager,
 } from './hooks';
+import { getAuditDialog, runAuditSync } from './hooks/startup-init';
 import { processImageAttachments } from './hooks/image-hook';
 import type {
   CommandExecuteInput,
@@ -229,6 +231,13 @@ const TransGenderianOrchestra: Plugin = async (ctx) => {
       // Preset was deleted from config since last switch — clear stale state
       setActiveRuntimePreset(null);
     }
+
+    const auditResults = runAuditSync(ctx.directory);
+    setOrchestratorAuditDialog(
+      !auditResults.git || !auditResults.beads || !auditResults.skills
+        ? getAuditDialog(auditResults)
+        : '',
+    );
 
     disabledAgents = getDisabledAgents(config);
     rewriteDisplayNameMentions = createDisplayNameMentionRewriter(config);

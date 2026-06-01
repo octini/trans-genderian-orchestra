@@ -46,12 +46,19 @@ export const DEFAULT_AGENT_OVERRIDES: Partial<
 > = {
   orchestrator: {
     model: [
-      { id: 'opencode-go/kimi-k2.6' },
+      { id: 'opencode-go/mimo-v2.5', variant: 'high' },
       { id: 'google/antigravity-claude-opus-4-6-thinking', variant: 'max' },
-      { id: 'nvidia/z-ai/glm-5.1' },
+      { id: 'nvidia/moonshotai/kimi-k2.6' },
     ],
   },
   planner: {
+    model: [
+      { id: 'github-copilot/gpt-5.5', variant: 'xhigh' },
+      { id: 'github-copilot/claude-opus-4.7', variant: 'max' },
+      { id: 'nvidia/moonshotai/kimi-k2.6' },
+    ],
+  },
+  builder: {
     model: [
       { id: 'github-copilot/gpt-5.5', variant: 'xhigh' },
       { id: 'github-copilot/claude-opus-4.7', variant: 'max' },
@@ -73,7 +80,7 @@ export const DEFAULT_AGENT_OVERRIDES: Partial<
     ],
   },
   council: {
-    model: [{ id: 'opencode-go/kimi-k2.6' }],
+    model: [{ id: 'opencode-go/mimo-v2.5', variant: 'high' }],
   },
   councillor: {
     model: [
