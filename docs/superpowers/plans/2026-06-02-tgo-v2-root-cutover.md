@@ -131,7 +131,7 @@ describe('root cutover layout', () => {
 Run from worktree repository root:
 
 ```bash
-bun test root-cutover.pretest.ts
+bun test ./root-cutover.pretest.ts
 ```
 
 Expected: FAIL because root `package.json` is absent, `trans-genderian-orchestra-v2/` still exists, and legacy `trans-genderian-orchestra/` is not archived.
