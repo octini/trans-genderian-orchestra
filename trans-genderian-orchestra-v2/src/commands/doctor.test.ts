@@ -102,10 +102,12 @@ describe('doctor command', () => {
       'missing-managed-agent',
     );
     expect(
-      result.warnings.some((warning) => warning.message.includes('tgo-builder')),
+      result.warnings.some((warning) =>
+        warning.message.includes('tgo-builder'),
+      ),
     ).toBe(true);
-    expect(await fs.readText('/home/user/.config/opencode/opencode.jsonc')).toContain(
-      'tgo-orchestrator',
-    );
+    expect(
+      await fs.readText('/home/user/.config/opencode/opencode.jsonc'),
+    ).toContain('tgo-orchestrator');
   });
 });

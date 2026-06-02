@@ -1,7 +1,9 @@
 import type { TgoAgentId } from './agent-ids';
 
 export type PermissionAction = 'allow' | 'ask' | 'deny';
-export type PermissionValue = PermissionAction | Record<string, PermissionAction>;
+export type PermissionValue =
+  | PermissionAction
+  | Record<string, PermissionAction>;
 export type PermissionProfile = Record<string, PermissionValue>;
 
 const READ_ONLY_PERMISSIONS: PermissionProfile = {

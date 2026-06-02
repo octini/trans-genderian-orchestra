@@ -86,7 +86,9 @@ describe('TGO plugin config definitions', () => {
   test('creates namespaced command configs and compatibility aliases', () => {
     const commands = createTgoCommandConfigs();
 
-    expect(commands['tgo:doctor'].description).toContain('Inspect TGO v2 setup');
+    expect(commands['tgo:doctor'].description).toContain(
+      'Inspect TGO v2 setup',
+    );
     expect(commands['tgo:setup'].description).toContain('Change TGO v2 setup');
     expect(commands['tgo:init'].description).toContain('Initialize TGO v2');
     expect(commands.init.description).toContain('Compatibility alias');
