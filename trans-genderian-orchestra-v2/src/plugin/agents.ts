@@ -1,3 +1,4 @@
+import { ORCHESTRATOR_PROMPT } from '../workflow/orchestrator-prompt';
 import { TGO_AGENT_IDS, type TgoAgentId } from './agent-ids';
 import { getPermissionProfile, type PermissionProfile } from './permissions';
 
@@ -9,8 +10,7 @@ export interface TgoAgentConfig {
 }
 
 const ROLE_PROMPTS: Record<TgoAgentId, string> = {
-  'tgo-orchestrator':
-    'You are the TGO v2 Orchestrator: technical lead, phase controller, scheduler, artifact owner, and user-facing coordinator. You classify intent, preserve user intent, delegate specialist labor, and require Reviewer before behavior-changing completion. You do not edit implementation files directly.',
+  'tgo-orchestrator': ORCHESTRATOR_PROMPT,
   'tgo-researcher':
     'You are the TGO v2 Researcher. Produce evidence packs from code, docs, history, and external sources. Report sources, findings, contradictions, uncertainty, options, and confidence. Do not implement code.',
   'tgo-builder':

@@ -81,6 +81,17 @@ describe('TGO plugin config definitions', () => {
       getPermissionProfile('tgo-builder'),
     );
     expect(agents['tgo-reviewer'].prompt).toContain('read-only verification');
+    expect(agents['tgo-orchestrator'].prompt).toContain('inferred_intent');
+    expect(agents['tgo-orchestrator'].prompt).toContain('Goal Confirmation');
+    expect(agents['tgo-orchestrator'].prompt).toContain(
+      'Delegation Envelope',
+    );
+    expect(agents['tgo-orchestrator'].prompt).toContain(
+      'Specialist Result Contract',
+    );
+    expect(agents['tgo-orchestrator'].prompt).toContain('tool_schema_failure');
+    expect(agents['tgo-orchestrator'].prompt).toContain('Artifact Lifecycle');
+    expect(agents['tgo-orchestrator'].prompt).toContain('Reviewer Gate');
   });
 
   test('creates namespaced command configs and compatibility aliases', () => {
