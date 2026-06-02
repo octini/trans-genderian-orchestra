@@ -8,6 +8,12 @@ Install the current public beta explicitly with the `beta` dist-tag:
 npm install trans-genderian-orchestra@beta
 ```
 
+Install the beta into a disposable OpenCode profile or an explicitly approved real profile with:
+
+```bash
+opencode plugin trans-genderian-orchestra@beta --global --force
+```
+
 `2.0.0-beta.0` is the first published npm version, so npm also points `latest` at this beta. Prefer `@beta` in public examples, automation, and validation until a stable release moves `latest` to a non-prerelease version.
 
 ## Local verification gate
@@ -35,7 +41,7 @@ Expected: output includes `dist`, `README.md`, `MIGRATION.md`, `RELEASE.md`, and
 
 ## Disposable OpenCode validation gate
 
-Install or link the built package into a disposable OpenCode profile only. Do not mutate the real user profile for beta validation.
+Install or link the built package into a disposable OpenCode profile only. Do not mutate the real user profile for beta validation unless that profile has been explicitly approved for dogfooding.
 
 Manual prompt inside the disposable profile:
 

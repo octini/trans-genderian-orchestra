@@ -12,6 +12,12 @@ Install the current public beta explicitly with the `beta` dist-tag:
 npm install trans-genderian-orchestra@beta
 ```
 
+Install the beta into OpenCode with:
+
+```bash
+opencode plugin trans-genderian-orchestra@beta --global --force
+```
+
 Because `2.0.0-beta.0` is the first published npm version, npm also points `latest` at this beta. Prefer `@beta` in examples and automation until a stable release moves `latest` to a non-prerelease version.
 
 ## Bootstrap
