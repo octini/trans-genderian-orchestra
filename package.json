@@ -44,7 +44,7 @@
     "build:cli": "bun build src/cli/index.ts --outdir dist/cli --target node --format esm --external zod",
     "build": "bun run clean:dist && bun run build:plugin && bun run build:cli && tsc --emitDeclarationOnly",
     "typecheck": "tsc --noEmit",
-    "test": "bun test",
+    "test": "bun test --path-ignore-patterns archive",
     "lint": "biome lint .",
     "format": "biome format . --write",
     "check:ci": "biome check .",

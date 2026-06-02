@@ -2,20 +2,20 @@
 
 ## Local verification gate
 
-Run these from `trans-genderian-orchestra-v2/`:
+Run these from repository root:
 
 ```bash
-bun test
+bun test --path-ignore-patterns archive
 bun run typecheck
 bun run check:ci
 bun run build
 ```
 
-Expected: all commands exit 0. `bun test` should report 0 failures.
+Expected: all commands exit 0. `bun test --path-ignore-patterns archive` should report 0 failures.
 
 ## Package preview gate
 
-Run from `trans-genderian-orchestra-v2/`:
+Run from repository root:
 
 ```bash
 npm pack --dry-run --json

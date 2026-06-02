@@ -50,6 +50,7 @@ describe('root cutover layout', () => {
     expect(pkg.homepage).toBe(
       'https://github.com/octini/trans-genderian-orchestra',
     );
+    expect(pkg.scripts.test).toBe('bun test --path-ignore-patterns archive');
   });
 
   test('root README is the real v2 README, not the shim', () => {

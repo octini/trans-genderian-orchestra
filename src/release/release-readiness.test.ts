@@ -8,12 +8,14 @@ describe('release readiness documentation', () => {
       'utf8',
     );
 
-    expect(release).toContain('bun test');
+    expect(release).toContain('bun test --path-ignore-patterns archive');
     expect(release).toContain('bun run typecheck');
     expect(release).toContain('bun run check:ci');
     expect(release).toContain('bun run build');
     expect(release).toContain('npm pack --dry-run --json');
     expect(release).toContain('/tgo:doctor --json');
+    expect(release).toContain('Run these from repository root');
+    expect(release).not.toContain('trans-genderian-orchestra-v2/');
     expect(release).toContain(
       'No git push, npm publish, latest tag, remote repository rewrite, or archived v1 deletion',
     );

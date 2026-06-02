@@ -317,7 +317,7 @@ describe('release readiness documentation', () => {
   test('release guide records local beta validation commands and approval gates', () => {
     const release = readFileSync(new URL('../../RELEASE.md', import.meta.url), 'utf8');
 
-    expect(release).toContain('bun test');
+    expect(release).toContain('bun test --path-ignore-patterns archive');
     expect(release).toContain('bun run typecheck');
     expect(release).toContain('bun run check:ci');
     expect(release).toContain('bun run build');
@@ -504,7 +504,7 @@ Run from repository root:
 
 ```bash
 bun install --frozen-lockfile
-bun test
+bun test --path-ignore-patterns archive
 bun run typecheck
 bun run check:ci
 bun run build
@@ -512,7 +512,7 @@ bun run verify:release-readiness
 npm pack --dry-run --json
 ```
 
-Expected: all commands exit 0. `bun test` reports 0 failures. Verifier reports all checks with `ok: true`. Pack preview includes `package/README.md`, `package/MIGRATION.md`, `package/RELEASE.md`, `package/package.json`, `package/LICENSE`, and `package/dist` artifacts.
+Expected: all commands exit 0. `bun test --path-ignore-patterns archive` reports 0 failures. Verifier reports all checks with `ok: true`. Pack preview includes `package/README.md`, `package/MIGRATION.md`, `package/RELEASE.md`, `package/package.json`, `package/LICENSE`, and `package/dist` artifacts.
 
 - [ ] **Step 2: Run disposable OpenCode root smoke**
 
@@ -658,7 +658,7 @@ Add a root cutover summary to `.slim/deepwork/tgo-v2-phased-implementation.md` r
 - Legacy implementation preserved under `archive/trans-genderian-orchestra-v1/`.
 - Obsolete `trans-genderian-orchestra-v2/` wrapper removed.
 - Root `package.json` metadata now points at the repository root and no longer uses `repository.directory`.
-- Root-level package validation passed: `bun test`, `bun run typecheck`, `bun run check:ci`, `bun run build`, `bun run verify:release-readiness`, and `npm pack --dry-run --json`.
+- Root-level package validation passed: `bun test --path-ignore-patterns archive`, `bun run typecheck`, `bun run check:ci`, `bun run build`, `bun run verify:release-readiness`, and `npm pack --dry-run --json`.
 - Disposable OpenCode root smoke with `opencode/mimo-v2.5-free` passed and left temp config unchanged.
 - No remote push, PR, npm publish, latest tag, remote rewrite, or archived-v1 deletion performed.
 ```
@@ -668,7 +668,7 @@ Add a root cutover summary to `.slim/deepwork/tgo-v2-phased-implementation.md` r
 Run from worktree repository root:
 
 ```bash
-bun test
+bun test --path-ignore-patterns archive
 bun run typecheck
 bun run check:ci
 bun run build
@@ -684,7 +684,7 @@ After final verification passes, use `superpowers:finishing-a-development-branch
 If the user chooses local merge, verify merged `master` from repository root:
 
 ```bash
-bun test
+bun test --path-ignore-patterns archive
 bun run typecheck
 bun run check:ci
 bun run build
