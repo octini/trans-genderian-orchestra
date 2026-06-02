@@ -15,7 +15,7 @@ describe('release readiness documentation', () => {
     expect(release).toContain('npm pack --dry-run --json');
     expect(release).toContain('/tgo:doctor --json');
     expect(release).toContain(
-      'No git push, npm publish, latest tag, root cutover, or v1 archive',
+      'No git push, npm publish, latest tag, remote repository rewrite, or archived v1 deletion',
     );
   });
 

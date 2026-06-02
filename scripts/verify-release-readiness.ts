@@ -14,6 +14,8 @@ interface ReleasePackageJson {
   files?: string[];
   repository?: {
     directory?: string;
+    type?: string;
+    url?: string;
   };
 }
 
@@ -43,12 +45,19 @@ function checkFiles(): CheckResult {
   };
 }
 
-function checkRepositoryDirectory(pkg: ReleasePackageJson): CheckResult {
-  const actual = pkg.repository?.directory;
+function checkRepositoryRoot(pkg: ReleasePackageJson): CheckResult {
+  const directory = pkg.repository?.directory;
   return {
-    id: 'repository.directory',
-    ok: actual === 'trans-genderian-orchestra-v2',
-    detail: `repository.directory=${actual ?? 'missing'}`,
+    id: 'repository_root',
+    ok:
+      pkg.repository?.type === 'git' &&
+      pkg.repository?.url ===
+        'git+ssh://git@github.com/octini/trans-genderian-orchestra.git' &&
+      directory === undefined,
+    detail:
+      directory === undefined
+        ? 'repository points to root'
+        : `repository.directory=${directory}`,
   };
 }
 
@@ -70,7 +79,7 @@ function checkPackFiles(pkg: ReleasePackageJson): CheckResult {
 function checkApprovalBoundaries(): CheckResult {
   const release = readFileSync(join(ROOT, 'RELEASE.md'), 'utf8');
   const required =
-    'No git push, npm publish, latest tag, root cutover, or v1 archive';
+    'No git push, npm publish, latest tag, remote repository rewrite, or archived v1 deletion';
   return {
     id: 'approval_boundaries',
     ok: release.includes(required),
@@ -83,7 +92,7 @@ function checkApprovalBoundaries(): CheckResult {
 const pkg = readPackage();
 const checks = [
   checkFiles(),
-  checkRepositoryDirectory(pkg),
+  checkRepositoryRoot(pkg),
   checkPackFiles(pkg),
   checkApprovalBoundaries(),
 ];

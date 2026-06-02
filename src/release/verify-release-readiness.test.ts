@@ -12,14 +12,15 @@ describe('release readiness verifier', () => {
     );
   });
 
-  test('verifier source checks docs, metadata, and approval boundaries', () => {
+  test('verifier source checks docs, root metadata, and approval boundaries', () => {
     const source = readFileSync(
       new URL('../../scripts/verify-release-readiness.ts', import.meta.url),
       'utf8',
     );
 
     expect(source).toContain('REQUIRED_FILES');
-    expect(source).toContain('repository.directory');
+    expect(source).toContain('repository_root');
+    expect(source).toContain('repository?.directory');
     expect(source).toContain('approval_boundaries');
     expect(source).toContain('process.exitCode = 1');
   });

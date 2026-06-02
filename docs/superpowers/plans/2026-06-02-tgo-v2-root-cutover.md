@@ -40,6 +40,7 @@
 - Modify after moving: `src/release/verify-release-readiness.test.ts`
 - Modify after moving: `scripts/verify-release-readiness.ts`
 - Modify after moving: `package.json`
+- Modify after moving: `biome.json`
 - Modify after moving: `RELEASE.md`
 - Modify ignored coordination state: `.slim/deepwork/tgo-v2-phased-implementation.md`
 
@@ -237,6 +238,7 @@ Expected: commit records root package promotion, v1 archive move, root README re
 **Files:**
 
 - Modify: `package.json`
+- Modify: `biome.json`
 - Modify: `RELEASE.md`
 - Modify: `scripts/verify-release-readiness.ts`
 - Modify: `src/release/repository-layout.test.ts`
@@ -245,6 +247,16 @@ Expected: commit records root package promotion, v1 archive move, root README re
 - Test: `src/release/root-cutover.test.ts`
 
 - [ ] **Step 1: Update repository layout test for root package**
+
+After archiving v1, modify root `biome.json` so active package checks do not traverse archived legacy configuration or Beads coordination metadata:
+
+```json
+"files": {
+  "includes": ["**", "!archive", "!.beads"]
+}
+```
+
+This preserves the archive and Beads metadata while keeping root Biome checks scoped to the active package.
 
 Replace `src/release/repository-layout.test.ts` with:
 
@@ -451,6 +463,7 @@ describe('release readiness verifier', () => {
 Run from repository root:
 
 ```bash
+bun install --frozen-lockfile
 bun test src/release/root-cutover.test.ts src/release/repository-layout.test.ts src/release/release-readiness.test.ts src/release/verify-release-readiness.test.ts
 bun run verify:release-readiness
 bun run typecheck
@@ -460,7 +473,7 @@ bun run check:ci
 Expected: tests pass; verifier reports checks with `ok: true`; typecheck passes; Biome passes. If Biome reports formatting changes, run:
 
 ```bash
-bunx biome check package.json RELEASE.md scripts/verify-release-readiness.ts src/release/root-cutover.test.ts src/release/repository-layout.test.ts src/release/release-readiness.test.ts src/release/verify-release-readiness.test.ts --write
+bunx biome check biome.json package.json RELEASE.md scripts/verify-release-readiness.ts src/release/root-cutover.test.ts src/release/repository-layout.test.ts src/release/release-readiness.test.ts src/release/verify-release-readiness.test.ts --write
 ```
 
 Then rerun the four verification commands.
@@ -470,7 +483,7 @@ Then rerun the four verification commands.
 Run from worktree repository root:
 
 ```bash
-git add package.json RELEASE.md scripts/verify-release-readiness.ts src/release/root-cutover.test.ts src/release/repository-layout.test.ts src/release/release-readiness.test.ts src/release/verify-release-readiness.test.ts
+git add biome.json package.json RELEASE.md scripts/verify-release-readiness.ts src/release/root-cutover.test.ts src/release/repository-layout.test.ts src/release/release-readiness.test.ts src/release/verify-release-readiness.test.ts docs/superpowers/plans/2026-06-02-tgo-v2-root-cutover.md
 git commit -m "chore: update release checks for root package layout"
 ```
 

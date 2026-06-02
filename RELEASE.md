@@ -37,4 +37,4 @@ Expected: with old omo-slim entries present, doctor reports v1 migration availab
 
 ## Approval gates
 
-No git push, npm publish, latest tag, root cutover, or v1 archive happens without explicit approval.
+No git push, npm publish, latest tag, remote repository rewrite, or archived v1 deletion happens without explicit approval.
