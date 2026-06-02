@@ -1,9 +1,10 @@
 import { join } from 'node:path';
 import { parseOpenCodeConfig } from '../config/opencode-config';
 import type { FileSystemAdapter } from '../filesystem/adapter';
+import { readManifest } from '../manifest/store';
 import { TGO_AGENT_IDS } from '../plugin/agent-ids';
 import { findSecretLikeValues } from '../security/secrets';
-import { type CommandDetector, detectRequiredTools } from '../tools/detect';
+import { type CommandDetector, detectPresetTools } from '../tools/detect';
 import {
   createEmptyCommandResult,
   type DeterministicCommandResult,
@@ -32,6 +33,7 @@ export async function runDoctor(
   const result = createEmptyCommandResult('doctor', 'read-only');
   const manifestPath = globalManifestPath(input.homeDir);
   const configPath = globalConfigPath(input.homeDir);
+  const manifest = await readManifest(input.fs, manifestPath);
 
   if (!(await input.fs.exists(manifestPath))) {
     result.planned_actions.push({
@@ -55,6 +57,22 @@ export async function runDoctor(
     }
 
     const config = parseOpenCodeConfig(configText);
+    const managedMcps = new Set(
+      manifest.managed_config
+        .filter((entry) => entry.kind === 'mcp')
+        .map((entry) => entry.key.replace(/^mcp\./, '')),
+    );
+
+    for (const mcpId of Object.keys(config.mcp ?? {})) {
+      if (!managedMcps.has(mcpId) && !mcpId.startsWith('tgo-')) {
+        result.warnings.push({
+          code: 'user-managed-mcp-visible',
+          message: `User-managed MCP ${mcpId} remains visible and unmanaged by TGO.`,
+          severity: 'info',
+        });
+      }
+    }
+
     for (const agentId of TGO_AGENT_IDS) {
       if (!config.agent?.[agentId]) {
         result.warnings.push({
@@ -74,7 +92,10 @@ export async function runDoctor(
     }
   }
 
-  const tools = await detectRequiredTools(input.detector);
+  const tools = await detectPresetTools(
+    manifest.active_presets.tools,
+    input.detector,
+  );
   result.blocked_capabilities.push(...tools.blocked);
   result.degraded_capabilities.push(...tools.degraded);
   result.next_steps.push(

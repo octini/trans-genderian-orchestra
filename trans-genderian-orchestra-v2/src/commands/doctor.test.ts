@@ -30,8 +30,12 @@ describe('doctor command', () => {
       },
     ]);
     expect(result.changes_applied).toEqual([]);
-    expect(result.blocked_capabilities[0]?.capability).toBe('beads');
-    expect(result.degraded_capabilities[0]?.capability).toBe('context7-cli');
+    expect(
+      result.blocked_capabilities.map((capability) => capability.capability),
+    ).toContain('beads');
+    expect(
+      result.degraded_capabilities.map((capability) => capability.capability),
+    ).toContain('context7-cli');
     expect(
       await fs.exists('/home/user/.config/opencode/tgo/manifest.jsonc'),
     ).toBe(false);
@@ -109,5 +113,96 @@ describe('doctor command', () => {
     expect(
       await fs.readText('/home/user/.config/opencode/opencode.jsonc'),
     ).toContain('tgo-orchestrator');
+  });
+
+  test('reports user-managed MCPs as visible without mutating them', async () => {
+    const fs = createMemoryFileSystem({
+      '/home/user/.config/opencode/tgo/manifest.jsonc': JSON.stringify({
+        schema_version: 1,
+        package: {
+          name: 'trans-genderian-orchestra',
+          version: '2.0.0-beta.0',
+        },
+        active_presets: {
+          tools: 'default',
+          models: 'balanced',
+          resilience: 'balanced',
+        },
+        managed_config: [{ kind: 'mcp', key: 'mcp.tgo-websearch' }],
+        tools: [],
+        backups: [],
+        ignored_warnings: [],
+      }),
+      '/home/user/.config/opencode/opencode.jsonc': JSON.stringify({
+        agent: {},
+        mcp: {
+          'user-search': { type: 'remote', url: 'https://example.com' },
+          'tgo-websearch': { type: 'remote', url: 'https://mcp.exa.ai/mcp' },
+        },
+      }),
+    });
+
+    const result = await runDoctor({
+      fs,
+      homeDir: '/home/user',
+      detector: {
+        async which(command) {
+          return command === 'git' || command === 'bd'
+            ? `/usr/bin/${command}`
+            : undefined;
+        },
+      },
+    });
+
+    expect(result.warnings).toContainEqual({
+      code: 'user-managed-mcp-visible',
+      message:
+        'User-managed MCP user-search remains visible and unmanaged by TGO.',
+      severity: 'info',
+    });
+    expect(
+      result.degraded_capabilities.map((capability) => capability.capability),
+    ).toContain('context7-cli');
+    expect(
+      await fs.readText('/home/user/.config/opencode/opencode.jsonc'),
+    ).toContain('user-search');
+  });
+
+  test('reports all-bells optional GitHub and Serena capability degradation', async () => {
+    const fs = createMemoryFileSystem({
+      '/home/user/.config/opencode/tgo/manifest.jsonc': JSON.stringify({
+        schema_version: 1,
+        package: {
+          name: 'trans-genderian-orchestra',
+          version: '2.0.0-beta.0',
+        },
+        active_presets: {
+          tools: 'all-bells',
+          models: 'balanced',
+          resilience: 'balanced',
+        },
+        managed_config: [],
+        tools: [],
+        backups: [],
+        ignored_warnings: [],
+      }),
+      '/home/user/.config/opencode/opencode.jsonc': '{}',
+    });
+
+    const result = await runDoctor({
+      fs,
+      homeDir: '/home/user',
+      detector: {
+        async which(command) {
+          return ['git', 'bd', 'ctx7'].includes(command)
+            ? `/usr/bin/${command}`
+            : undefined;
+        },
+      },
+    });
+
+    expect(
+      result.degraded_capabilities.map((capability) => capability.capability),
+    ).toEqual(['aft', 'github-cli', 'serena']);
   });
 });

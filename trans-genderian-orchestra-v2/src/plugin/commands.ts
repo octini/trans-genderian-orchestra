@@ -14,7 +14,7 @@ export function createTgoCommandConfigs(): Record<string, TgoCommandConfig> {
       description:
         'Change TGO v2 setup, presets, managed tools, or repair state with preview.',
       template:
-        'Run the deterministic TGO setup workflow with preview before config mutation.',
+        'Preview deterministic TGO setup changes. Tool presets may be bare-bones, default, or all-bells; changing tools must preserve user-managed skills, plugins, MCPs, providers, and agents, use env/OAuth references only, and must not change model or resilience presets.',
     },
     'tgo:init': {
       description:

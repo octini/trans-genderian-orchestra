@@ -99,6 +99,18 @@ describe('TGO plugin config definitions', () => {
       'Inspect TGO v2 setup',
     );
     expect(commands['tgo:setup'].description).toContain('Change TGO v2 setup');
+    expect(commands['tgo:setup'].template).toContain(
+      'bare-bones, default, or all-bells',
+    );
+    expect(commands['tgo:setup'].template).toContain(
+      'preserve user-managed skills, plugins, MCPs, providers, and agents',
+    );
+    expect(commands['tgo:setup'].template).toContain(
+      'env/OAuth references only',
+    );
+    expect(commands['tgo:models'].template).toContain(
+      'without changing tool or resilience presets',
+    );
     expect(commands['tgo:init'].description).toContain('Initialize TGO v2');
     expect(commands['tgo:work'].template).toContain('approved TGO plan');
     expect(commands['tgo:work'].template).toContain(
