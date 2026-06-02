@@ -22,6 +22,11 @@ export function createTgoCommandConfigs(): Record<string, TgoCommandConfig> {
       template:
         'Run the TGO project initialization workflow with preview and backups.',
     },
+    'tgo:uninstall': {
+      description: 'Preview and remove TGO-managed setup entries safely.',
+      template:
+        'Run deterministic TGO uninstall with preview. It must remove only TGO-managed entries recorded in the manifest, create or reference a manifest-linked backup for rollback, and must not uninstall shared CLIs such as bd, ctx7, gh, or uvx.',
+    },
     'tgo:work': {
       description:
         'Start or continue approved TGO-managed implementation work.',

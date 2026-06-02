@@ -131,6 +131,15 @@ describe('TGO plugin config definitions', () => {
     expect(commands['tgo:work'].template).toContain(
       'Do not push, open a PR, merge to main, or clean up worktrees without explicit approval.',
     );
+    expect(commands['tgo:uninstall'].template).toContain(
+      'remove only TGO-managed entries',
+    );
+    expect(commands['tgo:uninstall'].template).toContain(
+      'manifest-linked backup',
+    );
+    expect(commands['tgo:uninstall'].template).toContain(
+      'must not uninstall shared CLIs',
+    );
     expect(commands.init.description).toContain('Compatibility alias');
     expect(commands['beads:init'].description).toContain('Compatibility alias');
   });

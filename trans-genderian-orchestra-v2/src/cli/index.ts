@@ -2,6 +2,7 @@
 
 import { runBootstrap } from '../commands/bootstrap';
 import { runDoctor } from '../commands/doctor';
+import { runUninstall } from '../commands/uninstall';
 import { createNodeFileSystem } from '../filesystem/adapter';
 import type { ModelPreset, ResiliencePreset } from '../manifest/schema';
 import type { ToolPresetName } from '../tools/presets';
@@ -13,6 +14,7 @@ function printHelp(): void {
 Usage:
   trans-genderian-orchestra bootstrap [--tools default] [--models balanced] [--resilience balanced] [--dry-run] [--yes] [--json]
   trans-genderian-orchestra doctor [--json]
+  trans-genderian-orchestra uninstall [--yes] [--json]
 `);
 }
 
@@ -74,6 +76,22 @@ async function main(): Promise<void> {
       fs,
       homeDir,
       detector: createPathDetector(),
+    });
+    console.log(
+      args.json
+        ? JSON.stringify(result, null, 2)
+        : result.next_steps.join('\n'),
+    );
+    return;
+  }
+
+  if (args.command === 'uninstall') {
+    const result = await runUninstall({
+      fs,
+      homeDir,
+      mode: args.yes ? 'apply' : 'dry-run',
+      operationId: `uninstall-${Date.now()}`,
+      timestamp: new Date().toISOString().replaceAll(':', '-'),
     });
     console.log(
       args.json

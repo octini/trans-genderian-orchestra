@@ -43,4 +43,12 @@ describe('CLI argument parser', () => {
       json: true,
     });
   });
+
+  test('parses uninstall flags', () => {
+    expect(parseCliArgs(['uninstall', '--yes', '--json'])).toEqual({
+      command: 'uninstall',
+      yes: true,
+      json: true,
+    });
+  });
 });

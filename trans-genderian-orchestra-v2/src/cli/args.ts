@@ -9,6 +9,7 @@ export type CliArgs =
       resilience: string;
     }
   | { command: 'doctor'; json: boolean }
+  | { command: 'uninstall'; yes: boolean; json: boolean }
   | { command: 'help' };
 
 function valueAfter(args: string[], flag: string, fallback: string): string {
@@ -31,6 +32,13 @@ export function parseCliArgs(args: string[]): CliArgs {
   }
   if (command === 'doctor') {
     return { command: 'doctor', json: args.includes('--json') };
+  }
+  if (command === 'uninstall') {
+    return {
+      command: 'uninstall',
+      yes: args.includes('--yes'),
+      json: args.includes('--json'),
+    };
   }
   return { command: 'help' };
 }
