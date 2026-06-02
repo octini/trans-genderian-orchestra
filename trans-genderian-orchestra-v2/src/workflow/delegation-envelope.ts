@@ -66,7 +66,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function hasStringArray(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every((entry) => typeof entry === 'string');
+  return (
+    Array.isArray(value) && value.every((entry) => typeof entry === 'string')
+  );
 }
 
 export function validateDelegationEnvelope(

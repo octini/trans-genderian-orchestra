@@ -73,7 +73,9 @@ describe('workflow intent routing', () => {
         'docs/superpowers/plans/2026-06-02-tgo-v2-phase-3-workflow-contracts-artifacts.md',
     });
 
-    expect(text).toContain('Selected task: phase3-workflow-contracts-artifacts');
+    expect(text).toContain(
+      'Selected task: phase3-workflow-contracts-artifacts',
+    );
     expect(text).toContain('Goal: Implement workflow contracts');
     expect(text).toContain('Scope: src/workflow/**; src/artifacts/**');
     expect(text).toContain(

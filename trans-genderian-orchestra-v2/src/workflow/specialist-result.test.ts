@@ -32,7 +32,9 @@ describe('specialist result contract validation', () => {
       ],
       scope_check: 'Read-only research only.',
       validation_run: [],
-      remaining_risks: ['Spec 04 has runtime requirements deferred to Phase 4.'],
+      remaining_risks: [
+        'Spec 04 has runtime requirements deferred to Phase 4.',
+      ],
       recommended_next_step: 'Write implementation plan.',
       findings: ['Phase 3 requires schema failure handling.'],
       uncertainty: ['No runtime dispatcher yet.'],
@@ -47,7 +49,9 @@ describe('specialist result contract validation', () => {
       status: 'completed',
       summary: 'Reviewer passed Phase 3.',
       artifact_refs: ['.opencode/tgo/reviews/phase3-review.md'],
-      inspected_sources: ['trans-genderian-orchestra-v2/src/workflow/intent.ts'],
+      inspected_sources: [
+        'trans-genderian-orchestra-v2/src/workflow/intent.ts',
+      ],
       scope_check: 'No scope drift.',
       validation_run: ['bun test'],
       remaining_risks: [],
@@ -71,7 +75,9 @@ describe('specialist result contract validation', () => {
       throw new Error('expected schema failure');
     }
     expect(result.failure.status).toBe('tool_schema_failure');
-    expect(result.failure.errors).toContain('Missing required field: scope_check');
+    expect(result.failure.errors).toContain(
+      'Missing required field: scope_check',
+    );
   });
 
   test('returns tool_schema_failure for invalid status', () => {

@@ -83,9 +83,7 @@ describe('TGO plugin config definitions', () => {
     expect(agents['tgo-reviewer'].prompt).toContain('read-only verification');
     expect(agents['tgo-orchestrator'].prompt).toContain('inferred_intent');
     expect(agents['tgo-orchestrator'].prompt).toContain('Goal Confirmation');
-    expect(agents['tgo-orchestrator'].prompt).toContain(
-      'Delegation Envelope',
-    );
+    expect(agents['tgo-orchestrator'].prompt).toContain('Delegation Envelope');
     expect(agents['tgo-orchestrator'].prompt).toContain(
       'Specialist Result Contract',
     );

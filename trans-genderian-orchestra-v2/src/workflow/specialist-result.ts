@@ -12,7 +12,8 @@ export const SPECIALIST_RESULT_STATUSES = [
 ] as const;
 
 export type SpecialistLane = 'researcher' | 'builder' | 'reviewer' | 'council';
-export type SpecialistResultStatus = (typeof SPECIALIST_RESULT_STATUSES)[number];
+export type SpecialistResultStatus =
+  (typeof SPECIALIST_RESULT_STATUSES)[number];
 
 export interface SpecialistResult {
   status: SpecialistResultStatus;
@@ -36,7 +37,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function hasStringArray(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every((entry) => typeof entry === 'string');
+  return (
+    Array.isArray(value) && value.every((entry) => typeof entry === 'string')
+  );
 }
 
 function requireString(
@@ -87,7 +90,9 @@ export function validateSpecialistResult(
   requireStringArray(errors, value, 'validation_run');
   requireStringArray(errors, value, 'remaining_risks');
 
-  if (!SPECIALIST_RESULT_STATUSES.includes(value.status as SpecialistResultStatus)) {
+  if (
+    !SPECIALIST_RESULT_STATUSES.includes(value.status as SpecialistResultStatus)
+  ) {
     errors.push(
       `Invalid status: ${String(value.status)}. Expected ${SPECIALIST_RESULT_STATUSES.slice(0, -1).join(', ')}, or ${SPECIALIST_RESULT_STATUSES.at(-1)}.`,
     );

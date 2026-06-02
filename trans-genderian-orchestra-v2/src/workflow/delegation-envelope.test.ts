@@ -18,12 +18,14 @@ const validEnvelope = {
   acceptance_criteria: ['Delegation envelope required fields are enforced.'],
   verification_required: ['bun test src/workflow/delegation-envelope.test.ts'],
   allowed_write_paths: ['trans-genderian-orchestra-v2/src/workflow/**'],
-  failure_mode: 'Return needs_decision or rejected_scope instead of improvising.',
+  failure_mode:
+    'Return needs_decision or rejected_scope instead of improvising.',
   user_intent: {
     verbatim_request:
       'Continue with phased implementation, writing the plan for each phase based on the design document.',
     relevant_quotes: ['stop only when you need input from me'],
-    orchestrator_interpretation: 'Implement Phase 3 from approved design specs.',
+    orchestrator_interpretation:
+      'Implement Phase 3 from approved design specs.',
     user_confirmed_decisions: [
       'Local commits allowed; no remote push without asking.',
     ],
