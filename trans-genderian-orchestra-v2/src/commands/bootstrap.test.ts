@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { createMemoryFileSystem } from '../filesystem/memory-adapter';
+import { TGO_AGENT_IDS } from '../plugin/agent-ids';
 import { runBootstrap } from './bootstrap';
 
 describe('bootstrap command', () => {
@@ -69,13 +70,19 @@ describe('bootstrap command', () => {
     expect(config.plugin).toContain('user-plugin');
     expect(config.plugin).toContain('trans-genderian-orchestra@2.0.0-beta.0');
     expect(config.default_agent).toBe('tgo-orchestrator');
+    for (const agentId of TGO_AGENT_IDS) {
+      expect(config.agent[agentId]).toBeDefined();
+    }
 
     const manifest = JSON.parse(
       await fs.readText('/home/user/.config/opencode/tgo/manifest.jsonc'),
     );
     expect(manifest.backups).toHaveLength(1);
-    expect(
-      manifest.managed_config.map((entry: { key: string }) => entry.key),
-    ).toContain('agent.tgo-orchestrator');
+    const managedConfigKeys = manifest.managed_config.map(
+      (entry: { key: string }) => entry.key,
+    );
+    expect(managedConfigKeys).toContain('agent.tgo-orchestrator');
+    expect(managedConfigKeys).toContain('agent.tgo-builder');
+    expect(managedConfigKeys).toContain('agent.tgo-reviewer');
   });
 });

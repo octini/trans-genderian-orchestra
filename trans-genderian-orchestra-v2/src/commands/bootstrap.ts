@@ -141,7 +141,10 @@ export async function runBootstrap(
     { kind: 'plugin', key: 'plugin.trans-genderian-orchestra@2.0.0-beta.0' },
     { kind: 'plugin', key: 'plugin.opencode-beads@0.7.0' },
     { kind: 'plugin', key: 'plugin.aft@0.0.0-pinned-after-verification' },
-    { kind: 'agent', key: 'agent.tgo-orchestrator' },
+    ...Object.keys(entries.agents).map((agentId) => ({
+      kind: 'agent' as const,
+      key: `agent.${agentId}`,
+    })),
     { kind: 'mcp', key: 'mcp.tgo-websearch' },
     { kind: 'mcp', key: 'mcp.tgo-grep-app' },
     { kind: 'default_agent', key: 'default_agent' },

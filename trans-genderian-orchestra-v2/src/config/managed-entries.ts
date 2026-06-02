@@ -1,3 +1,5 @@
+import { createTgoAgentConfigs } from '../plugin/agents';
+
 export interface ManagedEntries {
   plugins: string[];
   defaultAgent: string;
@@ -13,12 +15,7 @@ export function planDefaultManagedEntries(): ManagedEntries {
       'aft@0.0.0-pinned-after-verification',
     ],
     defaultAgent: 'tgo-orchestrator',
-    agents: {
-      'tgo-orchestrator': {
-        description: 'TGO Orchestrator: technical lead and phase controller.',
-        mode: 'primary',
-      },
-    },
+    agents: createTgoAgentConfigs(),
     mcps: {
       'tgo-websearch': {
         type: 'remote',

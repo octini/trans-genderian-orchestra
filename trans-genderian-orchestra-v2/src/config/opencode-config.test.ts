@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { TGO_AGENT_IDS } from '../plugin/agent-ids';
 import { planDefaultManagedEntries } from './managed-entries';
 import { applyManagedEntries, parseOpenCodeConfig } from './opencode-config';
 
@@ -42,5 +43,27 @@ describe('OpenCode config helpers', () => {
         severity: 'warning',
       },
     ]);
+  });
+
+  test('adds all TGO-managed agents while preserving user agents', () => {
+    const existing = parseOpenCodeConfig(
+      JSON.stringify({
+        agent: {
+          'user-agent': {
+            description: 'User-owned agent',
+            mode: 'subagent',
+            prompt: 'Do user things.',
+          },
+        },
+      }),
+    );
+
+    const result = applyManagedEntries(existing, planDefaultManagedEntries());
+
+    expect(result.config.agent?.['user-agent']).toBeDefined();
+    for (const agentId of TGO_AGENT_IDS) {
+      expect(result.config.agent?.[agentId]).toBeDefined();
+    }
+    expect(result.config.default_agent).toBe('tgo-orchestrator');
   });
 });
