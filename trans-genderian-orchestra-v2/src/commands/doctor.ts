@@ -1,5 +1,7 @@
 import { join } from 'node:path';
+import { parseOpenCodeConfig } from '../config/opencode-config';
 import type { FileSystemAdapter } from '../filesystem/adapter';
+import { TGO_AGENT_IDS } from '../plugin/agent-ids';
 import { findSecretLikeValues } from '../security/secrets';
 import { type CommandDetector, detectRequiredTools } from '../tools/detect';
 import {
@@ -49,6 +51,25 @@ export async function runDoctor(
         message:
           'OpenCode config contains secret-like values; rotate exposed tokens and replace with env references.',
         severity: 'error',
+      });
+    }
+
+    const config = parseOpenCodeConfig(configText);
+    for (const agentId of TGO_AGENT_IDS) {
+      if (!config.agent?.[agentId]) {
+        result.warnings.push({
+          code: 'missing-managed-agent',
+          message: `TGO-managed agent ${agentId} is missing from OpenCode config.`,
+          severity: 'warning',
+        });
+      }
+    }
+  } else {
+    for (const agentId of TGO_AGENT_IDS) {
+      result.warnings.push({
+        code: 'missing-managed-agent',
+        message: `TGO-managed agent ${agentId} is missing from OpenCode config.`,
+        severity: 'warning',
       });
     }
   }

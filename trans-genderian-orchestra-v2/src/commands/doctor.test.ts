@@ -61,4 +61,51 @@ describe('doctor command', () => {
       severity: 'error',
     });
   });
+
+  test('reports missing managed TGO agents without writing files', async () => {
+    const fs = createMemoryFileSystem({
+      '/home/user/.config/opencode/tgo/manifest.jsonc': JSON.stringify({
+        package: { name: 'trans-genderian-orchestra', version: '2.0.0-beta.0' },
+        active_presets: {
+          tools: 'default',
+          models: 'balanced',
+          resilience: 'balanced',
+        },
+        managed_config: [{ kind: 'agent', key: 'agent.tgo-builder' }],
+        tools: [],
+        backups: [],
+        ignored_warnings: [],
+        last_verified_at: null,
+      }),
+      '/home/user/.config/opencode/opencode.jsonc': JSON.stringify({
+        agent: {
+          'tgo-orchestrator': {
+            description: 'Present',
+            mode: 'primary',
+            prompt: 'Present.',
+          },
+        },
+      }),
+    });
+
+    const result = await runDoctor({
+      fs,
+      homeDir: '/home/user',
+      detector: {
+        async which(command) {
+          return command === 'git' ? '/usr/bin/git' : undefined;
+        },
+      },
+    });
+
+    expect(result.warnings.map((warning) => warning.code)).toContain(
+      'missing-managed-agent',
+    );
+    expect(
+      result.warnings.some((warning) => warning.message.includes('tgo-builder')),
+    ).toBe(true);
+    expect(await fs.readText('/home/user/.config/opencode/opencode.jsonc')).toContain(
+      'tgo-orchestrator',
+    );
+  });
 });
