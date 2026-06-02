@@ -1,6 +1,6 @@
 {
   "name": "trans-genderian-orchestra",
-  "version": "2.0.0-beta.0",
+  "version": "2.0.0-beta.1",
   "description": "TGO v2 OpenCode engineering workflow plugin",
   "type": "module",
   "license": "MIT",

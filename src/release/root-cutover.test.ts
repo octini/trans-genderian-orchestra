@@ -41,7 +41,7 @@ describe('root cutover layout', () => {
     );
 
     expect(pkg.name).toBe('trans-genderian-orchestra');
-    expect(pkg.version).toBe('2.0.0-beta.0');
+    expect(pkg.version).toMatch(/^2\.0\.0-beta\.\d+$/);
     expect(pkg.repository).toEqual({
       type: 'git',
       url: 'git+ssh://git@github.com/octini/trans-genderian-orchestra.git',
