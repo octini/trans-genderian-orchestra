@@ -9,6 +9,7 @@
 
 # Dependencies and build output
 node_modules/
+dist/
 
 # Local agent worktrees
 .worktrees
