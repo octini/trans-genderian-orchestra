@@ -5,6 +5,8 @@ export interface OpenCodeConfig {
   plugin?: Array<string | [string, Record<string, unknown>]>;
   agent?: Record<string, unknown>;
   mcp?: Record<string, unknown>;
+  modelPresets?: Record<string, unknown>;
+  presets?: Record<string, unknown>;
   provider?: Record<string, unknown>;
   default_agent?: string;
   [key: string]: unknown;
