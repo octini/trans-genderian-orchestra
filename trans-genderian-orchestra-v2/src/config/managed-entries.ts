@@ -1,4 +1,5 @@
-import { createTgoAgentConfigs } from '../plugin/agents';
+import { createManagedEntriesForToolPreset } from '../tools/managed';
+import type { ToolPresetName } from '../tools/presets';
 
 export interface ManagedEntries {
   plugins: string[];
@@ -7,29 +8,8 @@ export interface ManagedEntries {
   mcps: Record<string, unknown>;
 }
 
-export function planDefaultManagedEntries(): ManagedEntries {
-  return {
-    plugins: [
-      'trans-genderian-orchestra@2.0.0-beta.0',
-      'opencode-beads@0.7.0',
-      'aft@0.0.0-pinned-after-verification',
-    ],
-    defaultAgent: 'tgo-orchestrator',
-    agents: createTgoAgentConfigs(),
-    mcps: {
-      'tgo-websearch': {
-        type: 'remote',
-        url: 'https://mcp.exa.ai/mcp',
-        enabled: true,
-        headers: {
-          Authorization: 'Bearer {env:EXA_API_KEY}',
-        },
-      },
-      'tgo-grep-app': {
-        type: 'remote',
-        url: 'https://mcp.grep.app',
-        enabled: true,
-      },
-    },
-  };
+export function planDefaultManagedEntries(
+  tools: ToolPresetName = 'default',
+): ManagedEntries {
+  return createManagedEntriesForToolPreset(tools);
 }
