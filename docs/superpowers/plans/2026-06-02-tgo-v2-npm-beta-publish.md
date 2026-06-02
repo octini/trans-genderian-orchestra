@@ -98,7 +98,7 @@ Run from repository root:
 
 ```bash
 bun install --frozen-lockfile
-bun test
+bun run test
 bun run typecheck
 bun run check:ci
 bun run build
@@ -108,7 +108,7 @@ bun run verify:release-readiness
 Expected:
 
 - `bun install --frozen-lockfile` exits 0 without changing `bun.lock`.
-- `bun test` exits 0 and ignores `archive/` through the package script.
+- `bun run test` exits 0 and ignores `archive/` through the package script.
 - `bun run typecheck` exits 0.
 - `bun run check:ci` exits 0.
 - `bun run build` exits 0 and writes `dist/` artifacts.
@@ -283,7 +283,7 @@ Update `.slim/deepwork/tgo-v2-phased-implementation.md` with:
 ## npm Beta Publish Summary
 
 - Published `trans-genderian-orchestra@2.0.0-beta.0` with npm dist-tag `beta`.
-- Pre-publish verification passed: `bun test`, `bun run typecheck`, `bun run check:ci`, `bun run build`, `bun run verify:release-readiness`, `npm pack --dry-run --json`, and `npm publish --tag beta --dry-run`.
+- Pre-publish verification passed: `bun run test`, `bun run typecheck`, `bun run check:ci`, `bun run build`, `bun run verify:release-readiness`, `npm pack --dry-run --json`, and `npm publish --tag beta --dry-run`.
 - Post-publish verification confirmed npm registry version `2.0.0-beta.0` and `beta` dist-tag.
 - No `latest` publish, GitHub release, PR, remote rewrite, or archived v1 deletion was performed.
 ```
