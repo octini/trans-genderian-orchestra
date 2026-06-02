@@ -83,20 +83,22 @@ export function validateSpecialistResult(
   }
 
   const errors: string[] = [];
-  requireString(errors, value, 'summary');
-  requireString(errors, value, 'scope_check');
-  requireString(errors, value, 'recommended_next_step');
-  requireStringArray(errors, value, 'artifact_refs');
-  requireStringArray(errors, value, 'validation_run');
-  requireStringArray(errors, value, 'remaining_risks');
-
-  if (
+  if (!('status' in value)) {
+    errors.push('Missing required field: status');
+  } else if (
     !SPECIALIST_RESULT_STATUSES.includes(value.status as SpecialistResultStatus)
   ) {
     errors.push(
       `Invalid status: ${String(value.status)}. Expected ${SPECIALIST_RESULT_STATUSES.slice(0, -1).join(', ')}, or ${SPECIALIST_RESULT_STATUSES.at(-1)}.`,
     );
   }
+
+  requireString(errors, value, 'summary');
+  requireString(errors, value, 'scope_check');
+  requireString(errors, value, 'recommended_next_step');
+  requireStringArray(errors, value, 'artifact_refs');
+  requireStringArray(errors, value, 'validation_run');
+  requireStringArray(errors, value, 'remaining_risks');
 
   if (lane === 'builder') {
     requireStringArray(errors, value, 'changed_files');

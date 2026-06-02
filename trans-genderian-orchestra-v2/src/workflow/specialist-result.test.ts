@@ -66,7 +66,6 @@ describe('specialist result contract validation', () => {
 
   test('returns tool_schema_failure for missing common fields', () => {
     const result = validateSpecialistResult('builder', {
-      status: 'completed',
       summary: 'Missing validation fields.',
     });
 
@@ -75,6 +74,7 @@ describe('specialist result contract validation', () => {
       throw new Error('expected schema failure');
     }
     expect(result.failure.status).toBe('tool_schema_failure');
+    expect(result.failure.errors).toContain('Missing required field: status');
     expect(result.failure.errors).toContain(
       'Missing required field: scope_check',
     );
