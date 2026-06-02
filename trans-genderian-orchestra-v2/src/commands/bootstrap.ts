@@ -9,11 +9,11 @@ import {
 import type { FileSystemAdapter } from '../filesystem/adapter';
 import { readManifest, writeManifest } from '../manifest/store';
 import { findSecretLikeValues } from '../security/secrets';
-import { detectRequiredTools, type CommandDetector } from '../tools/detect';
+import { type CommandDetector, detectRequiredTools } from '../tools/detect';
 import {
   createEmptyCommandResult,
-  markRestartRequired,
   type DeterministicCommandResult,
+  markRestartRequired,
 } from './result';
 
 export interface BootstrapInput {

@@ -10,9 +10,9 @@ describe('memory filesystem adapter', () => {
     expect(await fs.exists('/home/user/.config/opencode/opencode.jsonc')).toBe(
       true,
     );
-    expect(await fs.readText('/home/user/.config/opencode/opencode.jsonc')).toBe(
-      '{}',
-    );
+    expect(
+      await fs.readText('/home/user/.config/opencode/opencode.jsonc'),
+    ).toBe('{}');
 
     await fs.writeText(
       '/home/user/.config/opencode/tgo/manifest.jsonc',

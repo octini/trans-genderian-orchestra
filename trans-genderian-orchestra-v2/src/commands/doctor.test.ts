@@ -32,9 +32,9 @@ describe('doctor command', () => {
     expect(result.changes_applied).toEqual([]);
     expect(result.blocked_capabilities[0]?.capability).toBe('beads');
     expect(result.degraded_capabilities[0]?.capability).toBe('context7-cli');
-    expect(await fs.exists('/home/user/.config/opencode/tgo/manifest.jsonc')).toBe(
-      false,
-    );
+    expect(
+      await fs.exists('/home/user/.config/opencode/tgo/manifest.jsonc'),
+    ).toBe(false);
   });
 
   test('reports raw secret-like values in current config as warnings', async () => {

@@ -31,9 +31,9 @@ describe('bootstrap command', () => {
       'set-default-agent',
     ]);
     expect(result.changes_applied).toEqual([]);
-    expect(await fs.readText('/home/user/.config/opencode/opencode.jsonc')).toBe(
-      '{"plugin":["user-plugin"]}',
-    );
+    expect(
+      await fs.readText('/home/user/.config/opencode/opencode.jsonc'),
+    ).toBe('{"plugin":["user-plugin"]}');
     expect(result.blocked_capabilities[0]?.capability).toBe('beads');
     expect(result.degraded_capabilities[0]?.capability).toBe('context7-cli');
   });

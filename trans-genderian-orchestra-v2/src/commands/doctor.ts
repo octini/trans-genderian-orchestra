@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import type { FileSystemAdapter } from '../filesystem/adapter';
 import { findSecretLikeValues } from '../security/secrets';
-import { detectRequiredTools, type CommandDetector } from '../tools/detect';
+import { type CommandDetector, detectRequiredTools } from '../tools/detect';
 import {
   createEmptyCommandResult,
   type DeterministicCommandResult,
@@ -56,6 +56,8 @@ export async function runDoctor(
   const tools = await detectRequiredTools(input.detector);
   result.blocked_capabilities.push(...tools.blocked);
   result.degraded_capabilities.push(...tools.degraded);
-  result.next_steps.push('Review doctor output before running any repair command.');
+  result.next_steps.push(
+    'Review doctor output before running any repair command.',
+  );
   return result;
 }

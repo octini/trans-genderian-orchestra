@@ -1,4 +1,9 @@
-export type CommandName = 'bootstrap' | 'doctor' | 'setup' | 'uninstall' | 'init';
+export type CommandName =
+  | 'bootstrap'
+  | 'doctor'
+  | 'setup'
+  | 'uninstall'
+  | 'init';
 
 export type CommandMode = 'dry-run' | 'apply' | 'read-only' | 'repair';
 

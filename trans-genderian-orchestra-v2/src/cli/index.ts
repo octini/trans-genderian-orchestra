@@ -50,7 +50,9 @@ async function main(): Promise<void> {
       detector: createPathDetector(),
     });
     console.log(
-      args.json ? JSON.stringify(result, null, 2) : result.next_steps.join('\n'),
+      args.json
+        ? JSON.stringify(result, null, 2)
+        : result.next_steps.join('\n'),
     );
     return;
   }

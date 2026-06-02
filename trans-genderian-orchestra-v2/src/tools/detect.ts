@@ -21,7 +21,9 @@ async function detectTool(
   name: DetectedTool['name'],
 ): Promise<DetectedTool> {
   const path = await detector.which(name);
-  return path ? { name, status: 'user-managed', path } : { name, status: 'missing' };
+  return path
+    ? { name, status: 'user-managed', path }
+    : { name, status: 'missing' };
 }
 
 export async function detectRequiredTools(
