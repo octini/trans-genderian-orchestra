@@ -87,9 +87,9 @@ function seedDisposableProfile(
 ): string {
   const originalConfig = JSON.stringify({
     $schema: 'https://opencode.ai/config.json',
-    plugin: ['oh-my-opencode-slim', 'user-plugin'],
+    plugin: [],
     agent: { orchestrator: {}, 'user-agent': {} },
-    mcp: { websearch: {}, 'user-mcp': {} },
+    mcp: {},
     provider: { custom: { marker: 'preserve-me' } },
   });
 
@@ -126,7 +126,7 @@ const manifestPath = join(manifestDir, 'manifest.jsonc');
 const checks: CheckResult[] = [];
 
 mkdirSync(manifestDir, { recursive: true });
-const originalConfig = seedDisposableProfile(configPath, manifestPath);
+seedDisposableProfile(configPath, manifestPath);
 
 try {
   const npmVersion = run(
@@ -157,6 +157,7 @@ try {
       `exit=${install.status}`,
     ),
   );
+  const configBeforeDoctor = readFileSync(configPath, 'utf8');
 
   const doctor = run(
     'opencode',
@@ -187,7 +188,8 @@ try {
   const hasDoctorJson = strings.some((value) =>
     value.includes('v1-migration-available'),
   );
-  const configUnchanged = readFileSync(configPath, 'utf8') === originalConfig;
+  const configUnchanged =
+    readFileSync(configPath, 'utf8') === configBeforeDoctor;
 
   checks.push(
     check('opencode_run_exit', doctor.status === 0, `exit=${doctor.status}`),

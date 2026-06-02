@@ -4,7 +4,7 @@
 
 **Goal:** Add a repeatable automated smoke check proving the published TGO beta works through OpenCode before manual UI testing.
 
-**Architecture:** Keep the smoke outside the default test suite because it requires OpenCode, npm/network access, and a usable model. Implement a standalone TypeScript script that creates a disposable HOME, installs the public beta plugin into that HOME, seeds old omo-slim config, runs `/tgo:doctor --json` through `opencode run`, and asserts the actual command path and read-only doctor result.
+**Architecture:** Keep the smoke outside the default test suite because it requires OpenCode, npm/network access, and a usable model. Implement a standalone TypeScript script that creates a disposable HOME, installs the public beta plugin into that HOME, seeds schema-safe old omo-slim agent config, runs `/tgo:doctor --json` through `opencode run`, and asserts the actual command path and read-only doctor result.
 
 **Tech Stack:** Bun, TypeScript, Node filesystem/process APIs, OpenCode CLI, npm registry, existing release docs/tests.
 
@@ -155,9 +155,9 @@ const configPath = join(configDir, 'opencode.jsonc');
 const manifestPath = join(manifestDir, 'manifest.jsonc');
 const originalConfig = JSON.stringify({
   $schema: 'https://opencode.ai/config.json',
-  plugin: ['oh-my-opencode-slim', 'user-plugin'],
+  plugin: [],
   agent: { orchestrator: {}, 'user-agent': {} },
-  mcp: { websearch: {}, 'user-mcp': {} },
+  mcp: {},
   provider: { custom: { marker: 'preserve-me' } },
 });
 

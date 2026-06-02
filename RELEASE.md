@@ -45,6 +45,14 @@ Expected: output includes `dist`, `README.md`, `MIGRATION.md`, `RELEASE.md`, and
 
 Install or link the built package into a disposable OpenCode profile only. Do not mutate the real user profile for beta validation unless that profile has been explicitly approved for dogfooding.
 
+Automated public beta smoke:
+
+```bash
+bun run verify:public-beta-opencode
+```
+
+Expected: installs `trans-genderian-orchestra@beta` into a disposable `HOME`, runs `/tgo:doctor --json` through OpenCode, confirms the actual command uses `npx --yes trans-genderian-orchestra@beta doctor --json`, confirms `bd doctor` is not run, confirms TGO doctor JSON is returned, and confirms the disposable config is unchanged.
+
 Manual prompt inside the disposable profile:
 
 ```text

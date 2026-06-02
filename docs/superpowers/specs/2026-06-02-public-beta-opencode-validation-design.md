@@ -20,7 +20,7 @@ The script will:
 
 - Create a disposable temp `HOME` and never write to the real profile.
 - Install `trans-genderian-orchestra@beta` into that disposable profile with `opencode plugin trans-genderian-orchestra@beta --global --force`.
-- Seed the disposable profile with old omo-slim style config and a TGO manifest.
+- Seed the disposable profile with schema-safe old omo-slim style agent config and a TGO manifest.
 - Run `opencode run -m opencode/mimo-v2.5-free --command=tgo:doctor --format json --dir <repo-root> -- --json`.
 - Parse OpenCode JSONL output and assert the actual tool command includes `npx --yes trans-genderian-orchestra@beta doctor --json`.
 - Assert no actual tool command includes `bd doctor`.

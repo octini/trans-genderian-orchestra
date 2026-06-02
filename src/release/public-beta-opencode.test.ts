@@ -24,6 +24,7 @@ describe('public beta OpenCode validation smoke', () => {
       'npx --yes trans-genderian-orchestra@beta doctor --json',
     );
     expect(source).toContain('bd doctor');
+    expect(source).toContain('configBeforeDoctor');
     expect(source).toContain('configUnchanged');
     expect(source).toContain('process.exitCode = 1');
   });
