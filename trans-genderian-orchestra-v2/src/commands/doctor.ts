@@ -2,7 +2,9 @@ import { join } from 'node:path';
 import { parseOpenCodeConfig } from '../config/opencode-config';
 import type { FileSystemAdapter } from '../filesystem/adapter';
 import { readManifest } from '../manifest/store';
+import { resolveModelPresetCatalog } from '../models/config';
 import { TGO_AGENT_IDS } from '../plugin/agent-ids';
+import { planResilienceSwitch } from '../resilience/profiles';
 import { findSecretLikeValues } from '../security/secrets';
 import { type CommandDetector, detectPresetTools } from '../tools/detect';
 import {
@@ -35,6 +37,12 @@ export async function runDoctor(
   const configPath = globalConfigPath(input.homeDir);
   const manifest = await readManifest(input.fs, manifestPath);
 
+  result.warnings.push({
+    code: 'active-presets',
+    message: `Active TGO presets: tools=${manifest.active_presets.tools}, models=${manifest.active_presets.models}, resilience=${manifest.active_presets.resilience}.`,
+    severity: 'info',
+  });
+
   if (!(await input.fs.exists(manifestPath))) {
     result.planned_actions.push({
       id: 'create-global-manifest',
@@ -57,6 +65,9 @@ export async function runDoctor(
     }
 
     const config = parseOpenCodeConfig(configText);
+    const modelPresets = resolveModelPresetCatalog(config);
+    result.warnings.push(...modelPresets.warnings);
+
     const managedMcps = new Set(
       manifest.managed_config
         .filter((entry) => entry.kind === 'mcp')
@@ -91,6 +102,12 @@ export async function runDoctor(
       });
     }
   }
+
+  const resiliencePlan = planResilienceSwitch({
+    current: manifest.active_presets,
+    requested_resilience: manifest.active_presets.resilience,
+  });
+  result.warnings.push(...resiliencePlan.warnings);
 
   const tools = await detectPresetTools(
     manifest.active_presets.tools,

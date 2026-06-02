@@ -31,7 +31,7 @@ export function createTgoCommandConfigs(): Record<string, TgoCommandConfig> {
     'tgo:models': {
       description: 'Switch or inspect TGO v2 model lineup presets.',
       template:
-        'Inspect or switch TGO model presets without changing tool or resilience presets.',
+        'Inspect or switch TGO model presets through canonical modelPresets, preserving tool and resilience presets without changing tool or resilience presets. Treat legacy /preset alias and legacy presets config as model-preset compatibility only. Provider fallback is allowed for structural/provider failures only, never semantic failures.',
     },
     init: {
       description: 'Compatibility alias for /tgo:init.',
@@ -46,7 +46,7 @@ export function createTgoCommandConfigs(): Record<string, TgoCommandConfig> {
     preset: {
       description:
         'Compatibility alias for model preset switching through /tgo:models.',
-      template: 'Route this compatibility alias to /tgo:models.',
+      template: 'Route this legacy compatibility alias to /tgo:models.',
     },
   };
 }

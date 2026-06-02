@@ -205,4 +205,63 @@ describe('doctor command', () => {
       result.degraded_capabilities.map((capability) => capability.capability),
     ).toEqual(['aft', 'github-cli', 'serena']);
   });
+
+  test('reports active preset dimensions and model alias conflicts read-only', async () => {
+    const fs = createMemoryFileSystem({
+      '/home/user/.config/opencode/tgo/manifest.jsonc': JSON.stringify({
+        schema_version: 1,
+        package: {
+          name: 'trans-genderian-orchestra',
+          version: '2.0.0-beta.0',
+        },
+        active_presets: {
+          tools: 'default',
+          models: 'balanced',
+          resilience: 'aggressive',
+        },
+        managed_config: [],
+        tools: [],
+        backups: [],
+        ignored_warnings: [],
+      }),
+      '/home/user/.config/opencode/opencode.jsonc': JSON.stringify({
+        modelPresets: {
+          custom: {
+            roles: { 'tgo-builder': [{ id: 'canonical/builder' }] },
+          },
+        },
+        presets: {
+          custom: { roles: { 'tgo-builder': [{ id: 'legacy/builder' }] } },
+        },
+      }),
+    });
+
+    const result = await runDoctor({
+      fs,
+      homeDir: '/home/user',
+      detector: {
+        async which(command) {
+          return ['git', 'bd'].includes(command)
+            ? `/usr/bin/${command}`
+            : undefined;
+        },
+      },
+    });
+
+    expect(result.warnings).toContainEqual({
+      code: 'active-presets',
+      message:
+        'Active TGO presets: tools=default, models=balanced, resilience=aggressive.',
+      severity: 'info',
+    });
+    expect(result.warnings.map((warning) => warning.code)).toContain(
+      'model-presets-alias-conflict',
+    );
+    expect(result.warnings.map((warning) => warning.code)).toContain(
+      'high-semantic-retry-budget',
+    );
+    expect(
+      await fs.readText('/home/user/.config/opencode/opencode.jsonc'),
+    ).toContain('canonical/builder');
+  });
 });

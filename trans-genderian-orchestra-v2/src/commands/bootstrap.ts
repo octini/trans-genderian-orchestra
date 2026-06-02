@@ -7,6 +7,7 @@ import {
   serializeOpenCodeConfig,
 } from '../config/opencode-config';
 import type { FileSystemAdapter } from '../filesystem/adapter';
+import type { ModelPreset, ResiliencePreset } from '../manifest/schema';
 import { readManifest, writeManifest } from '../manifest/store';
 import { findSecretLikeValues } from '../security/secrets';
 import { type CommandDetector, detectPresetTools } from '../tools/detect';
@@ -24,6 +25,8 @@ export interface BootstrapInput {
   operationId: string;
   timestamp: string;
   tools: ToolPresetName;
+  models: ModelPreset;
+  resilience: ResiliencePreset;
   detector: CommandDetector;
 }
 
@@ -133,6 +136,8 @@ export async function runBootstrap(
   const manifestPath = globalManifestPath(input.homeDir);
   const manifest = await readManifest(input.fs, manifestPath);
   manifest.active_presets.tools = input.tools;
+  manifest.active_presets.models = input.models;
+  manifest.active_presets.resilience = input.resilience;
   manifest.managed_config = [
     ...entries.plugins.map((plugin) => ({
       kind: 'plugin' as const,
@@ -157,8 +162,8 @@ export async function runBootstrap(
   await writeManifest(input.fs, manifestPath, manifest);
   result.manifest_updates.push({
     path: manifestPath,
-    key: 'managed_config',
-    value_summary: `Recorded ${input.tools} TGO managed entries.`,
+    key: 'active_presets',
+    value_summary: `Recorded ${input.tools} tools, ${input.models} models, and ${input.resilience} resilience presets.`,
   });
   markRestartRequired(result, 'OpenCode config changed.');
   return result;

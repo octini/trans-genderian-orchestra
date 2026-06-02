@@ -111,6 +111,12 @@ describe('TGO plugin config definitions', () => {
     expect(commands['tgo:models'].template).toContain(
       'without changing tool or resilience presets',
     );
+    expect(commands['tgo:models'].template).toContain('modelPresets');
+    expect(commands['tgo:models'].template).toContain('legacy /preset alias');
+    expect(commands['tgo:models'].template).toContain(
+      'structural/provider failures only',
+    );
+    expect(commands.preset.template).toContain('legacy compatibility alias');
     expect(commands['tgo:init'].description).toContain('Initialize TGO v2');
     expect(commands['tgo:work'].template).toContain('approved TGO plan');
     expect(commands['tgo:work'].template).toContain(

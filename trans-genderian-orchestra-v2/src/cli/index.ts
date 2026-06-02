@@ -3,6 +3,7 @@
 import { runBootstrap } from '../commands/bootstrap';
 import { runDoctor } from '../commands/doctor';
 import { createNodeFileSystem } from '../filesystem/adapter';
+import type { ModelPreset, ResiliencePreset } from '../manifest/schema';
 import type { ToolPresetName } from '../tools/presets';
 import { parseCliArgs } from './args';
 
@@ -35,6 +36,23 @@ function parseToolPresetName(value: string | undefined): ToolPresetName {
     return value;
   }
   return 'default';
+}
+
+function parseModelPresetName(value: string | undefined): ModelPreset {
+  return (value || 'balanced') as ModelPreset;
+}
+
+function parseResiliencePresetName(
+  value: string | undefined,
+): ResiliencePreset {
+  if (
+    value === 'conservative' ||
+    value === 'balanced' ||
+    value === 'aggressive'
+  ) {
+    return value;
+  }
+  return 'balanced';
 }
 
 async function main(): Promise<void> {
@@ -72,6 +90,8 @@ async function main(): Promise<void> {
     operationId: `bootstrap-${Date.now()}`,
     timestamp: new Date().toISOString().replaceAll(':', '-'),
     tools: parseToolPresetName(args.tools),
+    models: parseModelPresetName(args.models),
+    resilience: parseResiliencePresetName(args.resilience),
     detector: createPathDetector(),
   });
 

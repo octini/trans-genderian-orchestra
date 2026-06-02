@@ -17,6 +17,8 @@ describe('bootstrap command', () => {
       operationId: 'op-1',
       timestamp: '2026-06-02T10-00-00-000Z',
       tools: 'default',
+      models: 'balanced',
+      resilience: 'balanced',
       detector: {
         async which() {
           return undefined;
@@ -57,6 +59,8 @@ describe('bootstrap command', () => {
       operationId: 'op-2',
       timestamp: '2026-06-02T10-00-00-000Z',
       tools: 'default',
+      models: 'balanced',
+      resilience: 'balanced',
       detector: {
         async which(command) {
           return command === 'git' ? '/usr/bin/git' : undefined;
@@ -105,6 +109,8 @@ describe('bootstrap command', () => {
       operationId: 'op-bare',
       timestamp: '2026-06-02T10-00-00-000Z',
       tools: 'bare-bones',
+      models: 'balanced',
+      resilience: 'balanced',
       detector: {
         async which(command) {
           return command === 'git' || command === 'bd'
@@ -139,6 +145,8 @@ describe('bootstrap command', () => {
       operationId: 'op-all',
       timestamp: '2026-06-02T10-00-00-000Z',
       tools: 'all-bells',
+      models: 'balanced',
+      resilience: 'balanced',
       detector: {
         async which(command) {
           return ['git', 'bd', 'ctx7'].includes(command)
@@ -167,6 +175,56 @@ describe('bootstrap command', () => {
       tools: 'all-bells',
       models: 'balanced',
       resilience: 'balanced',
+    });
+  });
+
+  test('apply records requested model and resilience presets without changing tools', async () => {
+    const fs = createMemoryFileSystem({
+      '/home/user/.config/opencode/tgo/manifest.jsonc': JSON.stringify({
+        schema_version: 1,
+        package: {
+          name: 'trans-genderian-orchestra',
+          version: '2.0.0-beta.0',
+        },
+        active_presets: {
+          tools: 'all-bells',
+          models: 'balanced',
+          resilience: 'balanced',
+        },
+        managed_config: [],
+        tools: [],
+        backups: [],
+        ignored_warnings: [],
+      }),
+      '/home/user/.config/opencode/opencode.jsonc':
+        '{"plugin":["user-plugin"]}',
+    });
+
+    await runBootstrap({
+      fs,
+      homeDir: '/home/user',
+      mode: 'apply',
+      operationId: 'op-model-resilience',
+      timestamp: '2026-06-02T10-00-00-000Z',
+      tools: 'all-bells',
+      models: 'balanced',
+      resilience: 'aggressive',
+      detector: {
+        async which(command) {
+          return ['git', 'bd', 'ctx7'].includes(command)
+            ? `/usr/bin/${command}`
+            : undefined;
+        },
+      },
+    });
+
+    const manifest = JSON.parse(
+      await fs.readText('/home/user/.config/opencode/tgo/manifest.jsonc'),
+    );
+    expect(manifest.active_presets).toEqual({
+      tools: 'all-bells',
+      models: 'balanced',
+      resilience: 'aggressive',
     });
   });
 });
