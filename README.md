@@ -4,6 +4,16 @@ TGO v2 is the blank-slate implementation of the OpenCode engineering workflow pl
 
 This package is in beta implementation and now lives at the repository root after the approved release cutover. Phase 7 release hardening adds deterministic v1/omo-slim migration detection, manifest-linked rollback helpers, safe uninstall, doctor warnings, stable-release gates, and migration documentation.
 
+## Install
+
+Install the current public beta explicitly with the `beta` dist-tag:
+
+```bash
+npm install trans-genderian-orchestra@beta
+```
+
+Because `2.0.0-beta.0` is the first published npm version, npm also points `latest` at this beta. Prefer `@beta` in examples and automation until a stable release moves `latest` to a non-prerelease version.
+
 ## Bootstrap
 
 Preview or apply the default setup with explicit preset dimensions:

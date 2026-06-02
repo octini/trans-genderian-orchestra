@@ -1,5 +1,15 @@
 # TGO v2 Beta Release Readiness
 
+## Public beta install
+
+Install the current public beta explicitly with the `beta` dist-tag:
+
+```bash
+npm install trans-genderian-orchestra@beta
+```
+
+`2.0.0-beta.0` is the first published npm version, so npm also points `latest` at this beta. Prefer `@beta` in public examples, automation, and validation until a stable release moves `latest` to a non-prerelease version.
+
 ## Local verification gate
 
 Run these from repository root:
