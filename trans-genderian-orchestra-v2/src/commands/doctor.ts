@@ -1,9 +1,11 @@
 import { join } from 'node:path';
+import { planDefaultManagedEntries } from '../config/managed-entries';
 import { parseOpenCodeConfig } from '../config/opencode-config';
 import type { FileSystemAdapter } from '../filesystem/adapter';
 import { readManifest } from '../manifest/store';
 import { resolveModelPresetCatalog } from '../models/config';
 import { TGO_AGENT_IDS } from '../plugin/agent-ids';
+import { planMigrationPreview } from '../release/migration';
 import { planResilienceSwitch } from '../resilience/profiles';
 import { findSecretLikeValues } from '../security/secrets';
 import { type CommandDetector, detectPresetTools } from '../tools/detect';
@@ -67,6 +69,20 @@ export async function runDoctor(
     const config = parseOpenCodeConfig(configText);
     const modelPresets = resolveModelPresetCatalog(config);
     result.warnings.push(...modelPresets.warnings);
+
+    const migration = planMigrationPreview(
+      config,
+      planDefaultManagedEntries(manifest.active_presets.tools),
+    );
+    if (migration.status === 'migration_available') {
+      result.warnings.push({
+        code: 'v1-migration-available',
+        message:
+          'V1/omo-slim config detected; run bootstrap/setup migration preview before enabling TGO v2 replacement.',
+        severity: 'warning',
+      });
+      result.planned_actions.push(...migration.planned_actions);
+    }
 
     const managedMcps = new Set(
       manifest.managed_config

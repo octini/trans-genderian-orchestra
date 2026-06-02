@@ -264,4 +264,55 @@ describe('doctor command', () => {
       await fs.readText('/home/user/.config/opencode/opencode.jsonc'),
     ).toContain('canonical/builder');
   });
+
+  test('reports v1 migration preview without mutating config', async () => {
+    const fs = createMemoryFileSystem({
+      '/home/user/.config/opencode/tgo/manifest.jsonc': JSON.stringify({
+        schema_version: 1,
+        package: {
+          name: 'trans-genderian-orchestra',
+          version: '2.0.0-beta.0',
+        },
+        active_presets: {
+          tools: 'default',
+          models: 'balanced',
+          resilience: 'balanced',
+        },
+        managed_config: [],
+        tools: [],
+        backups: [],
+        ignored_warnings: [],
+      }),
+      '/home/user/.config/opencode/opencode.jsonc': JSON.stringify({
+        plugin: ['oh-my-opencode-slim'],
+        agent: { orchestrator: {} },
+        mcp: { websearch: {} },
+      }),
+    });
+
+    const result = await runDoctor({
+      fs,
+      homeDir: '/home/user',
+      detector: {
+        async which(command) {
+          return ['git', 'bd'].includes(command)
+            ? `/usr/bin/${command}`
+            : undefined;
+        },
+      },
+    });
+
+    expect(result.warnings).toContainEqual({
+      code: 'v1-migration-available',
+      message:
+        'V1/omo-slim config detected; run bootstrap/setup migration preview before enabling TGO v2 replacement.',
+      severity: 'warning',
+    });
+    expect(result.planned_actions.map((action) => action.id)).toContain(
+      'register-v2-managed-entries',
+    );
+    expect(
+      await fs.readText('/home/user/.config/opencode/opencode.jsonc'),
+    ).toContain('oh-my-opencode-slim');
+  });
 });
