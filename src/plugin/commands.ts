@@ -8,7 +8,7 @@ export function createTgoCommandConfigs(): Record<string, TgoCommandConfig> {
     'tgo:doctor': {
       description: 'Inspect TGO v2 setup state and report repairs.',
       template:
-        'Run the deterministic TGO doctor workflow. Use --json when structured output is needed.',
+        'Run the deterministic TGO doctor workflow by executing trans-genderian-orchestra doctor --json from the current project directory. Do not run bd doctor; Beads diagnostics are separate from TGO doctor output.',
     },
     'tgo:setup': {
       description:

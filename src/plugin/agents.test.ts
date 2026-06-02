@@ -98,6 +98,10 @@ describe('TGO plugin config definitions', () => {
     expect(commands['tgo:doctor'].description).toContain(
       'Inspect TGO v2 setup',
     );
+    expect(commands['tgo:doctor'].template).toContain(
+      'trans-genderian-orchestra doctor --json',
+    );
+    expect(commands['tgo:doctor'].template).toContain('Do not run bd doctor');
     expect(commands['tgo:setup'].description).toContain('Change TGO v2 setup');
     expect(commands['tgo:setup'].template).toContain(
       'bare-bones, default, or all-bells',
