@@ -13,7 +13,9 @@ describe('repository layout metadata', () => {
       'bootstrap --tools default --models balanced --resilience balanced',
     );
     expect(rootReadme).toContain('Phase 7 release hardening');
+    expect(rootReadme).toContain('lives at the repository root');
     expect(rootReadme).not.toContain('Active beta package');
+    expect(rootReadme).not.toContain('this subfolder');
   });
 
   test('package metadata links npm readers back to the repository root', () => {

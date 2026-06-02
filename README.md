@@ -2,7 +2,7 @@
 
 TGO v2 is the blank-slate implementation of the OpenCode engineering workflow plugin. The current package version is `2.0.0-beta.0`.
 
-This package is in beta implementation and is developed in this subfolder until explicit release cutover moves the package to the repository root. Phase 7 release hardening adds deterministic v1/omo-slim migration detection, manifest-linked rollback helpers, safe uninstall, doctor warnings, stable-release gates, and migration documentation.
+This package is in beta implementation and now lives at the repository root after the approved release cutover. Phase 7 release hardening adds deterministic v1/omo-slim migration detection, manifest-linked rollback helpers, safe uninstall, doctor warnings, stable-release gates, and migration documentation.
 
 ## Bootstrap
 
