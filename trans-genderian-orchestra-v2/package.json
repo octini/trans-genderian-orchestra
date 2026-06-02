@@ -17,6 +17,7 @@
   },
   "files": [
     "dist",
+    "MIGRATION.md",
     "README.md",
     "LICENSE"
   ],
