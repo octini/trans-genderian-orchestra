@@ -1,25 +1,21 @@
 import type { Plugin } from '@opencode-ai/plugin';
+import { createTgoAgentConfigs } from './plugin/agents';
+import { createTgoCommandConfigs } from './plugin/commands';
 
 const plugin: Plugin = async (_ctx) => {
   return {
     async config(config) {
+      const tgoAgentConfigs = createTgoAgentConfigs() as unknown as NonNullable<
+        typeof config.agent
+      >;
+
       config.agent = {
         ...config.agent,
-        'tgo-orchestrator': {
-          description:
-            'TGO Orchestrator: technical lead, phase controller, and workflow router.',
-          mode: 'primary',
-          prompt:
-            'You are the TGO v2 Orchestrator. Phase 1 only registers the agent shell; full workflow behavior is implemented in later phases.',
-        },
+        ...tgoAgentConfigs,
       };
       config.command = {
         ...config.command,
-        'tgo:doctor': {
-          description: 'Inspect TGO v2 setup state and report repairs.',
-          template:
-            'Run the deterministic TGO doctor workflow. In Phase 1, use the external CLI doctor command for authoritative checks.',
-        },
+        ...createTgoCommandConfigs(),
       };
     },
   };

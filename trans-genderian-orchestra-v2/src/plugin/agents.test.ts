@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { TGO_AGENT_IDS } from './agent-ids';
+import { createTgoAgentConfigs } from './agents';
+import { createTgoCommandConfigs } from './commands';
 import { getPermissionProfile } from './permissions';
 
 describe('TGO agent role permissions', () => {
@@ -61,5 +63,33 @@ describe('TGO agent role permissions', () => {
     }
 
     expect(getPermissionProfile('tgo-councillor').question).toBe('deny');
+  });
+});
+
+describe('TGO plugin config definitions', () => {
+  test('creates all role-specific agent configs', () => {
+    const agents = createTgoAgentConfigs();
+
+    expect(Object.keys(agents).sort()).toEqual([...TGO_AGENT_IDS].sort());
+    expect(agents['tgo-orchestrator'].mode).toBe('primary');
+    expect(agents['tgo-researcher'].mode).toBe('subagent');
+    expect(agents['tgo-builder'].mode).toBe('subagent');
+    expect(agents['tgo-reviewer'].mode).toBe('subagent');
+    expect(agents['tgo-council'].mode).toBe('subagent');
+    expect(agents['tgo-councillor'].mode).toBe('subagent');
+    expect(agents['tgo-builder'].permission).toEqual(
+      getPermissionProfile('tgo-builder'),
+    );
+    expect(agents['tgo-reviewer'].prompt).toContain('read-only verification');
+  });
+
+  test('creates namespaced command configs and compatibility aliases', () => {
+    const commands = createTgoCommandConfigs();
+
+    expect(commands['tgo:doctor'].description).toContain('Inspect TGO v2 setup');
+    expect(commands['tgo:setup'].description).toContain('Change TGO v2 setup');
+    expect(commands['tgo:init'].description).toContain('Initialize TGO v2');
+    expect(commands.init.description).toContain('Compatibility alias');
+    expect(commands['beads:init'].description).toContain('Compatibility alias');
   });
 });
