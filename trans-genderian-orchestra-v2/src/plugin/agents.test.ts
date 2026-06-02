@@ -100,6 +100,19 @@ describe('TGO plugin config definitions', () => {
     );
     expect(commands['tgo:setup'].description).toContain('Change TGO v2 setup');
     expect(commands['tgo:init'].description).toContain('Initialize TGO v2');
+    expect(commands['tgo:work'].template).toContain('approved TGO plan');
+    expect(commands['tgo:work'].template).toContain(
+      'max_parallel_builders = 2',
+    );
+    expect(commands['tgo:work'].template).toContain('separate worktree/branch');
+    expect(commands['tgo:work'].template).toContain('Branch Reviewer artifact');
+    expect(commands['tgo:work'].template).toContain('batch Reviewer artifact');
+    expect(commands['tgo:work'].template).toContain(
+      'dedicated integration worktree',
+    );
+    expect(commands['tgo:work'].template).toContain(
+      'Do not push, open a PR, merge to main, or clean up worktrees without explicit approval.',
+    );
     expect(commands.init.description).toContain('Compatibility alias');
     expect(commands['beads:init'].description).toContain('Compatibility alias');
   });

@@ -26,7 +26,7 @@ export function createTgoCommandConfigs(): Record<string, TgoCommandConfig> {
       description:
         'Start or continue approved TGO-managed implementation work.',
       template:
-        'Route the request through TGO work intent, goal confirmation, Builder, Reviewer, and artifacts.',
+        'Route the request through TGO work intent and require an approved TGO plan before Beads issue generation. Validate task metadata before auto-parallelization, use max_parallel_builders = 2 by default, assign each Builder a separate worktree/branch, create a Branch Reviewer artifact per branch, create a batch Reviewer artifact after dedicated integration worktree validation, create reconciliation tasks for conflicts, and Do not push, open a PR, merge to main, or clean up worktrees without explicit approval.',
     },
     'tgo:models': {
       description: 'Switch or inspect TGO v2 model lineup presets.',
