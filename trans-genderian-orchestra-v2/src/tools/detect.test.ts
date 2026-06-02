@@ -14,6 +14,7 @@ describe('tool detector', () => {
         { name: 'git', status: 'user-managed', path: '/usr/bin/git' },
         { name: 'bd', status: 'missing' },
         { name: 'ctx7', status: 'missing' },
+        { name: 'aft', status: 'missing' },
       ],
       blocked: [
         {
@@ -23,6 +24,13 @@ describe('tool detector', () => {
         },
       ],
       degraded: [
+        {
+          capability: 'aft',
+          reason:
+            'AFT peer plugin is not detectable in the current environment.',
+          repair_command:
+            'Run bootstrap/setup with the default tools preset after reviewing the preview.',
+        },
         {
           capability: 'context7-cli',
           reason: 'Context7 CLI is missing.',
