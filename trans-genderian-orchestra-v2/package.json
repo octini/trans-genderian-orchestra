@@ -4,6 +4,23 @@
   "description": "TGO v2 OpenCode engineering workflow plugin",
   "type": "module",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/octini/trans-genderian-orchestra.git",
+    "directory": "trans-genderian-orchestra-v2"
+  },
+  "bugs": {
+    "url": "https://github.com/octini/trans-genderian-orchestra/issues"
+  },
+  "homepage": "https://github.com/octini/trans-genderian-orchestra/tree/master/trans-genderian-orchestra-v2",
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "ai",
+    "agents",
+    "orchestration",
+    "llm"
+  ],
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
