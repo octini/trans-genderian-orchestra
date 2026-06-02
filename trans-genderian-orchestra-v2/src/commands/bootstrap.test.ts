@@ -16,6 +16,7 @@ describe('bootstrap command', () => {
       mode: 'dry-run',
       operationId: 'op-1',
       timestamp: '2026-06-02T10-00-00-000Z',
+      tools: 'default',
       detector: {
         async which() {
           return undefined;
@@ -24,7 +25,7 @@ describe('bootstrap command', () => {
     });
 
     expect(result.planned_actions.map((action) => action.id)).toEqual([
-      'register-tgo-plugin',
+      'register-trans-genderian-orchestra',
       'register-opencode-beads',
       'register-aft',
       'register-tgo-websearch',
@@ -35,8 +36,12 @@ describe('bootstrap command', () => {
     expect(
       await fs.readText('/home/user/.config/opencode/opencode.jsonc'),
     ).toBe('{"plugin":["user-plugin"]}');
-    expect(result.blocked_capabilities[0]?.capability).toBe('beads');
-    expect(result.degraded_capabilities[0]?.capability).toBe('context7-cli');
+    expect(
+      result.blocked_capabilities.map((capability) => capability.capability),
+    ).toContain('beads');
+    expect(
+      result.degraded_capabilities.map((capability) => capability.capability),
+    ).toContain('context7-cli');
   });
 
   test('apply creates backup before writing config and manifest', async () => {
@@ -51,6 +56,7 @@ describe('bootstrap command', () => {
       mode: 'apply',
       operationId: 'op-2',
       timestamp: '2026-06-02T10-00-00-000Z',
+      tools: 'default',
       detector: {
         async which(command) {
           return command === 'git' ? '/usr/bin/git' : undefined;
@@ -84,5 +90,83 @@ describe('bootstrap command', () => {
     expect(managedConfigKeys).toContain('agent.tgo-orchestrator');
     expect(managedConfigKeys).toContain('agent.tgo-builder');
     expect(managedConfigKeys).toContain('agent.tgo-reviewer');
+  });
+
+  test('dry-run honors bare-bones tool preset without remote MCP actions', async () => {
+    const fs = createMemoryFileSystem({
+      '/home/user/.config/opencode/opencode.jsonc':
+        '{"plugin":["user-plugin"],"mcp":{"user-mcp":{"type":"remote"}}}',
+    });
+
+    const result = await runBootstrap({
+      fs,
+      homeDir: '/home/user',
+      mode: 'dry-run',
+      operationId: 'op-bare',
+      timestamp: '2026-06-02T10-00-00-000Z',
+      tools: 'bare-bones',
+      detector: {
+        async which(command) {
+          return command === 'git' || command === 'bd'
+            ? `/usr/bin/${command}`
+            : undefined;
+        },
+      },
+    });
+
+    expect(result.planned_actions.map((action) => action.id)).not.toContain(
+      'register-tgo-websearch',
+    );
+    expect(result.planned_actions.map((action) => action.id)).not.toContain(
+      'register-tgo-grep-app',
+    );
+    expect(result.degraded_capabilities).toEqual([]);
+    expect(
+      await fs.readText('/home/user/.config/opencode/opencode.jsonc'),
+    ).toContain('user-mcp');
+  });
+
+  test('apply records all-bells preset and preserves models and resilience presets', async () => {
+    const fs = createMemoryFileSystem({
+      '/home/user/.config/opencode/opencode.jsonc':
+        '{"plugin":["user-plugin"],"provider":{"custom":{}},"mcp":{"user-mcp":{"type":"remote"}}}',
+    });
+
+    const result = await runBootstrap({
+      fs,
+      homeDir: '/home/user',
+      mode: 'apply',
+      operationId: 'op-all',
+      timestamp: '2026-06-02T10-00-00-000Z',
+      tools: 'all-bells',
+      detector: {
+        async which(command) {
+          return ['git', 'bd', 'ctx7'].includes(command)
+            ? `/usr/bin/${command}`
+            : undefined;
+        },
+      },
+    });
+
+    expect(
+      result.degraded_capabilities.map((capability) => capability.capability),
+    ).toEqual(['aft', 'github-cli', 'serena']);
+
+    const config = JSON.parse(
+      await fs.readText('/home/user/.config/opencode/opencode.jsonc'),
+    );
+    expect(config.mcp['user-mcp']).toEqual({ type: 'remote' });
+    expect(config.provider).toEqual({ custom: {} });
+    expect(config.mcp['tgo-github']).toBeDefined();
+    expect(config.mcp['tgo-serena']).toBeDefined();
+
+    const manifest = JSON.parse(
+      await fs.readText('/home/user/.config/opencode/tgo/manifest.jsonc'),
+    );
+    expect(manifest.active_presets).toEqual({
+      tools: 'all-bells',
+      models: 'balanced',
+      resilience: 'balanced',
+    });
   });
 });

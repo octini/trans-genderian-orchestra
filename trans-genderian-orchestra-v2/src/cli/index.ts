@@ -3,6 +3,7 @@
 import { runBootstrap } from '../commands/bootstrap';
 import { runDoctor } from '../commands/doctor';
 import { createNodeFileSystem } from '../filesystem/adapter';
+import type { ToolPresetName } from '../tools/presets';
 import { parseCliArgs } from './args';
 
 function printHelp(): void {
@@ -27,6 +28,13 @@ function createPathDetector() {
       return undefined;
     },
   };
+}
+
+function parseToolPresetName(value: string | undefined): ToolPresetName {
+  if (value === 'bare-bones' || value === 'default' || value === 'all-bells') {
+    return value;
+  }
+  return 'default';
 }
 
 async function main(): Promise<void> {
@@ -63,6 +71,7 @@ async function main(): Promise<void> {
     mode: args.yes ? 'apply' : 'dry-run',
     operationId: `bootstrap-${Date.now()}`,
     timestamp: new Date().toISOString().replaceAll(':', '-'),
+    tools: parseToolPresetName(args.tools),
     detector: createPathDetector(),
   });
 
