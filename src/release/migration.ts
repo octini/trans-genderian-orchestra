@@ -41,13 +41,7 @@ const V1_AGENT_IDS = [
   'council',
 ] as const;
 
-const V1_MCP_IDS = [
-  'websearch',
-  'grep_app',
-  'grep-app',
-  'github',
-  'serena',
-] as const;
+const V1_MCP_IDS = ['websearch', 'grep_app', 'grep-app', 'serena'] as const;
 
 function pluginName(entry: string | [string, Record<string, unknown>]): string {
   return Array.isArray(entry) ? entry[0] : entry;

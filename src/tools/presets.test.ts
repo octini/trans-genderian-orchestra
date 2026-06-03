@@ -10,6 +10,12 @@ describe('tool preset plans', () => {
       'trans-genderian-orchestra',
       'opencode-beads',
     ]);
+    expect(plan.peer_plugins).toContainEqual(
+      expect.objectContaining({
+        package: 'trans-genderian-orchestra',
+        version: 'beta',
+      }),
+    );
     expect(plan.mcps).toEqual([]);
     expect(plan.skills.map((skill) => skill.id)).toContain(
       'setup-matt-pocock-skills',
@@ -23,6 +29,13 @@ describe('tool preset plans', () => {
     expect(plan.skills.map((skill) => skill.id)).toContain('context7-mcp');
     expect(plan.mcps.map((mcp) => mcp.id)).not.toContain('tgo-context7');
     expect(plan.peer_plugins.map((plugin) => plugin.id)).toContain('aft');
+    expect(plan.peer_plugins).toContainEqual(
+      expect.objectContaining({
+        id: 'aft',
+        package: '@cortexkit/aft-opencode',
+        version: 'latest',
+      }),
+    );
   });
 
   test('default limits websearch and grep_app MCPs to Researcher metadata', () => {

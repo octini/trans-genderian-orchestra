@@ -53,13 +53,22 @@ function globalBackupRoot(homeDir: string): string {
   return join(homeDir, '.config/opencode/tgo/backups').replaceAll('\\', '/');
 }
 
+function packageNameFromPluginSpec(plugin: string): string {
+  const versionSeparator = plugin.startsWith('@')
+    ? plugin.lastIndexOf('@')
+    : plugin.indexOf('@');
+  return versionSeparator > 0 ? plugin.slice(0, versionSeparator) : plugin;
+}
+
 function plannedActionIdForPlugin(plugin: string): string {
-  const packageName = plugin.split('@')[0] ?? plugin;
+  const packageName = packageNameFromPluginSpec(plugin)
+    .replace(/^@/, '')
+    .replaceAll('/', '-');
   return `register-${packageName}`;
 }
 
 function plannedActionTitleForPlugin(plugin: string): string {
-  const packageName = plugin.split('@')[0] ?? plugin;
+  const packageName = packageNameFromPluginSpec(plugin);
   return `Register ${packageName}`;
 }
 

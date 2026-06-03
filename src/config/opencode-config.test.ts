@@ -17,10 +17,12 @@ describe('OpenCode config helpers', () => {
     const result = applyManagedEntries(config, planDefaultManagedEntries());
 
     expect(result.config.plugin).toContain('user-plugin');
-    expect(result.config.plugin).toContain(
+    expect(result.config.plugin).toContain('trans-genderian-orchestra@beta');
+    expect(result.config.plugin).not.toContain(
       'trans-genderian-orchestra@2.0.0-beta.0',
     );
     expect(result.config.plugin).toContain('opencode-beads@0.7.0');
+    expect(result.config.plugin).toContain('@cortexkit/aft-opencode@latest');
     expect(result.config.mcp?.['user-mcp']).toEqual({
       type: 'local',
       command: ['echo', 'ok'],
@@ -28,6 +30,50 @@ describe('OpenCode config helpers', () => {
     expect(result.config.mcp?.['tgo-websearch']).toBeDefined();
     expect(result.config.default_agent).toBe('tgo-orchestrator');
     expect(result.warnings).toEqual([]);
+  });
+
+  test('does not duplicate plugin packages that already use a compatible selector', () => {
+    const config = parseOpenCodeConfig(
+      JSON.stringify({
+        plugin: [
+          'trans-genderian-orchestra@beta',
+          'opencode-beads',
+          '@cortexkit/aft-opencode@latest',
+        ],
+      }),
+    );
+
+    const result = applyManagedEntries(config, planDefaultManagedEntries());
+
+    expect(result.config.plugin).toEqual([
+      'trans-genderian-orchestra@beta',
+      'opencode-beads',
+      '@cortexkit/aft-opencode@latest',
+    ]);
+  });
+
+  test('replaces known obsolete generated plugin specs', () => {
+    const config = parseOpenCodeConfig(
+      JSON.stringify({
+        plugin: [
+          'user-plugin',
+          'trans-genderian-orchestra@2.0.0-beta.0',
+          'aft@0.0.0-pinned-after-verification',
+        ],
+      }),
+    );
+
+    const result = applyManagedEntries(config, planDefaultManagedEntries());
+
+    expect(result.config.plugin).toContain('user-plugin');
+    expect(result.config.plugin).toContain('trans-genderian-orchestra@beta');
+    expect(result.config.plugin).toContain('@cortexkit/aft-opencode@latest');
+    expect(result.config.plugin).not.toContain(
+      'trans-genderian-orchestra@2.0.0-beta.0',
+    );
+    expect(result.config.plugin).not.toContain(
+      'aft@0.0.0-pinned-after-verification',
+    );
   });
 
   test('warns before replacing existing default_agent', () => {

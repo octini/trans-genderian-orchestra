@@ -59,6 +59,28 @@ describe('release migration planning', () => {
     expect(preview.requires_confirmation).toBe(true);
   });
 
+  test('does not treat user-owned GitHub MCP as v1-era config', () => {
+    const config = {
+      plugin: ['trans-genderian-orchestra@beta'],
+      mcp: {
+        github: {
+          type: 'remote',
+          url: 'https://api.githubcopilot.com/mcp/',
+        },
+      },
+    };
+
+    const detection = detectV1EraConfig(config);
+    const preview = planMigrationPreview(
+      config,
+      planDefaultManagedEntries('default'),
+    );
+
+    expect(detection.has_v1_config).toBe(false);
+    expect(preview.status).toBe('no_v1_config');
+    expect(preview.planned_actions).toEqual([]);
+  });
+
   test('replacement config removes v1 active entries and preserves user-owned entries', () => {
     const config = {
       plugin: ['oh-my-opencode-slim', 'user-plugin'],
@@ -74,7 +96,8 @@ describe('release migration planning', () => {
 
     expect(replacement.plugin).not.toContain('oh-my-opencode-slim');
     expect(replacement.plugin).toContain('user-plugin');
-    expect(replacement.plugin).toContain(
+    expect(replacement.plugin).toContain('trans-genderian-orchestra@beta');
+    expect(replacement.plugin).not.toContain(
       'trans-genderian-orchestra@2.0.0-beta.0',
     );
     expect(replacement.agent?.orchestrator).toBeUndefined();

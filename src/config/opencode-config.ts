@@ -17,6 +17,11 @@ export interface ApplyConfigResult {
   warnings: CommandNotice[];
 }
 
+const OBSOLETE_GENERATED_PLUGIN_SPECS = new Set([
+  'trans-genderian-orchestra@2.0.0-beta.0',
+  'aft@0.0.0-pinned-after-verification',
+]);
+
 export function parseOpenCodeConfig(text: string): OpenCodeConfig {
   const trimmed = text.trim();
   if (trimmed.length === 0) {
@@ -29,12 +34,29 @@ function appendUniquePlugin(
   plugins: Array<string | [string, Record<string, unknown>]>,
   plugin: string,
 ): void {
-  const exists = plugins.some((entry) =>
-    Array.isArray(entry) ? entry[0] === plugin : entry === plugin,
+  const pluginPackageName = pluginPackageNameFromSpec(plugin);
+  for (let index = plugins.length - 1; index >= 0; index -= 1) {
+    const entry = plugins[index];
+    const spec = Array.isArray(entry) ? entry[0] : entry;
+    if (OBSOLETE_GENERATED_PLUGIN_SPECS.has(spec)) {
+      plugins.splice(index, 1);
+    }
+  }
+  const exists = plugins.some(
+    (entry) =>
+      pluginPackageNameFromSpec(Array.isArray(entry) ? entry[0] : entry) ===
+      pluginPackageName,
   );
   if (!exists) {
     plugins.push(plugin);
   }
+}
+
+function pluginPackageNameFromSpec(plugin: string): string {
+  const versionSeparator = plugin.startsWith('@')
+    ? plugin.lastIndexOf('@')
+    : plugin.indexOf('@');
+  return versionSeparator > 0 ? plugin.slice(0, versionSeparator) : plugin;
 }
 
 export function applyManagedEntries(

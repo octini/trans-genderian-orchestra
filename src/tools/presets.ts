@@ -43,7 +43,7 @@ const CORE_PLUGINS: PeerPluginPlan[] = [
   {
     id: 'trans-genderian-orchestra',
     package: 'trans-genderian-orchestra',
-    version: '2.0.0-beta.0',
+    version: 'beta',
     required: true,
   },
   {
@@ -176,8 +176,8 @@ export function createToolPresetPlan(name: ToolPresetName): ToolPresetPlan {
       ...CORE_PLUGINS,
       {
         id: 'aft',
-        package: 'aft',
-        version: '0.0.0-pinned-after-verification',
+        package: '@cortexkit/aft-opencode',
+        version: 'latest',
         required: false,
       },
     ],

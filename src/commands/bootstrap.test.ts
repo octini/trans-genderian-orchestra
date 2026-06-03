@@ -28,7 +28,7 @@ describe('bootstrap command', () => {
     expect(result.planned_actions.map((action) => action.id)).toEqual([
       'register-trans-genderian-orchestra',
       'register-opencode-beads',
-      'register-aft',
+      'register-cortexkit-aft-opencode',
       'register-tgo-websearch',
       'register-tgo-grep-app',
       'set-default-agent',
@@ -77,7 +77,12 @@ describe('bootstrap command', () => {
       await fs.readText('/home/user/.config/opencode/opencode.jsonc'),
     );
     expect(config.plugin).toContain('user-plugin');
-    expect(config.plugin).toContain('trans-genderian-orchestra@2.0.0-beta.0');
+    expect(config.plugin).toContain('trans-genderian-orchestra@beta');
+    expect(config.plugin).toContain('@cortexkit/aft-opencode@latest');
+    expect(config.plugin).not.toContain(
+      'trans-genderian-orchestra@2.0.0-beta.0',
+    );
+    expect(config.plugin).not.toContain('aft@0.0.0-pinned-after-verification');
     expect(config.default_agent).toBe('tgo-orchestrator');
     expect(config.agent).toBeUndefined();
 

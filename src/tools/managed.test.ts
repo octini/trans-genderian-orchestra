@@ -7,7 +7,10 @@ describe('tool preset managed entries', () => {
   test('bare-bones registers no remote MCPs', () => {
     const entries = createManagedEntriesForToolPreset('bare-bones');
 
-    expect(entries.plugins).toContain('trans-genderian-orchestra@2.0.0-beta.0');
+    expect(entries.plugins).toContain('trans-genderian-orchestra@beta');
+    expect(entries.plugins).not.toContain(
+      'trans-genderian-orchestra@2.0.0-beta.0',
+    );
     expect(entries.plugins).toContain('opencode-beads@0.7.0');
     expect(entries.plugins).not.toContain(
       'aft@0.0.0-pinned-after-verification',
@@ -18,7 +21,10 @@ describe('tool preset managed entries', () => {
   test('default registers AFT and Researcher-limited websearch and grep_app MCPs', () => {
     const entries = createManagedEntriesForToolPreset('default');
 
-    expect(entries.plugins).toContain('aft@0.0.0-pinned-after-verification');
+    expect(entries.plugins).toContain('@cortexkit/aft-opencode@latest');
+    expect(entries.plugins).not.toContain(
+      'aft@0.0.0-pinned-after-verification',
+    );
     expect(entries.mcps['tgo-websearch']).toMatchObject({
       enabled: true,
       allowed_agents: ['tgo-researcher'],
