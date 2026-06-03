@@ -17,6 +17,10 @@ export interface ToolDetectionResult {
   degraded: CapabilityStatus[];
 }
 
+export interface ToolDetectionOptions {
+  aftPluginConfigured?: boolean;
+}
+
 async function detectTool(
   detector: CommandDetector,
   name: DetectedTool['name'],
@@ -37,6 +41,7 @@ function missingTool(
 export async function detectPresetTools(
   preset: ToolPresetName,
   detector: CommandDetector,
+  options: ToolDetectionOptions = {},
 ): Promise<ToolDetectionResult> {
   const plan = createToolPresetPlan(preset);
   const cliTools = await Promise.all(
@@ -45,7 +50,19 @@ export async function detectPresetTools(
   const tools =
     preset === 'bare-bones'
       ? cliTools
-      : [...cliTools, await detectTool(detector, 'aft')];
+      : [
+          ...cliTools,
+          await detectTool(detector, 'aft').then(
+            (aftTool): DetectedTool =>
+              aftTool.status === 'missing' && options.aftPluginConfigured
+                ? {
+                    name: 'aft',
+                    status: 'user-managed',
+                    path: 'opencode-plugin:@cortexkit/aft-opencode',
+                  }
+                : aftTool,
+          ),
+        ];
 
   const blocked: CapabilityStatus[] = [];
   const degraded: CapabilityStatus[] = [];

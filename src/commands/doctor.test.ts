@@ -174,6 +174,87 @@ describe('doctor command', () => {
     );
   });
 
+  test('accepts the configured AFT OpenCode plugin without an aft CLI binary', async () => {
+    const fs = createMemoryFileSystem({
+      '/home/user/.config/opencode/tgo/manifest.jsonc': JSON.stringify({
+        schema_version: 1,
+        package: {
+          name: 'trans-genderian-orchestra',
+          version: '2.0.0-beta.0',
+        },
+        active_presets: {
+          tools: 'default',
+          models: 'balanced',
+          resilience: 'balanced',
+        },
+        managed_config: [],
+        tools: [],
+        backups: [],
+        ignored_warnings: [],
+      }),
+      '/home/user/.config/opencode/opencode.jsonc': JSON.stringify({
+        plugin: ['@cortexkit/aft-opencode@latest'],
+      }),
+    });
+
+    const result = await runDoctor({
+      fs,
+      homeDir: '/home/user',
+      detector: {
+        async which(command) {
+          return ['git', 'bd', 'ctx7'].includes(command)
+            ? `/usr/bin/${command}`
+            : undefined;
+        },
+      },
+    });
+
+    expect(
+      result.degraded_capabilities.map((capability) => capability.capability),
+    ).not.toContain('aft');
+  });
+
+  test('accepts the catalog AFT OpenCode plugin without an aft CLI binary', async () => {
+    const fs = createMemoryFileSystem({
+      '/home/user/.config/opencode/tgo/manifest.jsonc': JSON.stringify({
+        schema_version: 1,
+        package: {
+          name: 'trans-genderian-orchestra',
+          version: '2.0.0-beta.0',
+        },
+        active_presets: {
+          tools: 'default',
+          models: 'balanced',
+          resilience: 'balanced',
+        },
+        managed_config: [],
+        tools: [],
+        backups: [],
+        ignored_warnings: [],
+      }),
+      '/home/user/.config/opencode/trans-genderian-orchestra.jsonc':
+        JSON.stringify({
+          plugin: ['@cortexkit/aft-opencode@latest'],
+        }),
+    });
+
+    const result = await runDoctor({
+      fs,
+      homeDir: '/home/user',
+      detector: {
+        async which(command) {
+          return ['git', 'bd', 'ctx7'].includes(command)
+            ? `/usr/bin/${command}`
+            : undefined;
+        },
+      },
+    });
+
+    expect(
+      result.degraded_capabilities.map((capability) => capability.capability),
+    ).not.toContain('aft');
+  });
+
   test('reports user-managed MCPs as visible without mutating them', async () => {
     const fs = createMemoryFileSystem({
       '/home/user/.config/opencode/tgo/manifest.jsonc': JSON.stringify({

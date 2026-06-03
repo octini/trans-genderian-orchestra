@@ -14,6 +14,8 @@ import {
   type DeterministicCommandResult,
 } from './result';
 
+const AFT_PLUGIN_PACKAGE = '@cortexkit/aft-opencode';
+
 export interface DoctorInput {
   fs: FileSystemAdapter;
   homeDir: string;
@@ -38,6 +40,27 @@ function globalManifestPath(homeDir: string): string {
   );
 }
 
+function pluginPackageNameFromSpec(plugin: string): string {
+  const versionSeparator = plugin.startsWith('@')
+    ? plugin.lastIndexOf('@')
+    : plugin.indexOf('@');
+  return versionSeparator > 0 ? plugin.slice(0, versionSeparator) : plugin;
+}
+
+function hasAftOpenCodePlugin(configs: Array<{ plugin?: unknown }>): boolean {
+  return configs.some((config) =>
+    Array.isArray(config.plugin)
+      ? config.plugin.some((entry) => {
+          const spec = Array.isArray(entry) ? entry[0] : entry;
+          return (
+            typeof spec === 'string' &&
+            pluginPackageNameFromSpec(spec) === AFT_PLUGIN_PACKAGE
+          );
+        })
+      : false,
+  );
+}
+
 export async function runDoctor(
   input: DoctorInput,
 ): Promise<DeterministicCommandResult> {
@@ -46,6 +69,14 @@ export async function runDoctor(
   const configPath = globalConfigPath(input.homeDir);
   const tgoConfigPath = globalTgoConfigPath(input.homeDir);
   const manifest = await readManifest(input.fs, manifestPath);
+  const configExists = await input.fs.exists(configPath);
+  const configText = configExists ? await input.fs.readText(configPath) : '{}';
+  const tgoConfigText = (await input.fs.exists(tgoConfigPath))
+    ? await input.fs.readText(tgoConfigPath)
+    : '{}';
+  const config = parseOpenCodeConfig(configText);
+  const tgoConfig = parseOpenCodeConfig(tgoConfigText);
+  const aftPluginConfigured = hasAftOpenCodePlugin([config, tgoConfig]);
 
   result.warnings.push({
     code: 'active-presets',
@@ -63,11 +94,7 @@ export async function runDoctor(
     });
   }
 
-  if (await input.fs.exists(configPath)) {
-    const configText = await input.fs.readText(configPath);
-    const tgoConfigText = (await input.fs.exists(tgoConfigPath))
-      ? await input.fs.readText(tgoConfigPath)
-      : '{}';
+  if (configExists) {
     if (findSecretLikeValues(configText).length > 0) {
       result.warnings.push({
         code: 'secret-like-config-value',
@@ -77,10 +104,9 @@ export async function runDoctor(
       });
     }
 
-    const config = parseOpenCodeConfig(configText);
-    const tgoConfig = parseOpenCodeConfig(tgoConfigText);
     const mergedConfig = {
       ...config,
+      plugin: [...(config.plugin ?? []), ...(tgoConfig.plugin ?? [])],
       agent: { ...(config.agent ?? {}), ...(tgoConfig.agent ?? {}) },
       modelPresets: {
         ...(config.modelPresets ?? {}),
@@ -148,6 +174,7 @@ export async function runDoctor(
   const tools = await detectPresetTools(
     manifest.active_presets.tools,
     input.detector,
+    { aftPluginConfigured },
   );
   result.blocked_capabilities.push(...tools.blocked);
   result.degraded_capabilities.push(...tools.degraded);
