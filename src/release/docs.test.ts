@@ -38,7 +38,7 @@ describe('release documentation', () => {
   test('readme is the public beta front door', () => {
     const readme = readRepoFile('README.md');
 
-    expect(readme).toContain('2.0.0-beta.2');
+    expect(readme).toContain('2.0.0-beta.3');
     expect(readme).toContain('trans-genderian-orchestra@beta');
     expect(readme).toContain(
       'opencode plugin trans-genderian-orchestra@beta --global --force',

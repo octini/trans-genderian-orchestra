@@ -18,7 +18,7 @@ The active package lives at the repository root. Archived v1 material is retaine
 
 ## npm Beta State
 
-- `2.0.0-beta.2` is the current public beta package.
+- `2.0.0-beta.3` is the current public beta package.
 - `trans-genderian-orchestra@beta` is the recommended selector.
 - npm `latest` still points to `2.0.0-beta.0` until a non-prerelease version is published.
 
