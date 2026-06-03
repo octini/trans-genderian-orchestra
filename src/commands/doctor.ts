@@ -40,6 +40,31 @@ function globalManifestPath(homeDir: string): string {
   );
 }
 
+function context7SkillPath(homeDir: string): string {
+  return join(homeDir, '.agents/skills/find-docs').replaceAll('\\', '/');
+}
+
+function globalAgentsPath(homeDir: string): string {
+  return join(homeDir, '.config/opencode/AGENTS.md').replaceAll('\\', '/');
+}
+
+async function hasContext7OpenCodeSetup(
+  fs: FileSystemAdapter,
+  homeDir: string,
+): Promise<boolean> {
+  if (await fs.exists(context7SkillPath(homeDir))) {
+    return true;
+  }
+
+  const agentsPath = globalAgentsPath(homeDir);
+  if (!(await fs.exists(agentsPath))) {
+    return false;
+  }
+
+  const agentsText = await fs.readText(agentsPath);
+  return /\b(ctx7|context7|find-docs)\b/i.test(agentsText);
+}
+
 function pluginPackageNameFromSpec(plugin: string): string {
   const versionSeparator = plugin.startsWith('@')
     ? plugin.lastIndexOf('@')
@@ -77,6 +102,10 @@ export async function runDoctor(
   const config = parseOpenCodeConfig(configText);
   const tgoConfig = parseOpenCodeConfig(tgoConfigText);
   const aftPluginConfigured = hasAftOpenCodePlugin([config, tgoConfig]);
+  const context7SetupConfigured = await hasContext7OpenCodeSetup(
+    input.fs,
+    input.homeDir,
+  );
 
   result.warnings.push({
     code: 'active-presets',
@@ -174,7 +203,7 @@ export async function runDoctor(
   const tools = await detectPresetTools(
     manifest.active_presets.tools,
     input.detector,
-    { aftPluginConfigured },
+    { aftPluginConfigured, context7SetupConfigured },
   );
   result.blocked_capabilities.push(...tools.blocked);
   result.degraded_capabilities.push(...tools.degraded);

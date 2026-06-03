@@ -19,6 +19,7 @@ export interface ToolDetectionResult {
 
 export interface ToolDetectionOptions {
   aftPluginConfigured?: boolean;
+  context7SetupConfigured?: boolean;
 }
 
 async function detectTool(
@@ -44,8 +45,21 @@ export async function detectPresetTools(
   options: ToolDetectionOptions = {},
 ): Promise<ToolDetectionResult> {
   const plan = createToolPresetPlan(preset);
-  const cliTools = await Promise.all(
-    plan.required_cli_tools.map((tool) => detectTool(detector, tool.name)),
+  const cliTools = (
+    await Promise.all(
+      plan.required_cli_tools.map((tool) => detectTool(detector, tool.name)),
+    )
+  ).map(
+    (tool): DetectedTool =>
+      tool.name === 'ctx7' &&
+      tool.status === 'missing' &&
+      options.context7SetupConfigured
+        ? {
+            name: 'ctx7',
+            status: 'user-managed',
+            path: 'opencode-setup:context7-find-docs',
+          }
+        : tool,
   );
   const tools =
     preset === 'bare-bones'

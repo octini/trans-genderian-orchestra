@@ -255,6 +255,60 @@ describe('doctor command', () => {
     ).not.toContain('aft');
   });
 
+  test('accepts Context7 OpenCode setup artifacts without a ctx7 CLI binary', async () => {
+    const baseFiles = {
+      '/home/user/.config/opencode/tgo/manifest.jsonc': JSON.stringify({
+        schema_version: 1,
+        package: {
+          name: 'trans-genderian-orchestra',
+          version: '2.0.0-beta.0',
+        },
+        active_presets: {
+          tools: 'default',
+          models: 'balanced',
+          resilience: 'balanced',
+        },
+        managed_config: [],
+        tools: [],
+        backups: [],
+        ignored_warnings: [],
+      }),
+      '/home/user/.config/opencode/opencode.jsonc': JSON.stringify({
+        plugin: ['@cortexkit/aft-opencode@latest'],
+      }),
+    };
+    const setupCases = [
+      {
+        '/home/user/.agents/skills/find-docs/SKILL.md':
+          '# find-docs\n\nUse ctx7 to find current documentation.',
+      },
+      {
+        '/home/user/.config/opencode/AGENTS.md':
+          'Use the `ctx7` CLI to fetch current documentation.',
+      },
+    ];
+
+    for (const setupFiles of setupCases) {
+      const fs = createMemoryFileSystem({ ...baseFiles, ...setupFiles });
+
+      const result = await runDoctor({
+        fs,
+        homeDir: '/home/user',
+        detector: {
+          async which(command) {
+            return command === 'git' || command === 'bd'
+              ? `/usr/bin/${command}`
+              : undefined;
+          },
+        },
+      });
+
+      expect(
+        result.degraded_capabilities.map((capability) => capability.capability),
+      ).not.toContain('context7-cli');
+    }
+  });
+
   test('reports user-managed MCPs as visible without mutating them', async () => {
     const fs = createMemoryFileSystem({
       '/home/user/.config/opencode/tgo/manifest.jsonc': JSON.stringify({

@@ -33,6 +33,29 @@ describe('preset-aware tool detection', () => {
     });
   });
 
+  test('default accepts Context7 OpenCode setup evidence without ctx7 binary', async () => {
+    const result = await detectPresetTools(
+      'default',
+      detectorWith({
+        git: '/usr/bin/git',
+        bd: '/opt/bin/bd',
+      }),
+      { context7SetupConfigured: true },
+    );
+
+    expect(result.blocked).toEqual([]);
+    expect(result.degraded).not.toContainEqual({
+      capability: 'context7-cli',
+      reason: 'Context7 CLI is missing.',
+      repair_command: 'npx ctx7 setup --opencode',
+    });
+    expect(result.tools).toContainEqual({
+      name: 'ctx7',
+      status: 'user-managed',
+      path: 'opencode-setup:context7-find-docs',
+    });
+  });
+
   test('bare-bones does not require Context7 AFT GitHub or Serena', async () => {
     const result = await detectPresetTools(
       'bare-bones',
