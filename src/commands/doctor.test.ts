@@ -115,6 +115,65 @@ describe('doctor command', () => {
     ).toContain('tgo-orchestrator');
   });
 
+  test('accepts TGO-managed agents from the standalone TGO config catalog', async () => {
+    const fs = createMemoryFileSystem({
+      '/home/user/.config/opencode/tgo/manifest.jsonc': JSON.stringify({
+        package: { name: 'trans-genderian-orchestra', version: '2.0.0-beta.0' },
+        active_presets: {
+          tools: 'default',
+          models: 'balanced',
+          resilience: 'balanced',
+        },
+        managed_config: [
+          { kind: 'agent', key: 'tgo_config.agent.tgo-orchestrator' },
+        ],
+        tools: [],
+        backups: [],
+        ignored_warnings: [],
+        last_verified_at: null,
+      }),
+      '/home/user/.config/opencode/opencode.jsonc': JSON.stringify({
+        plugin: ['trans-genderian-orchestra@2.0.0-beta.0'],
+        default_agent: 'tgo-orchestrator',
+      }),
+      '/home/user/.config/opencode/trans-genderian-orchestra.jsonc':
+        JSON.stringify({
+          agent: {
+            'tgo-orchestrator': { mode: 'primary' },
+            'tgo-researcher': { mode: 'subagent' },
+            'tgo-builder': { mode: 'subagent' },
+            'tgo-reviewer': { mode: 'subagent' },
+            'tgo-council': { mode: 'subagent' },
+            'tgo-councillor': { mode: 'subagent' },
+          },
+          modelPresets: {
+            mixed: {
+              roles: { 'tgo-builder': [{ id: 'github-copilot/gpt-5.5' }] },
+            },
+          },
+        }),
+    });
+
+    const result = await runDoctor({
+      fs,
+      homeDir: '/home/user',
+      detector: {
+        async which(command) {
+          return command === 'git' || command === 'bd'
+            ? `/usr/bin/${command}`
+            : undefined;
+        },
+      },
+    });
+
+    expect(result.warnings.map((warning) => warning.code)).not.toContain(
+      'missing-managed-agent',
+    );
+    expect(result.warnings.map((warning) => warning.code)).not.toContain(
+      'legacy-presets-alias',
+    );
+  });
+
   test('reports user-managed MCPs as visible without mutating them', async () => {
     const fs = createMemoryFileSystem({
       '/home/user/.config/opencode/tgo/manifest.jsonc': JSON.stringify({

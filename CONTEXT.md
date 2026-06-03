@@ -1,53 +1,79 @@
-# OMO-Slim Modifications — Domain Glossary
+# trans-genderian-orchestra v2 Domain Glossary
 
 ## Project
-**OMO-Slim Modifications (codename: "Dispatcher")** — A fork of oh-my-opencode-slim that transforms the orchestrator into a pure dispatcher (read-only router with no file writes, no planning, no implementation). The plugin lives in the repository directory `trans-genderian-orchestra/`, matching the internal package name. Uses a hybrid strategy borrowing patterns from small-opencode-orchestrator (token-conscious context pruning), OpenSpec/GSD (structured spec files with approval gates), and Swarm (gatekeeper verification).
 
-## Core Concepts
+**trans-genderian-orchestra (TGO) v2** - An OpenCode workflow plugin that coordinates specialist agents, durable artifacts, deterministic setup, model presets, and verification gates. The active package lives at the repository root. Archived v1 material is reference material only.
 
-**Orchestrator** — The central agent. Acts as pure dispatcher. Routes work to specialists, synthesizes results, maintains project state. Read-only: cannot write files, cannot plan, cannot implement. Only delegates. May write ONLY state.md and handoff.md (coordination metadata, not work product). Enforced via pre-tool hook allowlist.
-
-**Planning Agent** — A dedicated agent responsible for decomposing complex requests into structured plans. Separate from orchestrator. Writes `.opencode/plans/` spec files. Not invoked for simple tasks (direct-to-builder path).
-
-**Researcher** — Combines codebase search (Explorer) and documentation research (Librarian). Handles both internal code patterns and external library/docs lookups. Single agent avoids redundant cross-delegation.
-
-**Builder** — Handles both design and implementation (merged Designer + Fixer). Full permissions. For direct-to-builder tasks (no planner), writes a non-blocking micro-sketch to scratchpad for diagnostic trail. For planned tasks, executes against planner's plan directly.
-
-**Reviewer Agent** — Dual-persona gatekeeper. In **Verification Mode**: validates specialist output against the original request. In **Advisory Mode**: provides strategic advice, breaks ties, reviews ambiguous situations. Same agent, different persona selected via delegation envelope flag. Strictly read-only (writes mechanically gated — only trivial fixes with automated verification).
-
-**Delegation Envelope** — Structured data package passed from orchestrator to specialist. Includes verbatim_request (user's original language, unchanged), task description, acceptance criteria, context_summary, file references, and agent_mode (for roles with multiple personas like reviewer).
-
-**Return Protocol** — Specialist's completion report. Includes status (completed/partial/failed/needs_review/needs_info), what changed, files touched, validation results, risks. For complex cases, a handoff document is written instead of a simple summary.
-
-**Council** — Multi-model consensus feature. 3 councillors (different models) and a synthesizer agent. Escalation-only: invoked on user request, planner-flagged critical risk, or reviewer rejection loop (≥2 cycles). For security architecture, source disagreement, or plan-intent conflicts, routes to reviewer Advisory Mode first.
-
-**Persistent Shared Context** — Files (AGENTS.md, plan.md, state.md, handoff.md) that maintain shared understanding between agents across delegations. Read via AGENTS.md mandate, summarized by orchestrator in delegation prompts.
-
-**notes.md** — A first-class persistent context file in `.opencode/notes.md`. Owned by Researcher and Builder, who write observational notes, micro-sketches, and diagnostic findings. Summarized into state.md at /close-stream by the orchestrator. See design §3.4 for full lifecycle.
-
-**Work Stream** — A feature or phase within which builder and researcher sessions are reused. Between streams, sessions are fresh. Stream lifecycle: explicit `/new-stream` and `/close-stream` commands (no auto-detection).
-
-**Preset** — A named configuration defining model assignments (primary + 2 fallbacks per agent), skill/MCP restrictions, and variant settings. Fully customizable per preset — no global fallback chains.
-
-**4-Tier Resilience** — Failure handling strategy: (1) Transient Error Guard — sequential model fallback + circuit breaker per model/provider; (2) Specialist Trajectory Guard — same-session retry ×3 → fresh session → escalate; (3) JSON Self-Correction hook; (4) Error classification: transient (auto-retry) vs. semantic (escalate).
-
-**Circuit Breaker** — 3-state (CLOSED/OPEN/HALF_OPEN) per model/provider. Opens after 5 consecutive failures, recovers after 30s, requires 2 successes to close. Failures not counted against breaker while fallback models remain available.
-
-**Council Trigger** — Condition that causes orchestrator to invoke council. Two-tier: direct-to-council (user request, critical risk, reviewer loop) and advisor-first escalation (source disagreement, security architecture, plan-intent conflict).
-
-**Path-Gating Hook** — Pre-tool enforcement that checks write/edit/apply_patch targets against per-agent path allowlists. Defaults keep the orchestrator limited to `.opencode/state.md`, `.opencode/handoff.md`, and `.opencode/plans/plan.md` status updates; planner to `.opencode/plans/`; researcher to notes/scratchpad files; builder broadly writable; and council/councillors read-only.
-
-**Startup Init** — Dispatcher startup workflow that audits Git, Beads, and Matt Pocock skills, registers `/init`, `/init:all`, `/beads:init`, `/new-stream`, and `/close-stream`, and seeds project `AGENTS.md` from `templates/AGENTS.md` when absent.
-
-**Ping-All Command** — `/ping-all` slash command that spawns concurrent lightweight `task` calls to all enabled specialist agents. Each receives a simple prompt; results collected with 10s timeout and displayed as a markdown table with ✅/❌ per agent.
-
-**Worktree Reconciliation** — Skeleton architecture in `src/hooks/worktree-reconciliation/` for reviewer-led parallel work merging. Designed around: reviewer verifies each worktree's output and runs `git merge` on success, with conflict resolution escalating to the user.
+TGO v2 is inspired by dispatcher-style orchestration, SDD-style artifacts, retrieval-led reasoning, and gatekeeper verification. It is not only a router: the orchestrator owns phase control and workflow decisions while builders own implementation.
 
 ## Agent Roles
-- **Orchestrator** — Pure dispatcher (no code, no plans, no writes except state.md)
-- **Planner** — Decomposes requests into structured plan.md
-- **Researcher** — Codebase search + documentation research (merged Explorer + Librarian)
-- **Builder** — Design + implementation (merged Designer + Fixer)
-- **Reviewer** — Dual-persona verification gatekeeper + strategic advisor
-- **Council** — Multi-model consensus (escalation-only, 3 councillors + synthesizer)
-- **Councillor** — Internal read-only council participant spawned only by the council workflow
+
+**Orchestrator** - The user-facing technical lead, phase controller, workflow router, and artifact owner. It preserves user intent, classifies requests, asks for missing decisions, routes work to specialists, and synthesizes results. It should not silently implement arbitrary project changes.
+
+**Researcher** - Evidence retrieval role for codebase search, documentation research, source comparison, and uncertainty reporting.
+
+**Builder** - Scoped implementation role for code, tests, documentation, and local validation after approval or a clear task boundary.
+
+**Reviewer** - Verification gatekeeper and advisory role. In Verification Mode it checks work against the user request, plan, tests, and acceptance criteria. In Advisory Mode it helps resolve architecture, security, and intent conflicts.
+
+**Council** - Escalation-only synthesis workflow for explicit user requests, high-risk decisions, or repeated reviewer rejection loops.
+
+**Councillor** - Internal council participant that provides one independent read-only analysis perspective. Councillors do not ask the user questions or write files.
+
+## Workflow Concepts
+
+**Delegation Envelope** - Structured handoff from orchestrator to a specialist. It should preserve verbatim user intent, task scope, acceptance criteria, context summary, relevant files, constraints, non-goals, and validation requirements.
+
+**Specialist Result Contract** - Completion report from a specialist. It should include status, what changed, files touched, validation evidence, risks, and exact follow-up needs.
+
+**Reviewer Gate** - Required verification step for behavior-changing work. Reviewer findings should prioritize bugs, regressions, missing tests, and mismatch with the original request or plan.
+
+**Council Derivation** - Council seat models derive from the active model preset's Researcher, Builder, and Reviewer primary models when possible. The orchestrator primary model is used for synthesis.
+
+**Conversation-Triggered Workflow** - TGO starts meaningful work from user intent in conversation or explicit commands, not from unattended startup hooks, timers, compaction hooks, polling, or ready issue queues.
+
+**Durable Artifacts** - Specs, plans, manifests, state, handoffs, reviews, and validation logs preserve intent across compaction and delegation boundaries.
+
+## Setup And Config Concepts
+
+**Bootstrap** - Deterministic setup flow that previews or applies TGO-managed plugin, default agent, MCP, agent catalog, model preset, and manifest entries.
+
+**Doctor** - Read-only inspection command that reports setup state, v1/omo-slim migration signals, missing TGO-managed entries, tool availability, secret-like values, and next steps without writing files.
+
+**Manifest** - TGO-owned state under `~/.config/opencode/tgo/manifest.jsonc`. It records active presets, managed config keys, backups, ignored warnings, and verification metadata so repair, rollback, and uninstall can distinguish TGO-owned entries from user-owned config.
+
+**OpenCode Config** - The load-bearing global config at `~/.config/opencode/opencode.jsonc`. TGO keeps required entries minimal here because OpenCode has no config include/import field.
+
+**TGO Config Catalog** - The TGO-owned peer file at `~/.config/opencode/trans-genderian-orchestra.jsonc`. Bootstrap writes generated TGO agent definitions and built-in model presets here. OpenCode does not load this file by schema include; TGO commands and plugin hooks use it as plugin-owned catalog/state.
+
+**Config Ownership Boundary** - User-owned providers, plugins, MCPs, agents, skills, permissions, and local tools must be preserved unless explicitly adopted or changed. TGO-managed writes should be backup-aware, manifest-linked, previewable, and reversible.
+
+**Secret-Like Value** - A token, API key, PAT, password, or credential-like string. TGO should warn, redact, or reject secret-like values on generated/managed surfaces.
+
+## Presets And Resilience
+
+**Tool Preset** - Named tool/MCP/skill setup dimension such as `bare-bones`, `default`, or `all-bells`.
+
+**Model Preset** - Named role-to-model lineup. Built-in presets are `balanced`, `mixed`, `copilot`, `go`, and `free`; `balanced` is a compatibility alias for `mixed`.
+
+**Resilience Preset** - Named retry/fallback behavior dimension such as `conservative`, `balanced`, or `aggressive`. Resilience is separate from model selection.
+
+**Fallback Classification** - Provider/model fallback handles structural failures such as transport errors, unavailable models, and provider failures. Semantic disagreement is not treated as success via fallback.
+
+**Circuit Breaker** - Per-model/provider failure guard that prevents repeatedly selecting failing routes without surfacing the degraded state.
+
+## Command Surface
+
+**`/tgo:doctor`** - Inspect TGO setup and planned repairs.
+
+**`/tgo:setup`** - Preview setup or preset changes.
+
+**`/tgo:init`** - Initialize project-local guidance, validation, Beads, and artifact scaffolding.
+
+**`/tgo:uninstall`** - Preview or remove TGO-managed entries safely.
+
+**`/tgo:work`** - Start or continue approved TGO-managed implementation work.
+
+**`/tgo:models`** - Inspect or switch model presets.
+
+Compatibility aliases may exist only where implemented by the plugin command config.

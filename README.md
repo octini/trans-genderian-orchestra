@@ -12,7 +12,7 @@ This beta is usable for setup validation and documentation-led testing, but it i
 
 ## Philosophy
 
-- Pure dispatcher: the orchestrator routes, confirms, delegates, and synthesizes instead of silently implementing arbitrary changes.
+- Technical-lead orchestration: the orchestrator owns phase control, routing, confirmation, delegation, and synthesis instead of silently implementing arbitrary changes.
 - Specialist lanes: researcher, builder, reviewer, council, and councillor roles have separate responsibilities and permission expectations.
 - Approval gates: behavior-changing work should pass through approved plans, scoped implementation, and reviewer verification.
 - Retrieval-led reasoning: agents should inspect project files, docs, history, and external references before relying on memory.
@@ -58,7 +58,7 @@ Preview or apply setup with explicit preset dimensions:
 trans-genderian-orchestra bootstrap --tools default --models balanced --resilience balanced
 ```
 
-The bootstrap path plans TGO-managed plugins, agents, commands, tools, model presets, and resilience settings while preserving user-owned OpenCode config.
+The bootstrap path plans required OpenCode entries, tools, model presets, and resilience settings while preserving user-owned config. It keeps `~/.config/opencode/opencode.jsonc` minimal for plugin/default-agent/MCP entries and writes TGO-owned agent/model catalog data to `~/.config/opencode/trans-genderian-orchestra.jsonc`.
 
 ## Beta Status
 
@@ -76,7 +76,7 @@ The bootstrap path plans TGO-managed plugins, agents, commands, tools, model pre
 - Setup lifecycle: deterministic bootstrap, setup preview, doctor inspection, manifest-backed changes, backups, rollback helpers, and safe uninstall.
 - Migration lifecycle: v1/omo-slim detection, replacement planning, root package cutover, beta release gates, and explicit latest-tag caveat.
 - Tooling: `bare-bones`, `default`, and `all-bells` tool presets; skills and MCP planning; user-managed provider/plugin/MCP preservation.
-- Model and resilience planning: model presets, model-switch planning, provider fallback classification, circuit breaker state, semantic retry boundaries, and council derivation.
+- Model and resilience planning: `balanced` compatibility alias, `mixed`, `copilot`, `go`, and `free` model presets; model-switch planning; provider fallback classification; circuit breaker state; semantic retry boundaries; and council derivation.
 - Workflow primitives: delegation envelope, specialist result contract, reviewer gate, scheduler/worktree planning, integration/reconciliation primitives, and auto-continue/resume concepts.
 - Validation harnesses: release-readiness tests and the reusable `verify:public-beta-opencode` smoke script.
 
@@ -97,6 +97,7 @@ The bootstrap path plans TGO-managed plugins, agents, commands, tools, model pre
 - Doctor is read-only.
 - Setup and bootstrap should preview planned actions before writing.
 - Writes are manifest-linked and backup-aware.
+- Generated TGO agent/model catalog data lives in `~/.config/opencode/trans-genderian-orchestra.jsonc`; OpenCode still needs minimal load-bearing entries in `opencode.jsonc` because it has no config include field.
 - Uninstall removes only TGO-managed entries recorded in the manifest.
 - Shared CLIs such as `bd`, `ctx7`, `gh`, and `uvx` are not uninstalled by TGO.
 - Secret-like values are warned about, redacted, or rejected on TGO-managed surfaces.

@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test';
 import { createMemoryFileSystem } from '../filesystem/memory-adapter';
-import { TGO_AGENT_IDS } from '../plugin/agent-ids';
 import { runBootstrap } from './bootstrap';
 
 describe('bootstrap command', () => {
@@ -46,7 +45,7 @@ describe('bootstrap command', () => {
     ).toContain('context7-cli');
   });
 
-  test('apply creates backup before writing config and manifest', async () => {
+  test('apply creates backup, minimal OpenCode config, TGO config, and manifest', async () => {
     const fs = createMemoryFileSystem({
       '/home/user/.config/opencode/opencode.jsonc':
         '{"plugin":["user-plugin"]}',
@@ -80,9 +79,22 @@ describe('bootstrap command', () => {
     expect(config.plugin).toContain('user-plugin');
     expect(config.plugin).toContain('trans-genderian-orchestra@2.0.0-beta.0');
     expect(config.default_agent).toBe('tgo-orchestrator');
-    for (const agentId of TGO_AGENT_IDS) {
-      expect(config.agent[agentId]).toBeDefined();
-    }
+    expect(config.agent).toBeUndefined();
+
+    const tgoConfig = JSON.parse(
+      await fs.readText(
+        '/home/user/.config/opencode/trans-genderian-orchestra.jsonc',
+      ),
+    );
+    expect(tgoConfig.agent['tgo-orchestrator']).toBeDefined();
+    expect(tgoConfig.agent['tgo-builder']).toBeDefined();
+    expect(tgoConfig.modelPresets.mixed.roles['tgo-orchestrator'][0]).toEqual({
+      id: 'github-copilot/gpt-5.5',
+      variant: 'xhigh',
+    });
+    expect(tgoConfig.modelPresets.balanced.roles).toEqual(
+      tgoConfig.modelPresets.mixed.roles,
+    );
 
     const manifest = JSON.parse(
       await fs.readText('/home/user/.config/opencode/tgo/manifest.jsonc'),
@@ -91,9 +103,10 @@ describe('bootstrap command', () => {
     const managedConfigKeys = manifest.managed_config.map(
       (entry: { key: string }) => entry.key,
     );
-    expect(managedConfigKeys).toContain('agent.tgo-orchestrator');
-    expect(managedConfigKeys).toContain('agent.tgo-builder');
-    expect(managedConfigKeys).toContain('agent.tgo-reviewer');
+    expect(managedConfigKeys).toContain('tgo_config.agent.tgo-orchestrator');
+    expect(managedConfigKeys).toContain('tgo_config.agent.tgo-builder');
+    expect(managedConfigKeys).toContain('tgo_config.modelPresets.mixed');
+    expect(managedConfigKeys).toContain('default_agent');
   });
 
   test('dry-run honors bare-bones tool preset without remote MCP actions', async () => {

@@ -3,7 +3,13 @@ export type ModelPreset = 'balanced' | string;
 export type ResiliencePreset = 'conservative' | 'balanced' | 'aggressive';
 
 export interface ManagedConfigEntry {
-  kind: 'agent' | 'mcp' | 'plugin' | 'command' | 'default_agent';
+  kind:
+    | 'agent'
+    | 'mcp'
+    | 'plugin'
+    | 'command'
+    | 'default_agent'
+    | 'model_preset';
   key: string;
 }
 

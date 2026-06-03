@@ -90,6 +90,27 @@ describe('release documentation', () => {
     }
   });
 
+  test('repository guidance reflects current v2 agent and config model', () => {
+    const guidanceDocs = ['AGENTS.md', 'CONTEXT.md', 'README.md'].map(
+      (path) => [path, readRepoFile(path)] as const,
+    );
+
+    for (const [path, contents] of guidanceDocs) {
+      expect(contents, path).not.toContain('pure dispatcher');
+      expect(contents, path).not.toContain(
+        'Run from `trans-genderian-orchestra/`',
+      );
+      expect(contents, path).not.toContain('Planning Agent');
+      expect(contents, path).not.toContain('working `/ping-all`');
+      expect(contents, path).toContain('trans-genderian-orchestra.jsonc');
+    }
+
+    expect(readRepoFile('AGENTS.md')).not.toContain('### Planner');
+    expect(readRepoFile('CONTEXT.md')).not.toContain(
+      '## Agent Roles\n- **Orchestrator** — Pure dispatcher',
+    );
+  });
+
   test('feature docs cover every v2 design spec number', () => {
     const docsCorpus = deepDiveDocs
       .map((path) => readRepoFile(path))

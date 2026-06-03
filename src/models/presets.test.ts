@@ -6,28 +6,100 @@ import {
 } from './presets';
 
 describe('model preset catalog', () => {
-  test('defines a provisional balanced model lineup for every TGO role', () => {
+  test('defines approved built-in model lineups for every TGO role', () => {
     const catalog = createBuiltInModelCatalog();
-    const balanced = catalog.presets.balanced;
 
     expect(catalog.version).toBe(BUILT_IN_MODEL_CATALOG_VERSION);
-    expect(Object.keys(catalog.presets)).toEqual(['balanced']);
-    expect(Object.keys(balanced.roles).sort()).toEqual([
-      'tgo-builder',
-      'tgo-council',
-      'tgo-councillor',
-      'tgo-orchestrator',
-      'tgo-researcher',
-      'tgo-reviewer',
+    expect(Object.keys(catalog.presets).sort()).toEqual([
+      'balanced',
+      'copilot',
+      'free',
+      'go',
+      'mixed',
     ]);
-    expect(balanced.roles['tgo-orchestrator'][0]).toEqual({
-      id: 'opencode-go/mimo-v2.5',
-      variant: 'high',
-    });
-    expect(balanced.roles['tgo-reviewer'][0]).toEqual({
-      id: 'github-copilot/claude-opus-4.7',
-      variant: 'max',
-    });
+
+    for (const preset of Object.values(catalog.presets)) {
+      expect(Object.keys(preset.roles).sort()).toEqual([
+        'tgo-builder',
+        'tgo-council',
+        'tgo-councillor',
+        'tgo-orchestrator',
+        'tgo-researcher',
+        'tgo-reviewer',
+      ]);
+      for (const lineup of Object.values(preset.roles)) {
+        expect(lineup).toHaveLength(3);
+      }
+    }
+  });
+
+  test('balanced is a compatibility alias for the mixed lineup', () => {
+    const catalog = createBuiltInModelCatalog();
+
+    expect(catalog.presets.balanced.roles).toEqual(catalog.presets.mixed.roles);
+  });
+
+  test('defines the approved copilot preset', () => {
+    const copilot = createBuiltInModelCatalog().presets.copilot;
+
+    expect(copilot.roles['tgo-orchestrator']).toEqual([
+      { id: 'github-copilot/gpt-5.5', variant: 'xhigh' },
+      { id: 'github-copilot/claude-sonnet-4.6', variant: 'max' },
+      { id: 'github-copilot/gpt-5.4', variant: 'high' },
+    ]);
+    expect(copilot.roles['tgo-councillor']).toEqual([
+      { id: 'github-copilot/gemini-3.5-flash', variant: 'high' },
+      { id: 'github-copilot/gpt-5.5', variant: 'xhigh' },
+      { id: 'github-copilot/claude-opus-4.7', variant: 'max' },
+    ]);
+  });
+
+  test('defines the approved go preset', () => {
+    const go = createBuiltInModelCatalog().presets.go;
+
+    expect(go.roles['tgo-orchestrator']).toEqual([
+      { id: 'opencode-go/mimo-v2.5-pro', variant: 'high' },
+      { id: 'opencode-go/kimi-k2.6' },
+      { id: 'opencode-go/minimax-m3' },
+    ]);
+    expect(go.roles['tgo-councillor']).toEqual([
+      { id: 'opencode-go/mimo-v2.5', variant: 'high' },
+      { id: 'opencode-go/kimi-k2.6' },
+      { id: 'opencode-go/glm-5.1' },
+    ]);
+  });
+
+  test('defines the approved free preset', () => {
+    const free = createBuiltInModelCatalog().presets.free;
+
+    expect(free.roles['tgo-orchestrator']).toEqual([
+      { id: 'google/antigravity-claude-sonnet-4-6', variant: 'max' },
+      { id: 'nvidia/moonshotai/kimi-k2.6' },
+      { id: 'opencode/mimo-v2.5-free', variant: 'high' },
+    ]);
+    expect(free.roles['tgo-councillor']).toEqual([
+      { id: 'google/antigravity-gemini-3.1-pro', variant: 'max' },
+      {
+        id: 'nvidia/qwen/qwen3-coder-480b-a35b-instruct',
+        variant: 'high',
+      },
+      { id: 'google/antigravity-claude-opus-4-6-thinking', variant: 'max' },
+    ]);
+  });
+
+  test('defines the approved mixed preset', () => {
+    const mixed = createBuiltInModelCatalog().presets.mixed;
+
+    expect(mixed.roles['tgo-orchestrator']).toEqual([
+      { id: 'github-copilot/gpt-5.5', variant: 'xhigh' },
+      { id: 'opencode-go/mimo-v2.5-pro', variant: 'high' },
+      { id: 'nvidia/moonshotai/kimi-k2.6' },
+    ]);
+    expect(mixed.roles['tgo-councillor']).toEqual([
+      { id: 'github-copilot/gemini-3.5-flash', variant: 'high' },
+      { id: 'github-copilot/gpt-5.5', variant: 'xhigh' },
+      { id: 'github-copilot/claude-opus-4.7', variant: 'max' },
+    ]);
   });
 
   test('plans model preset switches without changing tools or resilience', () => {

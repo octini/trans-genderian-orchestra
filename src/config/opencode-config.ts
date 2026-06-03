@@ -74,6 +74,38 @@ export function applyManagedEntries(
   return { config: next, warnings };
 }
 
+export function applyMinimalManagedEntries(
+  config: OpenCodeConfig,
+  entries: ManagedEntries,
+): ApplyConfigResult {
+  const next: OpenCodeConfig = {
+    ...config,
+    plugin: [...(config.plugin ?? [])],
+    mcp: { ...(config.mcp ?? {}) },
+  };
+  const warnings: CommandNotice[] = [];
+
+  for (const plugin of entries.plugins) {
+    appendUniquePlugin(next.plugin ?? [], plugin);
+  }
+
+  next.mcp = {
+    ...next.mcp,
+    ...entries.mcps,
+  };
+
+  if (config.default_agent && config.default_agent !== entries.defaultAgent) {
+    warnings.push({
+      code: 'default-agent-conflict',
+      message: `default_agent will change from ${config.default_agent} to ${entries.defaultAgent}.`,
+      severity: 'warning',
+    });
+  }
+  next.default_agent = entries.defaultAgent;
+
+  return { config: next, warnings };
+}
+
 export function serializeOpenCodeConfig(config: OpenCodeConfig): string {
   return `${JSON.stringify(config, null, 2)}\n`;
 }

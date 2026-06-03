@@ -2,13 +2,14 @@ import { join } from 'node:path';
 import { createBackup } from '../backup/store';
 import { planDefaultManagedEntries } from '../config/managed-entries';
 import {
-  applyManagedEntries,
+  applyMinimalManagedEntries,
   parseOpenCodeConfig,
   serializeOpenCodeConfig,
 } from '../config/opencode-config';
 import type { FileSystemAdapter } from '../filesystem/adapter';
 import type { ModelPreset, ResiliencePreset } from '../manifest/schema';
 import { readManifest, writeManifest } from '../manifest/store';
+import { createBuiltInModelCatalog } from '../models/presets';
 import { findSecretLikeValues } from '../security/secrets';
 import { type CommandDetector, detectPresetTools } from '../tools/detect';
 import type { ToolPresetName } from '../tools/presets';
@@ -32,6 +33,13 @@ export interface BootstrapInput {
 
 function globalConfigPath(homeDir: string): string {
   return join(homeDir, '.config/opencode/opencode.jsonc').replaceAll('\\', '/');
+}
+
+function globalTgoConfigPath(homeDir: string): string {
+  return join(
+    homeDir,
+    '.config/opencode/trans-genderian-orchestra.jsonc',
+  ).replaceAll('\\', '/');
 }
 
 function globalManifestPath(homeDir: string): string {
@@ -98,12 +106,19 @@ export async function runBootstrap(
     ? await input.fs.readText(configPath)
     : '{}';
   const existingConfig = parseOpenCodeConfig(existingText);
-  const applied = applyManagedEntries(existingConfig, entries);
+  const applied = applyMinimalManagedEntries(existingConfig, entries);
   result.warnings.push(...applied.warnings);
 
   const serialized = serializeOpenCodeConfig(applied.config);
+  const tgoConfig = {
+    $schema: 'https://opencode.ai/config.json',
+    agent: entries.agents,
+    modelPresets: createBuiltInModelCatalog().presets,
+  };
+  const serializedTgoConfig = serializeOpenCodeConfig(tgoConfig);
   const secretMatches = findSecretLikeValues(serialized);
-  if (secretMatches.length > 0) {
+  const tgoSecretMatches = findSecretLikeValues(serializedTgoConfig);
+  if (secretMatches.length > 0 || tgoSecretMatches.length > 0) {
     result.blocked_capabilities.push({
       capability: 'config-write',
       reason: 'TGO-managed config contains secret-like values.',
@@ -129,8 +144,16 @@ export async function runBootstrap(
   await input.fs.writeText(configPath, serialized);
   result.changes_applied.push({
     id: 'write-opencode-config',
-    title: 'Write OpenCode config with TGO-managed entries',
+    title: 'Write OpenCode config with required TGO plugin entries',
     target: configPath,
+  });
+
+  const tgoConfigPath = globalTgoConfigPath(input.homeDir);
+  await input.fs.writeText(tgoConfigPath, serializedTgoConfig);
+  result.changes_applied.push({
+    id: 'write-tgo-config',
+    title: 'Write TGO-owned config catalog',
+    target: tgoConfigPath,
   });
 
   const manifestPath = globalManifestPath(input.homeDir);
@@ -145,7 +168,11 @@ export async function runBootstrap(
     })),
     ...Object.keys(entries.agents).map((agentId) => ({
       kind: 'agent' as const,
-      key: `agent.${agentId}`,
+      key: `tgo_config.agent.${agentId}`,
+    })),
+    ...Object.keys(createBuiltInModelCatalog().presets).map((presetId) => ({
+      kind: 'model_preset' as const,
+      key: `tgo_config.modelPresets.${presetId}`,
     })),
     ...Object.keys(entries.mcps).map((mcpId) => ({
       kind: 'mcp' as const,

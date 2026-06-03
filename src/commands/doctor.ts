@@ -24,6 +24,13 @@ function globalConfigPath(homeDir: string): string {
   return join(homeDir, '.config/opencode/opencode.jsonc').replaceAll('\\', '/');
 }
 
+function globalTgoConfigPath(homeDir: string): string {
+  return join(
+    homeDir,
+    '.config/opencode/trans-genderian-orchestra.jsonc',
+  ).replaceAll('\\', '/');
+}
+
 function globalManifestPath(homeDir: string): string {
   return join(homeDir, '.config/opencode/tgo/manifest.jsonc').replaceAll(
     '\\',
@@ -37,6 +44,7 @@ export async function runDoctor(
   const result = createEmptyCommandResult('doctor', 'read-only');
   const manifestPath = globalManifestPath(input.homeDir);
   const configPath = globalConfigPath(input.homeDir);
+  const tgoConfigPath = globalTgoConfigPath(input.homeDir);
   const manifest = await readManifest(input.fs, manifestPath);
 
   result.warnings.push({
@@ -57,6 +65,9 @@ export async function runDoctor(
 
   if (await input.fs.exists(configPath)) {
     const configText = await input.fs.readText(configPath);
+    const tgoConfigText = (await input.fs.exists(tgoConfigPath))
+      ? await input.fs.readText(tgoConfigPath)
+      : '{}';
     if (findSecretLikeValues(configText).length > 0) {
       result.warnings.push({
         code: 'secret-like-config-value',
@@ -67,7 +78,16 @@ export async function runDoctor(
     }
 
     const config = parseOpenCodeConfig(configText);
-    const modelPresets = resolveModelPresetCatalog(config);
+    const tgoConfig = parseOpenCodeConfig(tgoConfigText);
+    const mergedConfig = {
+      ...config,
+      agent: { ...(config.agent ?? {}), ...(tgoConfig.agent ?? {}) },
+      modelPresets: {
+        ...(config.modelPresets ?? {}),
+        ...(tgoConfig.modelPresets ?? {}),
+      },
+    };
+    const modelPresets = resolveModelPresetCatalog(mergedConfig);
     result.warnings.push(...modelPresets.warnings);
 
     const migration = planMigrationPreview(
@@ -101,7 +121,7 @@ export async function runDoctor(
     }
 
     for (const agentId of TGO_AGENT_IDS) {
-      if (!config.agent?.[agentId]) {
+      if (!mergedConfig.agent?.[agentId]) {
         result.warnings.push({
           code: 'missing-managed-agent',
           message: `TGO-managed agent ${agentId} is missing from OpenCode config.`,

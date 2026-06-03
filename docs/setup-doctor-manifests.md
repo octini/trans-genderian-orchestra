@@ -23,6 +23,16 @@ trans-genderian-orchestra bootstrap --tools default --models balanced --resilien
 
 Setup should preview planned changes, preserve user-managed config, and separate tool/model/resilience dimensions.
 
+## Config Ownership
+
+OpenCode has no schema-level `include`, `extends`, or `import` field for peer config files, so TGO keeps the load-bearing OpenCode config small instead of assuming OpenCode can load a sibling file automatically.
+
+- `~/.config/opencode/opencode.jsonc`: minimal required OpenCode entries such as plugin registration, `default_agent`, and TGO-managed MCPs.
+- `~/.config/opencode/trans-genderian-orchestra.jsonc`: TGO-owned catalog containing generated TGO agents and built-in `modelPresets`.
+- `~/.config/opencode/tgo/manifest.jsonc`: TGO-owned manifest that records active presets, managed config keys, backups, ignored warnings, and verification metadata.
+
+Runtime agent and command availability still comes from the plugin config hook. The peer catalog is owned by TGO commands and setup/doctor checks; it is not an OpenCode schema include.
+
 ## Command Result Contract
 
 Deterministic commands should report planned actions, warnings, changed paths, backup paths, manifest updates, and next steps in a machine-readable result shape where available.
@@ -37,7 +47,7 @@ Config writes should create timestamped backups before mutation. Rollback helper
 
 ## Config Merge And Ownership
 
-TGO should deep-merge config, preserve existing user providers/plugins/agents/MCPs, and avoid overwriting user-owned settings unless explicitly requested.
+TGO should deep-merge config, preserve existing user providers/plugins/agents/MCPs, and avoid overwriting user-owned settings unless explicitly requested. Bootstrap writes generated TGO agents to the TGO catalog file rather than expanding `opencode.jsonc` with every role definition.
 
 ## Secret-Like Values
 

@@ -40,6 +40,8 @@ TGO-managed commands use the `tgo:` namespace where practical. Compatibility ali
 
 Global setup handles OpenCode-level plugin/config installation. Project initialization handles Beads, guidance, validation, and local artifact scaffolding. Both flows should preview changes and preserve user-owned config.
 
+Bootstrap keeps required OpenCode entries minimal in `~/.config/opencode/opencode.jsonc` and writes generated TGO agent/model catalog data to `~/.config/opencode/trans-genderian-orchestra.jsonc`. The peer catalog is TGO-owned state, not an OpenCode schema include.
+
 ## Retained V1 Ideas
 
 - Dispatcher-oriented workflows.
