@@ -14,7 +14,7 @@ Install the beta into a disposable OpenCode profile or an explicitly approved re
 opencode plugin trans-genderian-orchestra@beta --global --force
 ```
 
-The `beta` dist-tag currently points to `2.0.0-beta.4`. npm still points `latest` at the original `2.0.0-beta.0` because it was the first published version. Prefer `@beta` in public examples, automation, and validation until a future non-prerelease publish moves `latest`.
+The `beta` dist-tag currently points to `2.0.0-beta.5`. npm still points `latest` at the original `2.0.0-beta.0` because it was the first published version. Prefer `@beta` in public examples, automation, and validation until a future non-prerelease publish moves `latest`.
 
 The published beta plugin has been verified in a real OpenCode command path: `/tgo:doctor --json` executes `npx --yes trans-genderian-orchestra@beta doctor --json`, avoids `bd doctor`, and returns TGO doctor JSON without stderr.
 

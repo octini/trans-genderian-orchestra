@@ -2,7 +2,7 @@
 
 > TGO v2 is an OpenCode dispatcher plugin that turns ad-hoc AI coding sessions into a review-oriented engineering workflow.
 
-`trans-genderian-orchestra` currently lives at the repository root and is published as `2.0.0-beta.4` on the npm `beta` dist-tag.
+`trans-genderian-orchestra` currently lives at the repository root and is published as `2.0.0-beta.5` on the npm `beta` dist-tag.
 
 ## What It Is
 
@@ -62,8 +62,8 @@ The bootstrap path plans required OpenCode entries, tools, model presets, and re
 
 ## Beta Status
 
-- Package version: `2.0.0-beta.4`.
-- npm `beta` dist-tag: `2.0.0-beta.4`.
+- Package version: `2.0.0-beta.5`.
+- npm `beta` dist-tag: `2.0.0-beta.5`.
 - npm `latest` dist-tag: still points at `2.0.0-beta.0`.
 - Recommended install selector: `trans-genderian-orchestra@beta`.
 - Phase 7 release hardening: deterministic v1/omo-slim detection, rollback helpers, safe uninstall, doctor warnings, release gates, and migration documentation.
