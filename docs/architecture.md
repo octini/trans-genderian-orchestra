@@ -6,7 +6,7 @@ TGO v2 is an OpenCode workflow plugin that coordinates specialist agents, durabl
 
 ## Beta Scope
 
-- Current public package: `2.0.0-beta.5`.
+- Current public package: `2.0.0-beta.6`.
 - Current recommended selector: `trans-genderian-orchestra@beta`.
 - npm `latest` caveat: `latest` still points to `2.0.0-beta.0` until a non-prerelease version is published.
 - The package lives at the repository root after the approved root cutover.
