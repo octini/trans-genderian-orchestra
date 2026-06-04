@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test';
+import { applyTgoPluginConfig } from '../index';
+import { createBuiltInModelCatalog } from '../models/presets';
 import { TGO_AGENT_IDS } from './agent-ids';
 import { createTgoAgentConfigs } from './agents';
 import { createTgoCommandConfigs } from './commands';
@@ -62,6 +64,14 @@ describe('TGO agent role permissions', () => {
       expect(permissions.bash).toBe('deny');
     }
 
+    const reviewerPermissions = getPermissionProfile('tgo-reviewer');
+    expect(reviewerPermissions.external_directory).toEqual({
+      '~/.config/opencode/**': 'allow',
+    });
+    expect(reviewerPermissions.bash).toBe('deny');
+    expect(reviewerPermissions.edit).toBe('deny');
+    expect(reviewerPermissions.write).toBe('deny');
+
     expect(getPermissionProfile('tgo-councillor').question).toBe('deny');
   });
 });
@@ -90,6 +100,41 @@ describe('TGO plugin config definitions', () => {
     expect(agents['tgo-orchestrator'].prompt).toContain('tool_schema_failure');
     expect(agents['tgo-orchestrator'].prompt).toContain('Artifact Lifecycle');
     expect(agents['tgo-orchestrator'].prompt).toContain('Reviewer Gate');
+  });
+
+  test('applies active mixed preset primary models to runtime agent configs', () => {
+    const mixed = createBuiltInModelCatalog().presets.mixed;
+    const agents = createTgoAgentConfigs({ modelPreset: mixed });
+
+    expect(agents['tgo-orchestrator'].model).toBe('github-copilot/gpt-5.5');
+    expect(agents['tgo-researcher'].model).toBe(
+      'github-copilot/gemini-3.5-flash',
+    );
+    expect(agents['tgo-builder'].model).toBe('github-copilot/gpt-5.5');
+    expect(agents['tgo-reviewer'].model).toBe('github-copilot/claude-opus-4.7');
+  });
+
+  test('balanced preset applies the same primary models as mixed', () => {
+    const balanced = createBuiltInModelCatalog().presets.balanced;
+    const agents = createTgoAgentConfigs({ modelPreset: balanced });
+
+    expect(agents['tgo-researcher'].model).toBe(
+      'github-copilot/gemini-3.5-flash',
+    );
+    expect(agents['tgo-reviewer'].model).toBe('github-copilot/claude-opus-4.7');
+  });
+
+  test('plugin config injection applies active preset primary models', () => {
+    const config = {};
+
+    applyTgoPluginConfig(config, { activeModelPreset: 'mixed' });
+
+    expect(config.agent?.['tgo-researcher'].model).toBe(
+      'github-copilot/gemini-3.5-flash',
+    );
+    expect(config.agent?.['tgo-reviewer'].model).toBe(
+      'github-copilot/claude-opus-4.7',
+    );
   });
 
   test('creates namespaced command configs and compatibility aliases', () => {

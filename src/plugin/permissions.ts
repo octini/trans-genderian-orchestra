@@ -52,6 +52,13 @@ const BUILDER_PERMISSIONS: PermissionProfile = {
   websearch: 'allow',
 };
 
+const REVIEWER_PERMISSIONS: PermissionProfile = {
+  ...READ_ONLY_PERMISSIONS,
+  external_directory: {
+    '~/.config/opencode/**': 'allow',
+  },
+};
+
 const COUNCILLOR_PERMISSIONS: PermissionProfile = {
   ...READ_ONLY_PERMISSIONS,
   question: 'deny',
@@ -61,7 +68,7 @@ const PROFILES: Record<TgoAgentId, PermissionProfile> = {
   'tgo-orchestrator': ORCHESTRATOR_PERMISSIONS,
   'tgo-researcher': RESEARCHER_PERMISSIONS,
   'tgo-builder': BUILDER_PERMISSIONS,
-  'tgo-reviewer': READ_ONLY_PERMISSIONS,
+  'tgo-reviewer': REVIEWER_PERMISSIONS,
   'tgo-council': READ_ONLY_PERMISSIONS,
   'tgo-councillor': COUNCILLOR_PERMISSIONS,
 };

@@ -1,3 +1,6 @@
+import type { OpenCodeConfig } from '../config/opencode-config';
+import { resolveModelPresetCatalog } from '../models/config';
+import type { ModelPresetDefinition } from '../models/presets';
 import { ORCHESTRATOR_PROMPT } from '../workflow/orchestrator-prompt';
 import { TGO_AGENT_IDS, type TgoAgentId } from './agent-ids';
 import { getPermissionProfile, type PermissionProfile } from './permissions';
@@ -7,6 +10,16 @@ export interface TgoAgentConfig {
   mode: 'primary' | 'subagent' | 'all';
   prompt: string;
   permission: PermissionProfile;
+  model?: string;
+}
+
+export interface TgoAgentConfigOptions {
+  modelPreset?: ModelPresetDefinition;
+}
+
+export interface RuntimeTgoAgentConfigOptions {
+  config: OpenCodeConfig;
+  activeModelPreset?: string;
 }
 
 const ROLE_PROMPTS: Record<TgoAgentId, string> = {
@@ -35,16 +48,33 @@ const DESCRIPTIONS: Record<TgoAgentId, string> = {
   'tgo-councillor': 'TGO Councillor: internal council perspective participant.',
 };
 
-export function createTgoAgentConfigs(): Record<TgoAgentId, TgoAgentConfig> {
+export function createTgoAgentConfigs(
+  options: TgoAgentConfigOptions = {},
+): Record<TgoAgentId, TgoAgentConfig> {
   return Object.fromEntries(
-    TGO_AGENT_IDS.map((agentId) => [
-      agentId,
-      {
-        description: DESCRIPTIONS[agentId],
-        mode: agentId === 'tgo-orchestrator' ? 'primary' : 'subagent',
-        prompt: ROLE_PROMPTS[agentId],
-        permission: getPermissionProfile(agentId),
-      },
-    ]),
+    TGO_AGENT_IDS.map((agentId) => {
+      const primaryModel = options.modelPreset?.roles[agentId]?.[0]?.id;
+
+      return [
+        agentId,
+        {
+          description: DESCRIPTIONS[agentId],
+          mode: agentId === 'tgo-orchestrator' ? 'primary' : 'subagent',
+          prompt: ROLE_PROMPTS[agentId],
+          permission: getPermissionProfile(agentId),
+          ...(primaryModel ? { model: primaryModel } : {}),
+        },
+      ];
+    }),
   ) as Record<TgoAgentId, TgoAgentConfig>;
+}
+
+export function createRuntimeTgoAgentConfigs(
+  options: RuntimeTgoAgentConfigOptions,
+): Record<TgoAgentId, TgoAgentConfig> {
+  const catalog = resolveModelPresetCatalog(options.config).catalog;
+  const modelPresetName = options.activeModelPreset ?? 'balanced';
+  const modelPreset = catalog.presets[modelPresetName];
+
+  return createTgoAgentConfigs({ modelPreset });
 }
