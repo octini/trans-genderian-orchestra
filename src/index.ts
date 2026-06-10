@@ -67,14 +67,14 @@ async function appLog(
 ): Promise<void> {
   try {
     await ctx.client.app.log({
-      body: { service: 'oh-my-opencode-slim', level, message },
+      body: { service: 'trans-genderian-orchestra', level, message },
     });
   } catch {
     // client.app.log may deadlock or be unavailable; stderr is the
     // fallback
     const prefix =
       level === 'error' ? 'ERROR' : level === 'warn' ? 'WARN' : 'INFO';
-    console.error(`[oh-my-opencode-slim] ${prefix}: ${message}`);
+    console.error(`[trans-genderian-orchestra] ${prefix}: ${message}`);
   }
 }
 
@@ -334,7 +334,7 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
     await appLog(
       ctx,
       'error',
-      `INIT FAILED: ${String(err)}. Report at github.com/alvinunreal/oh-my-opencode-slim/issues/310`,
+      `INIT FAILED: ${String(err)}. Report at github.com/anomalyco/trans-genderian-orchestra/issues`,
     );
     throw err;
   }
@@ -360,7 +360,7 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
       `  mcps:   ${mcpCount} (expected >=${mcpThreshold})`,
       'This usually means a dependency failed to resolve (jsdom, etc).',
       'If you recently updated opencode, see:',
-      '  github.com/alvinunreal/oh-my-opencode-slim/issues/310',
+      '  github.com/anomalyco/trans-genderian-orchestra/issues',
     ].join('\n');
     log(`[plugin] WARN: ${msg}`);
     await appLog(ctx, 'warn', msg);
@@ -386,7 +386,7 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
   divoomManager.onPluginLoad();
 
   return {
-    name: 'oh-my-opencode-slim',
+    name: 'trans-genderian-orchestra',
 
     agent: agents,
 
