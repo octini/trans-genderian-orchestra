@@ -1,5 +1,5 @@
 {
-  "$id": "https://raw.githubusercontent.com/anomalyco/trans-genderian-orchestra/main/trans-genderian-orchestra.schema.json",
+  "$id": "https://raw.githubusercontent.com/octini/trans-genderian-orchestra/main/trans-genderian-orchestra.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "properties": {

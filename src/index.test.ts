@@ -1,6 +1,7 @@
 /// <reference types="bun-types" />
 
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
 import { TGO_ISSUES_URL } from './index';
 
 describe('plugin support URLs', () => {
@@ -9,5 +10,18 @@ describe('plugin support URLs', () => {
       'github.com/octini/trans-genderian-orchestra/issues',
     );
     expect(TGO_ISSUES_URL).not.toContain('anomalyco/trans-genderian-orchestra');
+    expect(TGO_ISSUES_URL).not.toContain(
+      'alvinunreal/trans-genderian-orchestra',
+    );
+  });
+
+  test('root schema id points at the current repository', () => {
+    const schema = JSON.parse(
+      readFileSync('trans-genderian-orchestra.schema.json', 'utf8'),
+    );
+
+    expect(schema.$id).toContain('octini/trans-genderian-orchestra');
+    expect(schema.$id).not.toContain('anomalyco/trans-genderian-orchestra');
+    expect(schema.$id).not.toContain('alvinunreal/trans-genderian-orchestra');
   });
 });
