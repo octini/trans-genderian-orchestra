@@ -44,3 +44,14 @@ export type ParsedEnsembleVerdict =
 export type ParsedPrincipalMetadata =
   | { valid: true; reviewedTaskId: string; verdict: PrincipalVerdict }
   | { valid: false; reason: string };
+
+export interface ReviewGate {
+  parentSessionId: string;
+  taskId: string;
+  requiredNextAction: RequiredNextAction;
+  skipEnsemble: boolean;
+  classification: ChangeClassification;
+  loopCount: number;
+  wheelsSpinning: boolean;
+  lastError?: string;
+}
