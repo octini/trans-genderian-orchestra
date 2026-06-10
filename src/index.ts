@@ -25,6 +25,7 @@ import {
   createJsonErrorRecoveryHook,
   createPhaseReminderHook,
   createPostFileToolNudgeHook,
+  createReviewLoopEnforcerHook,
   createTaskSessionManagerHook,
   ForegroundFallbackManager,
 } from './hooks';
@@ -135,6 +136,7 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
   let foregroundFallback: ForegroundFallbackManager;
   let deepworkCommandHook: ReturnType<typeof createDeepworkCommandHook>;
   let taskSessionManagerHook: ReturnType<typeof createTaskSessionManagerHook>;
+  let reviewLoopEnforcerHook: ReturnType<typeof createReviewLoopEnforcerHook>;
   let backgroundJobBoard: BackgroundJobBoard;
   let interviewManager: ReturnType<typeof createInterviewManager>;
   let presetManager: ReturnType<typeof createPresetManager>;
@@ -307,6 +309,10 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
       readContextMinLines: config.backgroundJobs?.readContextMinLines ?? 10,
       readContextMaxFiles: config.backgroundJobs?.readContextMaxFiles ?? 8,
       backgroundJobBoard,
+      shouldManageSession: (sessionID) =>
+        sessionAgentMap.get(sessionID) === 'conductor',
+    });
+    reviewLoopEnforcerHook = createReviewLoopEnforcerHook(ctx, {
       shouldManageSession: (sessionID) =>
         sessionAgentMap.get(sessionID) === 'conductor',
     });
@@ -821,6 +827,11 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
         },
         output as { args?: unknown },
       );
+
+      await reviewLoopEnforcerHook['tool.execute.before'](
+        input as { tool: string; sessionID?: string; callID?: string },
+        output as { args?: unknown },
+      );
     },
 
     'command.execute.before': async (input, output) => {
@@ -969,6 +980,10 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
         input,
         typedOutput,
       );
+      await reviewLoopEnforcerHook['experimental.chat.messages.transform'](
+        input,
+        typedOutput,
+      );
       await phaseReminderHook['experimental.chat.messages.transform'](
         input,
         typedOutput,
@@ -1048,6 +1063,13 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
             sessionID?: string;
             callID?: string;
           },
+          output as { output: unknown },
+        ),
+      );
+
+      await runPostToolHook('review-loop-enforcer', () =>
+        reviewLoopEnforcerHook['tool.execute.after'](
+          input as { tool: string; sessionID?: string; callID?: string },
           output as { output: unknown },
         ),
       );

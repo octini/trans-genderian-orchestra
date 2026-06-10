@@ -13,4 +13,5 @@ export { processImageAttachments } from './image-hook';
 export { createJsonErrorRecoveryHook } from './json-error-recovery';
 export { createPhaseReminderHook } from './phase-reminder';
 export { createPostFileToolNudgeHook } from './post-file-tool-nudge';
+export { createReviewLoopEnforcerHook } from './review-loop-enforcer';
 export { createTaskSessionManagerHook } from './task-session-manager';
