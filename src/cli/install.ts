@@ -417,7 +417,7 @@ async function runInstall(config: InstallConfig): Promise<number> {
   console.log(altProviders);
   const docsUrl =
     'https://github.com/alvinunreal/trans-genderian-orchestra/' +
-    'blob/master/docs/configuration.md';
+    'blob/master/docs/README.md';
   console.log(`  ${BLUE}${docsUrl}${RESET}`);
   console.log();
 

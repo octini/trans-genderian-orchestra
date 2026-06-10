@@ -128,7 +128,10 @@ export function generateLiteConfig(
     $schema: SCHEMA_URL,
     preset,
     presets: {},
-    ensemble: GENERATED_COUNCIL_CONFIG,
+    ensemble: {
+      ...GENERATED_COUNCIL_CONFIG,
+      default_preset: preset,
+    },
   };
 
   if (preset === 'opencode-go') {

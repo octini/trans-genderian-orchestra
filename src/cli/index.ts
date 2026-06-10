@@ -79,7 +79,7 @@ Available presets: ${getGeneratedPresetNames().join(', ')}
 
 The installer generates GitHub Copilot and OpenCode Go presets by default.
 GitHub Copilot is active unless --preset selects another generated preset.
-For the full config reference, see docs/configuration.md.
+For the current documentation hub, see docs/README.md.
 
 Examples:
   bunx trans-genderian-orchestra install

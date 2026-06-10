@@ -69,6 +69,7 @@ describe('providers', () => {
     });
 
     expect(config.preset).toBe('opencode-go');
+    expect((config.ensemble as any).default_preset).toBe('opencode-go');
     expect(config.disabled_agents).toEqual([]);
     expect(Object.keys(config.presets as any).sort()).toEqual([
       'github-copilot',
