@@ -96,7 +96,7 @@ export const AgentOverrideConfigSchema = z
     skills: z.array(z.string()).optional(), // skills this agent can use ("*" = all, "!item" = exclude)
     mcps: z.array(z.string()).optional(), // MCPs this agent can use ("*" = all, "!item" = exclude)
     prompt: z.string().min(1).optional(),
-    orchestratorPrompt: z.string().min(1).optional(),
+    conductorPrompt: z.string().min(1).optional(),
     options: z.record(z.string(), z.unknown()).optional(), // provider-specific model options (e.g., textVerbosity, thinking budget)
     displayName: z.string().min(1).optional(),
   })
@@ -244,11 +244,11 @@ function validateCustomOnlyPromptFields(
       });
     }
 
-    if (override.orchestratorPrompt !== undefined) {
+    if (override.conductorPrompt !== undefined) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: [...pathPrefix, name, 'orchestratorPrompt'],
-        message: 'orchestratorPrompt is only supported for custom agents',
+        path: [...pathPrefix, name, 'conductorPrompt'],
+        message: 'conductorPrompt is only supported for custom agents',
       });
     }
   }

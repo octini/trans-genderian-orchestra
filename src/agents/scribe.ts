@@ -1,4 +1,4 @@
-import type { AgentDefinition } from './orchestrator.js';
+import type { AgentDefinition } from './conductor.js';
 import { READONLY_FILE_OPERATIONS_RULES } from '../config/constants.js';
 
 const SCRIBE_PROMPT = `You are Scribe — a research specialist for codebase exploration and external documentation lookup.

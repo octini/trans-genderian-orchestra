@@ -1,4 +1,4 @@
-import type { AgentDefinition } from './orchestrator.js';
+import type { AgentDefinition } from './conductor.js';
 import { READONLY_FILE_OPERATIONS_RULES } from '../config/constants.js';
 
 const PRINCIPAL_PROMPT = `You are Principal — a strategic advisor and final review gate.

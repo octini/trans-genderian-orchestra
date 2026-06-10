@@ -24,11 +24,11 @@ import { createObserverAgent } from './observer';
 import { createOracleAgent } from './oracle';
 import {
   type AgentDefinition,
-  createOrchestratorAgent,
+  createConductorAgent,
   resolvePrompt,
-} from './orchestrator';
+} from './conductor';
 
-export type { AgentDefinition } from './orchestrator';
+export type { AgentDefinition } from './conductor';
 
 type AgentFactory = (
   model: string,
@@ -37,7 +37,7 @@ type AgentFactory = (
 ) => AgentDefinition;
 
 const COUNCIL_TOOL_ALLOWED_AGENTS = new Set(['council']);
-const CANCEL_TASK_ALLOWED_AGENTS = new Set(['orchestrator']);
+const CANCEL_TASK_ALLOWED_AGENTS = new Set(['conductor']);
 const SAFE_AGENT_ALIAS_RE = /^[a-z][a-z0-9_-]*$/i;
 
 function normalizeDisplayName(displayName: string): string {
@@ -127,7 +127,7 @@ function buildCustomAgentDefinition(
       model:
         typeof override.model === 'string'
           ? override.model
-          : (DEFAULT_MODELS.orchestrator ?? DEFAULT_MODELS.oracle),
+          : (DEFAULT_MODELS.conductor ?? DEFAULT_MODELS.oracle),
       temperature: 0.2,
       prompt: resolvePrompt(basePrompt, filePrompt, fileAppendPrompt),
     },
@@ -135,11 +135,11 @@ function buildCustomAgentDefinition(
 }
 
 function injectDisplayNames(
-  orchestrator: AgentDefinition,
+  conductor: AgentDefinition,
   nameMap: Map<string, string>,
 ): void {
   if (nameMap.size === 0) return;
-  let prompt = orchestrator.config.prompt;
+  let prompt = conductor.config.prompt;
   if (!prompt) return;
 
   for (const [internalName, displayName] of nameMap) {
@@ -149,7 +149,7 @@ function injectDisplayNames(
     );
   }
 
-  orchestrator.config.prompt = prompt;
+  conductor.config.prompt = prompt;
 }
 
 /**
@@ -222,10 +222,10 @@ const SUBAGENT_FACTORIES: Record<SubagentName, AgentFactory> = {
 
 /**
  * Create all agent definitions with optional configuration overrides.
- * Instantiates the orchestrator and all subagents, applying user config and defaults.
+ * Instantiates the conductor and all subagents, applying user config and defaults.
  *
  * @param config - Optional plugin configuration with agent overrides
- * @returns Array of agent definitions (orchestrator first, then subagents)
+ * @returns Array of agent definitions (conductor first, then subagents)
  */
 export function createAgents(config?: PluginConfig): AgentDefinition[] {
   const disabled = getDisabledAgents(config);
@@ -337,27 +337,26 @@ export function createAgents(config?: PluginConfig): AgentDefinition[] {
   const allSubAgents = [...builtInSubAgents, ...customSubAgents];
 
   // 3. Create Orchestrator (with its own overrides and custom prompts)
-  // DEFAULT_MODELS.orchestrator is undefined; model is resolved via override or
+  // DEFAULT_MODELS.conductor is undefined; model is resolved via override or
   // left unset so the runtime chat.message hook can pick it from _modelArray.
-  const orchestratorOverride = getAgentOverride(config, 'orchestrator');
-  const orchestratorModel =
-    orchestratorOverride?.model ?? DEFAULT_MODELS.orchestrator;
-  const orchestratorPrompts = loadAgentPrompt('orchestrator', config?.preset);
-  const orchestrator = createOrchestratorAgent(
-    orchestratorModel,
-    orchestratorPrompts.prompt,
-    orchestratorPrompts.appendPrompt,
+  const conductorOverride = getAgentOverride(config, 'conductor');
+  const conductorModel = conductorOverride?.model ?? DEFAULT_MODELS.conductor;
+  const conductorPrompts = loadAgentPrompt('conductor', config?.preset);
+  const conductor = createConductorAgent(
+    conductorModel,
+    conductorPrompts.prompt,
+    conductorPrompts.appendPrompt,
     disabled,
   );
-  applyDefaultPermissions(orchestrator, orchestratorOverride?.skills);
-  if (orchestratorOverride) {
-    applyOverrides(orchestrator, orchestratorOverride);
+  applyDefaultPermissions(conductor, conductorOverride?.skills);
+  if (conductorOverride) {
+    applyOverrides(conductor, conductorOverride);
   }
 
-  // Collect all display names from orchestrator and all subagents
+  // Collect all display names from conductor and all subagents
   const displayNameMap = new Map<string, string>();
-  if (orchestrator.displayName) {
-    displayNameMap.set('orchestrator', orchestrator.displayName);
+  if (conductor.displayName) {
+    displayNameMap.set('conductor', conductor.displayName);
   }
   for (const agent of allSubAgents) {
     if (agent.displayName) {
@@ -365,11 +364,11 @@ export function createAgents(config?: PluginConfig): AgentDefinition[] {
     }
   }
 
-  // 3b. Append custom orchestrator hints from custom agent overrides.
-  const customOrchestratorPrompts = customSubAgents
+  // 3b. Append custom conductor hints from custom agent overrides.
+  const customConductorPrompts = customSubAgents
     .map((agent) => {
       const override = getAgentOverride(config, agent.name);
-      return override?.orchestratorPrompt;
+      return override?.conductorPrompt;
     })
     .filter((prompt): prompt is string => Boolean(prompt));
 
@@ -400,11 +399,11 @@ export function createAgents(config?: PluginConfig): AgentDefinition[] {
     }
   }
 
-  // Inject display names into orchestrator prompt (complete map)
-  injectDisplayNames(orchestrator, displayNameMap);
+  // Inject display names into conductor prompt (complete map)
+  injectDisplayNames(conductor, displayNameMap);
 
-  if (customOrchestratorPrompts.length > 0) {
-    const rewrittenPrompts = customOrchestratorPrompts.map((promptText) => {
+  if (customConductorPrompts.length > 0) {
+    const rewrittenPrompts = customConductorPrompts.map((promptText) => {
       let text = promptText;
       for (const [internalName, displayName] of displayNameMap) {
         text = text.replace(
@@ -415,12 +414,12 @@ export function createAgents(config?: PluginConfig): AgentDefinition[] {
       return text;
     });
 
-    orchestrator.config.prompt = `${orchestrator.config.prompt}\n\n${rewrittenPrompts.join(
+    conductor.config.prompt = `${conductor.config.prompt}\n\n${rewrittenPrompts.join(
       '\n\n',
     )}`;
   }
 
-  return [orchestrator, ...allSubAgents];
+  return [conductor, ...allSubAgents];
 }
 
 /**
@@ -445,7 +444,7 @@ export function getAgentConfigs(
   ): void => {
     if (name === 'council') {
       // Council is callable both as a primary agent (user-facing)
-      // and as a subagent (orchestrator can delegate to it)
+      // and as a subagent (conductor can delegate to it)
       sdkConfig.mode = 'all';
     } else if (name === 'councillor') {
       // Internal agent — subagent mode, hidden from @ autocomplete
@@ -453,7 +452,7 @@ export function getAgentConfigs(
       sdkConfig.hidden = true;
     } else if (isSubagent(name)) {
       sdkConfig.mode = 'subagent';
-    } else if (name === 'orchestrator') {
+    } else if (name === 'conductor') {
       sdkConfig.mode = 'primary';
     } else {
       sdkConfig.mode = 'subagent';

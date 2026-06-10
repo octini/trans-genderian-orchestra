@@ -1,4 +1,4 @@
-import type { AgentDefinition } from './orchestrator.js';
+import type { AgentDefinition } from './conductor.js';
 import { WRITABLE_FILE_OPERATIONS_RULES } from '../config/constants.js';
 
 const COMPOSER_PROMPT = `You are Composer — an implementation specialist for code changes and UI/UX work.

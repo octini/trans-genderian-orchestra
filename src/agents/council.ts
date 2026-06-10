@@ -1,6 +1,6 @@
 import { READONLY_FILE_OPERATIONS_RULES } from '../config';
 import { shortModelLabel } from '../utils/session';
-import { type AgentDefinition, resolvePrompt } from './orchestrator';
+import { type AgentDefinition, resolvePrompt } from './conductor';
 
 // NOTE: Councillor system prompts live in the councillor agent factory.
 // The format functions below only structure the USER message content — the

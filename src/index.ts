@@ -1,6 +1,6 @@
 import type { Plugin } from '@opencode-ai/plugin';
 import { createAgents, getAgentConfigs, getDisabledAgents } from './agents';
-import { buildOrchestratorPrompt } from './agents/orchestrator';
+import { buildConductorPrompt } from './agents/conductor';
 import {
   type AgentOverrideConfig,
   deepMerge,
@@ -283,7 +283,7 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
     // Initialize post-file-tool nudge hook
     postFileToolNudgeHook = createPostFileToolNudgeHook({
       shouldInject: (sessionID) =>
-        sessionAgentMap.get(sessionID) === 'orchestrator',
+        sessionAgentMap.get(sessionID) === 'conductor',
     });
 
     chatHeadersHook = createChatHeadersHook(ctx);
@@ -310,7 +310,7 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
       readContextMaxFiles: config.backgroundJobs?.readContextMaxFiles ?? 8,
       backgroundJobBoard,
       shouldManageSession: (sessionID) =>
-        sessionAgentMap.get(sessionID) === 'orchestrator',
+        sessionAgentMap.get(sessionID) === 'conductor',
     });
     interviewManager = createInterviewManager(ctx, config);
     presetManager = createPresetManager(ctx, config);
@@ -319,7 +319,7 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
       client: ctx.client,
       backgroundJobBoard,
       shouldManageSession: (sessionID) =>
-        sessionAgentMap.get(sessionID) === 'orchestrator',
+        sessionAgentMap.get(sessionID) === 'conductor',
     });
 
     toolCount =
@@ -408,7 +408,7 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
         !(opencodeConfig as { default_agent?: string }).default_agent
       ) {
         (opencodeConfig as { default_agent?: string }).default_agent =
-          'orchestrator';
+          'conductor';
       }
 
       // Merge Agent configs — per-agent shallow merge to preserve
@@ -826,7 +826,7 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
           sessionId: sessionID,
           status: props?.status?.type,
           isOrchestrator: sessionID
-            ? sessionAgentMap.get(sessionID) === 'orchestrator'
+            ? sessionAgentMap.get(sessionID) === 'conductor'
             : false,
         });
       }
@@ -839,7 +839,7 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
         divoomManager.onSessionDeleted({
           sessionId: sessionID,
           isOrchestrator: sessionID
-            ? sessionAgentMap.get(sessionID) === 'orchestrator'
+            ? sessionAgentMap.get(sessionID) === 'conductor'
             : false,
         });
       }
@@ -945,7 +945,7 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
       }
     },
 
-    // Inject orchestrator system prompt for serve-mode sessions. In serve
+    // Inject conductor system prompt for serve-mode sessions. In serve
     // mode, the agent's prompt field may be absent from the agents
     // registry (built before plugin config hooks run). This hook injects
     // it at LLM call time. Uses the already-resolved prompt from
@@ -958,29 +958,27 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
       const agentName = input.sessionID
         ? sessionAgentMap.get(input.sessionID)
         : undefined;
-      if (agentName === 'orchestrator') {
+      if (agentName === 'conductor') {
         const alreadyInjected = output.system.some(
           (s) =>
             typeof s === 'string' &&
             s.includes('<Role>') &&
-            s.includes('orchestrator'),
+            s.includes('conductor'),
         );
         if (!alreadyInjected) {
-          // Prepend the orchestrator prompt to the system array. Use the
-          // resolved prompt from the orchestrator agent definition (which
-          // includes any custom replacement or append from orchestrator.md
-          // / orchestrator_append.md) Fall back to
-          // buildOrchestratorPrompt only if the resolved prompt is
+          // Prepend the conductor prompt to the system array. Use the
+          // resolved prompt from the conductor agent definition (which
+          // includes any custom replacement or append from conductor.md
+          // / conductor_append.md) Fall back to
+          // buildConductorPrompt only if the resolved prompt is
           // missing.
-          const orchestratorDef = agentDefs.find(
-            (a) => a.name === 'orchestrator',
-          );
-          const orchestratorPrompt =
-            typeof orchestratorDef?.config?.prompt === 'string'
-              ? orchestratorDef.config.prompt
-              : buildOrchestratorPrompt(disabledAgents);
+          const conductorDef = agentDefs.find((a) => a.name === 'conductor');
+          const conductorPrompt =
+            typeof conductorDef?.config?.prompt === 'string'
+              ? conductorDef.config.prompt
+              : buildConductorPrompt(disabledAgents);
           output.system[0] =
-            orchestratorPrompt +
+            conductorPrompt +
             (output.system[0] ? `\n\n${output.system[0]}` : '');
         }
       }
@@ -1024,10 +1022,10 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
         }
       }
 
-      // Strip image parts from orchestrator messages when @observer is
-      // available. When the orchestrator's model doesn't support image
+      // Strip image parts from conductor messages when @observer is
+      // available. When the conductor's model doesn't support image
       // input, the API call fails before the LLM can respond. We replace
-      // image bytes with a text nudge so the orchestrator delegates to
+      // image bytes with a text nudge so the conductor delegates to
       // @observer instead.
       processImageAttachments({
         messages: typedOutput.messages,
