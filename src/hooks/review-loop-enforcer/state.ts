@@ -52,6 +52,15 @@ export class ReviewGateStore {
     const activeGate = this.gates.get(parentSessionId);
     if (!activeGate) return undefined;
 
+    if (activeGate.requiredNextAction !== 'ensemble') {
+      return this.updateGate(
+        parentSessionId,
+        activeGate,
+        activeGate.requiredNextAction,
+        `out-of-order ensemble verdict: expected ${activeGate.requiredNextAction}`,
+      );
+    }
+
     if (!parsed.valid) {
       return this.updateGate(
         parentSessionId,
@@ -84,6 +93,15 @@ export class ReviewGateStore {
   ): ReviewGate | undefined {
     const activeGate = this.gates.get(parentSessionId);
     if (!activeGate) return undefined;
+
+    if (!isPrincipalReviewExpected(activeGate)) {
+      return this.updateGate(
+        parentSessionId,
+        activeGate,
+        activeGate.requiredNextAction,
+        `out-of-order principal verdict: expected ${activeGate.requiredNextAction}`,
+      );
+    }
 
     if (!parsed.valid) {
       return this.updateGate(
@@ -162,4 +180,11 @@ function principalRequiredAction(gate: ReviewGate): RequiredNextAction {
   return gate.requiredNextAction === 'principal-escalation'
     ? 'principal-escalation'
     : 'principal';
+}
+
+function isPrincipalReviewExpected(gate: ReviewGate): boolean {
+  return (
+    gate.requiredNextAction === 'principal' ||
+    gate.requiredNextAction === 'principal-escalation'
+  );
 }

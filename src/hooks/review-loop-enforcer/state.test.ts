@@ -173,4 +173,51 @@ describe('ReviewGateStore', () => {
     expect(gate?.requiredNextAction).toBe('ensemble');
     expect(gate?.lastError).toContain('reviewedTaskId mismatch');
   });
+
+  test('out-of-order ensemble verdict keeps composer gate active', () => {
+    const store = new ReviewGateStore();
+    store.recordComposerCompletion(
+      'parent-1',
+      'task-1',
+      ensembleClassification,
+    );
+    store.recordEnsembleVerdict('parent-1', {
+      valid: true,
+      reviewedTaskId: 'task-1',
+      verdict: 'reject',
+      requiredNextAction: 'composer',
+      criticalIssueCount: 0,
+      issues: [],
+    });
+
+    const gate = store.recordEnsembleVerdict('parent-1', {
+      valid: true,
+      reviewedTaskId: 'task-1',
+      verdict: 'approve',
+      requiredNextAction: 'principal',
+      criticalIssueCount: 0,
+      issues: [],
+    });
+
+    expect(gate?.requiredNextAction).toBe('composer');
+    expect(gate?.lastError).toContain('out-of-order ensemble verdict');
+  });
+
+  test('out-of-order principal verdict keeps ensemble gate active', () => {
+    const store = new ReviewGateStore();
+    store.recordComposerCompletion(
+      'parent-1',
+      'task-1',
+      ensembleClassification,
+    );
+
+    const gate = store.recordPrincipalVerdict('parent-1', {
+      valid: true,
+      reviewedTaskId: 'task-1',
+      verdict: 'pass',
+    });
+
+    expect(gate?.requiredNextAction).toBe('ensemble');
+    expect(gate?.lastError).toContain('out-of-order principal verdict');
+  });
 });
