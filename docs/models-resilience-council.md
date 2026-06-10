@@ -2,22 +2,15 @@
 
 ## Model Presets
 
-TGO uses omo-slim's config-driven model preset system. The default preset assigns models to each agent in the v3 roster.
+TGO uses omo-slim's procedural, config-driven model preset generator. Fresh generated configs use `github-copilot` as the active preset and include exactly two primary presets: `github-copilot` and `opencode-go`.
 
-Default model assignments:
-- Conductor: strongest planning/judgment model (undefined in DEFAULT_MODELS — user configures)
-- Scribe: fast, low-cost model (gpt-5.4-mini)
-- Principal: strongest high-reasoning model (gpt-5.5)
-- Composer: fast, reliable coding model (gpt-5.4-mini)
-- Ensemble: auto-populated from conductor's model (see below)
+Generated default model assignments:
+- `github-copilot`: conductor/composer use `github-copilot/gpt-5.5` (`xhigh`), scribe uses `github-copilot/gemini-3.5-flash` (`high`), principal uses `github-copilot/claude-opus-4.7` (`max`), and ensemble references `conductor`.
+- `opencode-go`: conductor uses `opencode-go/kimi-k2.6`, scribe/composer use `opencode-go/mimo-v2.5` (`high`), principal uses `opencode-go/mimo-v2.5-pro` (`high`), and ensemble references `conductor`.
 
 ## Ensemble Model Auto-Population
 
-By default, the ensemble agent's model and councillor seats auto-populate from other agents' model assignments:
-- Ensemble agent model = conductor's model
-- First councillor = conductor's model (correctness/architecture review)
-- Second councillor = scribe's model (edge cases/security review)
-- Third councillor = composer's model (UX/performance review)
+By default, the ensemble agent model is a model reference to the active preset's conductor model. Generated council configuration sets `default_preset` to `github-copilot`, runs councillors in `parallel`, uses a `180000` ms timeout, and provides three differentiated councillor seats for both generated presets.
 
 Users can override with explicit model strings. The reference syntax `"ensemble": "conductor"` resolves to the conductor's assigned model.
 

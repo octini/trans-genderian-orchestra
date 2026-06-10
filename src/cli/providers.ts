@@ -5,7 +5,7 @@ import type { InstallConfig } from './types';
 const SCHEMA_URL =
   'https://unpkg.com/trans-genderian-orchestra@latest/trans-genderian-orchestra.schema.json';
 
-export const GENERATED_PRESETS = ['openai', 'opencode-go'] as const;
+export const GENERATED_PRESETS = ['github-copilot', 'opencode-go'] as const;
 
 // Model mappings by provider/preset.
 export const MODEL_MAPPINGS = {
@@ -30,6 +30,13 @@ export const MODEL_MAPPINGS = {
       variant: 'medium',
     },
   },
+  'github-copilot': {
+    conductor: { model: 'github-copilot/gpt-5.5', variant: 'xhigh' },
+    scribe: { model: 'github-copilot/gemini-3.5-flash', variant: 'high' },
+    composer: { model: 'github-copilot/gpt-5.5', variant: 'xhigh' },
+    principal: { model: 'github-copilot/claude-opus-4.7', variant: 'max' },
+    ensemble: { model: 'conductor' },
+  },
   'zai-plan': {
     conductor: { model: 'zai-coding-plan/glm-5' },
     principal: { model: 'zai-coding-plan/glm-5', variant: 'high' },
@@ -37,11 +44,52 @@ export const MODEL_MAPPINGS = {
     composer: { model: 'zai-coding-plan/glm-5', variant: 'medium' },
   },
   'opencode-go': {
-    conductor: { model: 'opencode-go/glm-5.1' },
-    principal: { model: 'opencode-go/deepseek-v4-pro', variant: 'max' },
-    scribe: { model: 'opencode-go/minimax-m2.7' },
-    composer: { model: 'opencode-go/kimi-k2.6', variant: 'medium' },
-    ensemble: { model: 'opencode-go/kimi-k2.6' },
+    conductor: { model: 'opencode-go/kimi-k2.6' },
+    scribe: { model: 'opencode-go/mimo-v2.5', variant: 'high' },
+    composer: { model: 'opencode-go/mimo-v2.5', variant: 'high' },
+    principal: { model: 'opencode-go/mimo-v2.5-pro', variant: 'high' },
+    ensemble: { model: 'conductor' },
+  },
+} as const;
+
+const GENERATED_COUNCIL_CONFIG = {
+  default_preset: 'github-copilot',
+  councillor_execution_mode: 'parallel',
+  timeout: 180000,
+  presets: {
+    'github-copilot': {
+      first: {
+        model: 'github-copilot/gemini-3.5-flash',
+        variant: 'high',
+        prompt: 'Focus: Correctness & Architecture',
+      },
+      second: {
+        model: 'github-copilot/gpt-5.5',
+        variant: 'xhigh',
+        prompt: 'Focus: Edge Cases & Security',
+      },
+      third: {
+        model: 'github-copilot/claude-opus-4.7',
+        variant: 'max',
+        prompt: 'Focus: UX & Performance',
+      },
+    },
+    'opencode-go': {
+      first: {
+        model: 'opencode-go/mimo-v2.5',
+        variant: 'high',
+        prompt: 'Focus: Correctness & Architecture',
+      },
+      second: {
+        model: 'opencode-go/deepseek-v4-flash',
+        variant: 'max',
+        prompt: 'Focus: Edge Cases & Security',
+      },
+      third: {
+        model: 'opencode-go/qwen3.7-plus',
+        prompt: 'Focus: UX & Performance',
+      },
+    },
   },
 } as const;
 
@@ -69,7 +117,7 @@ export function getGeneratedPresetNames(): GeneratedPresetName[] {
 export function generateLiteConfig(
   installConfig: InstallConfig,
 ): Record<string, unknown> {
-  const preset = installConfig.preset ?? 'openai';
+  const preset = installConfig.preset ?? 'github-copilot';
   if (!isGeneratedPresetName(preset)) {
     throw new Error(
       `Unsupported preset "${preset}". Available generated presets: ${getGeneratedPresetNames().join(', ')}`,
@@ -80,6 +128,7 @@ export function generateLiteConfig(
     $schema: SCHEMA_URL,
     preset,
     presets: {},
+    ensemble: GENERATED_COUNCIL_CONFIG,
   };
 
   if (preset === 'opencode-go') {

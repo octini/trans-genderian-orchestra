@@ -76,7 +76,7 @@ The bootstrap path plans required OpenCode entries, tools, model presets, and re
 - Setup lifecycle: deterministic bootstrap, setup preview, doctor inspection, manifest-backed changes, backups, rollback helpers, and safe uninstall.
 - Migration lifecycle: v1/omo-slim detection, replacement planning, root package cutover, beta release gates, and explicit latest-tag caveat.
 - Tooling: `bare-bones`, `default`, and `all-bells` tool presets; skills and MCP planning; user-managed provider/plugin/MCP preservation.
-- Model and resilience planning: `balanced` compatibility alias, `mixed`, `copilot`, `go`, and `free` model presets; model-switch planning; provider fallback classification; circuit breaker state; semantic retry boundaries; and council derivation.
+- Model and resilience planning: generated `github-copilot` and `opencode-go` primary presets, with `github-copilot` active by default; model-switch planning; provider fallback classification; circuit breaker state; semantic retry boundaries; and council derivation.
 - Workflow primitives: delegation envelope, specialist result contract, reviewer gate, scheduler/worktree planning, integration/reconciliation primitives, and auto-continue/resume concepts.
 - Validation harnesses: release-readiness tests and the reusable `verify:public-beta-opencode` smoke script.
 

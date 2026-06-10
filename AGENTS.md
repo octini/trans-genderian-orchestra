@@ -39,7 +39,7 @@ This repository contains the `trans-genderian-orchestra` OpenCode workflow plugi
 - Runtime plugin hooks inject TGO agents and commands into OpenCode config at startup.
 - Bootstrap keeps required OpenCode entries minimal in `~/.config/opencode/opencode.jsonc` and writes TGO-owned agent/model catalog data to `~/.config/opencode/trans-genderian-orchestra.jsonc`.
 - Doctor reads manifests, `opencode.jsonc`, and the TGO catalog file so setup checks match bootstrap output.
-- Built-in model presets are `balanced`, `mixed`, `copilot`, `go`, and `free`; `balanced` is a compatibility alias for `mixed`.
+- Generated default config writes exactly two primary presets, `github-copilot` and `opencode-go`, with `github-copilot` active by default.
 - CI commands run from the repository root.
 
 ## Commands

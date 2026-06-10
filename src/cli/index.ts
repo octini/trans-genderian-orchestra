@@ -61,7 +61,7 @@ Usage:
 
 Options:
   --skills=yes|no        Install bundled skills (default: yes)
-  --preset=<name>        Active generated config preset (default: openai)
+  --preset=<name>        Active generated config preset (default: github-copilot)
   --background-subagents=ask|yes|no
                          Persist required OpenCode background subagent env
                          (default: ask in interactive TTY, otherwise no)
@@ -77,8 +77,8 @@ Doctor options:
 
 Available presets: ${getGeneratedPresetNames().join(', ')}
 
-The installer generates OpenAI and OpenCode Go presets by default.
-OpenAI is active unless --preset selects another generated preset.
+The installer generates GitHub Copilot and OpenCode Go presets by default.
+GitHub Copilot is active unless --preset selects another generated preset.
 For the full config reference, see docs/configuration.md.
 
 Examples:

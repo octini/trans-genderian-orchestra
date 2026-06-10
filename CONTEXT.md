@@ -54,7 +54,7 @@ TGO v2 is inspired by dispatcher-style orchestration, SDD-style artifacts, retri
 
 **Tool Preset** - Named tool/MCP/skill setup dimension such as `bare-bones`, `default`, or `all-bells`.
 
-**Model Preset** - Named role-to-model lineup. Built-in presets are `balanced`, `mixed`, `copilot`, `go`, and `free`; `balanced` is a compatibility alias for `mixed`.
+**Model Preset** - Named role-to-model lineup. The current generated default config writes exactly two primary presets, `github-copilot` and `opencode-go`, with `github-copilot` active by default.
 
 **Resilience Preset** - Named retry/fallback behavior dimension such as `conservative`, `balanced`, or `aggressive`. Resilience is separate from model selection.
 

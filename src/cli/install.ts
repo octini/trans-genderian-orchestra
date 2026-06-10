@@ -409,10 +409,9 @@ async function runInstall(config: InstallConfig): Promise<number> {
   console.log(`     ${BLUE}> ping all agents${RESET}`);
   console.log();
 
-  const modelsInfo =
-    config.preset && config.preset !== 'openai'
-      ? `Generated OpenAI and OpenCode Go presets; ${config.preset} is active.`
-      : 'Generated OpenAI and OpenCode Go presets; OpenAI is active by default.';
+  const modelsInfo = config.preset
+    ? `Generated GitHub Copilot and OpenCode Go presets; ${config.preset} is active.`
+    : 'Generated GitHub Copilot and OpenCode Go presets; GitHub Copilot is active by default.';
   console.log(`${modelsInfo}`);
   const altProviders = 'For the full configuration reference, see:';
   console.log(altProviders);

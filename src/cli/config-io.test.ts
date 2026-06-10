@@ -427,7 +427,7 @@ describe('config-io', () => {
     expect(saved.plugin.length).toBe(3);
   });
 
-  test('writeLiteConfig writes lite config with OpenAI preset', () => {
+  test('writeLiteConfig writes lite config with GitHub Copilot preset', () => {
     const litePath = join(tmpDir, 'opencode', 'trans-genderian-orchestra.json');
     paths.ensureConfigDir();
 
@@ -442,9 +442,16 @@ describe('config-io', () => {
     expect(saved.$schema).toBe(
       'https://unpkg.com/trans-genderian-orchestra@latest/trans-genderian-orchestra.schema.json',
     );
-    expect(saved.preset).toBe('openai');
-    expect(saved.presets.openai).toBeDefined();
+    expect(saved.preset).toBe('github-copilot');
+    expect(Object.keys(saved.presets).sort()).toEqual([
+      'github-copilot',
+      'opencode-go',
+    ]);
+    expect(saved.presets['github-copilot'].conductor.model).toBe(
+      'github-copilot/gpt-5.5',
+    );
     expect(saved.presets['opencode-go']).toBeDefined();
+    expect(saved.ensemble.default_preset).toBe('github-copilot');
     expect(saved.tmux.enabled).toBe(true);
   });
 
@@ -463,13 +470,18 @@ describe('config-io', () => {
     const saved = JSON.parse(readFileSync(litePath, 'utf-8'));
     expect(saved.preset).toBe('opencode-go');
     expect(saved.disabled_agents).toEqual([]);
-    expect(saved.presets.openai).toBeDefined();
+    expect(Object.keys(saved.presets).sort()).toEqual([
+      'github-copilot',
+      'opencode-go',
+    ]);
     expect(saved.presets['opencode-go'].conductor.model).toBe(
-      'opencode-go/glm-5.1',
-    );
-    expect(saved.presets['opencode-go'].ensemble.model).toBe(
       'opencode-go/kimi-k2.6',
     );
+    expect(saved.presets['opencode-go'].ensemble.model).toBe('conductor');
+    expect(saved.ensemble.presets['opencode-go'].third).toEqual({
+      model: 'opencode-go/qwen3.7-plus',
+      prompt: 'Focus: UX & Performance',
+    });
   });
 
   test('disableDefaultAgents disables OpenCode built-in agents', () => {

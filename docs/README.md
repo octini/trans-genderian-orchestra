@@ -2,7 +2,7 @@
 
 This hub collects the current public beta documentation for `trans-genderian-orchestra` v2. The root README is the front door; these pages are the deeper references.
 
-Current setup uses a minimal `~/.config/opencode/opencode.jsonc` plus a TGO-owned peer catalog at `~/.config/opencode/trans-genderian-orchestra.jsonc`. Built-in model presets are `balanced`, `mixed`, `copilot`, `go`, and `free`, with `balanced` retained as a compatibility alias for `mixed`.
+Current setup uses a minimal `~/.config/opencode/opencode.jsonc` plus a TGO-owned peer catalog at `~/.config/opencode/trans-genderian-orchestra.jsonc`. Fresh generated configs write `github-copilot` as the active default and include exactly the `github-copilot` and `opencode-go` primary presets.
 
 ## Start Here
 

@@ -92,6 +92,7 @@ This file tracks the current state of the Dispatcher plugin project. Updated aft
 | 72 | Init commands: beads binary fix, package-verify trusted allowlist | @explorer + @fixer | 2026-05-29 |
 | 73 | Oracle follow-up fixes (B1-B2, W1-W6, S1-S7) — shared types, messages, fail-close | @fixer | 2026-05-29 |
 | 74 | Comprehensive README rewrite (61→266 lines) + docs/README.md hub | @fixer | 2026-05-29 |
+| 75 | TGO v3 generated default config — github-copilot/opencode-go presets + ensemble seats | Composer | 2026-06-10 |
 
 ## Framework Research Results
 
