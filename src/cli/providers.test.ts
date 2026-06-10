@@ -144,14 +144,11 @@ describe('providers', () => {
     // Orchestrator should implicitly cover bundled codemap via '*'
     expect(agents.conductor.skills).toContain('*');
 
-    // Designer should have no bundled skills by default
-    expect(agents.composer.skills).toEqual([]);
+    // Composer should include bundled simplify by default
+    expect(agents.composer.skills).toEqual(['simplify']);
 
     // Explorer should have no bundled skills by default
     expect(agents.scribe.skills).toEqual([]);
-
-    // Fixer should have no bundled skills by default
-    expect(agents.composer.skills).toEqual([]);
   });
 
   test('generateLiteConfig includes mcps field', () => {
