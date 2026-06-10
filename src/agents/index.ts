@@ -16,7 +16,7 @@ import { getAgentMcpList } from '../config/agent-mcps';
 
 import { createCouncilAgent } from './council';
 import { createCouncillorAgent } from './councillor';
-import { createDesignerAgent } from './designer';
+import { createComposerAgent } from './composer';
 import { createExplorerAgent } from './explorer';
 import { createFixerAgent } from './fixer';
 import { createLibrarianAgent } from './librarian';
@@ -211,7 +211,7 @@ const SUBAGENT_FACTORIES: Record<SubagentName, AgentFactory> = {
   explorer: createExplorerAgent,
   librarian: createLibrarianAgent,
   oracle: createOracleAgent,
-  designer: createDesignerAgent,
+  composer: createComposerAgent,
   fixer: createFixerAgent,
   observer: createObserverAgent,
   council: createCouncilAgent,

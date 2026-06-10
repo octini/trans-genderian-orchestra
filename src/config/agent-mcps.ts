@@ -8,14 +8,11 @@ import {
 /** Default MCPs per agent - "*" means all MCPs, "!item" excludes specific MCPs */
 
 export const DEFAULT_AGENT_MCPS: Record<AgentName, string[]> = {
-  orchestrator: ['*', '!context7'],
-  designer: [],
-  oracle: [],
-  librarian: ['websearch', 'context7', 'grep_app'],
-  explorer: [],
-  fixer: [],
-  observer: [],
-  council: [],
+  conductor: ['*', '!context7'],
+  scribe: ['websearch', 'context7', 'grep_app'],
+  principal: [],
+  composer: [],
+  ensemble: [],
   councillor: [],
 };
 
