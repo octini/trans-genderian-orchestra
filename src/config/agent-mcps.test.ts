@@ -14,9 +14,9 @@ describe('parseList', () => {
     ]);
   });
 
-  test('orchestrator wildcard excludes context7 but includes custom mcps', () => {
+  test('conductor wildcard excludes context7 but includes custom mcps', () => {
     expect(
-      parseList(DEFAULT_AGENT_MCPS.orchestrator, [
+      parseList(DEFAULT_AGENT_MCPS.conductor, [
         'websearch',
         'context7',
         'grep_app',

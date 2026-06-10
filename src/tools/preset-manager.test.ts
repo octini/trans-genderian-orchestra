@@ -89,10 +89,10 @@ describe('createPresetManager', () => {
       const config: PluginConfig = {
         presets: {
           cheap: {
-            orchestrator: { model: 'anthropic/claude-3.5-haiku' },
+            conductor: { model: 'anthropic/claude-3.5-haiku' },
           },
           powerful: {
-            orchestrator: { model: 'openai/gpt-5.5' },
+            conductor: { model: 'openai/gpt-5.5' },
           },
         },
       };
@@ -115,8 +115,8 @@ describe('createPresetManager', () => {
       const config: PluginConfig = {
         preset: 'cheap',
         presets: {
-          cheap: { orchestrator: { model: 'anthropic/claude-3.5-haiku' } },
-          powerful: { orchestrator: { model: 'openai/gpt-5.5' } },
+          cheap: { conductor: { model: 'anthropic/claude-3.5-haiku' } },
+          powerful: { conductor: { model: 'openai/gpt-5.5' } },
         },
       };
       const manager = createPresetManager(ctx, config);
@@ -151,8 +151,8 @@ describe('createPresetManager', () => {
       const config: PluginConfig = {
         presets: {
           cheap: {
-            orchestrator: { model: 'anthropic/claude-3.5-haiku' },
-            explorer: { model: 'openai/gpt-5.4-mini' },
+            conductor: { model: 'anthropic/claude-3.5-haiku' },
+            scribe: { model: 'openai/gpt-5.4-mini' },
           },
         },
       };
@@ -166,9 +166,9 @@ describe('createPresetManager', () => {
 
       const text = getOutputText(output);
       expect(text).toContain('Saved preset "cheap"');
-      expect(text).toContain('orchestrator');
+      expect(text).toContain('conductor');
       expect(text).toContain('anthropic/claude-3.5-haiku');
-      expect(text).toContain('explorer');
+      expect(text).toContain('scribe');
       expect(text).toContain('Restart or reload OpenCode');
       expect(getActiveRuntimePreset()).toBe('cheap');
       expect(ctx.client.config.update).not.toHaveBeenCalled();
@@ -178,8 +178,8 @@ describe('createPresetManager', () => {
     test('updates the TUI snapshot after a successful preset switch', async () => {
       recordTuiAgentModels({
         agentModels: {
-          explorer: 'openai/gpt-5.4-mini',
-          fixer: 'openai/gpt-5.4-mini',
+          scribe: 'openai/gpt-5.4-mini',
+          composer: 'openai/gpt-5.4-mini',
         },
       });
 
@@ -187,8 +187,8 @@ describe('createPresetManager', () => {
       const config: PluginConfig = {
         presets: {
           cheap: {
-            orchestrator: { model: 'anthropic/claude-3.5-haiku' },
-            explorer: { model: 'openai/gpt-5.5' },
+            conductor: { model: 'anthropic/claude-3.5-haiku' },
+            scribe: { model: 'openai/gpt-5.5' },
           },
         },
       };
@@ -201,9 +201,9 @@ describe('createPresetManager', () => {
       );
 
       expect(readTuiSnapshot().agentModels).toEqual({
-        explorer: 'openai/gpt-5.5',
-        fixer: 'openai/gpt-5.4-mini',
-        orchestrator: 'anthropic/claude-3.5-haiku',
+        scribe: 'openai/gpt-5.5',
+        composer: 'openai/gpt-5.4-mini',
+        conductor: 'anthropic/claude-3.5-haiku',
       });
     });
 
@@ -212,14 +212,14 @@ describe('createPresetManager', () => {
       fs.mkdirSync(configDir, { recursive: true });
       process.env.OPENCODE_CONFIG_DIR = configDir;
 
-      const configPath = path.join(configDir, 'oh-my-opencode-slim.jsonc');
+      const configPath = path.join(configDir, 'trans-genderian-orchestra.jsonc');
       fs.writeFileSync(
         configPath,
         `{
           // User-selected preset should be updated even in JSONC files.
           "preset": "old",
           "agents": {
-            "orchestrator": { "model": "old-model" },
+            "conductor": { "model": "old-model" },
           },
         }`,
       );
@@ -228,7 +228,7 @@ describe('createPresetManager', () => {
       const config: PluginConfig = {
         presets: {
           cheap: {
-            orchestrator: { model: 'anthropic/claude-3.5-haiku' },
+            conductor: { model: 'anthropic/claude-3.5-haiku' },
           },
         },
       };
@@ -246,7 +246,7 @@ describe('createPresetManager', () => {
       };
       expect(persisted.preset).toBe('cheap');
       expect(persisted.agents).toEqual({
-        orchestrator: { model: 'old-model' },
+        conductor: { model: 'old-model' },
       });
       expect(ctx.client.config.update).not.toHaveBeenCalled();
       expect(ctx.client.instance.dispose).not.toHaveBeenCalled();
@@ -257,7 +257,7 @@ describe('createPresetManager', () => {
       const config: PluginConfig = {
         presets: {
           precise: {
-            orchestrator: { model: 'openai/o3', temperature: 0.1 },
+            conductor: { model: 'openai/o3', temperature: 0.1 },
           },
         },
       };
@@ -270,7 +270,7 @@ describe('createPresetManager', () => {
       );
 
       const text = getOutputText(output);
-      expect(text).toContain('orchestrator');
+      expect(text).toContain('conductor');
       expect(text).toContain('model: openai/o3');
       expect(text).toContain('temp: 0.1');
       expect(ctx.client.config.update).not.toHaveBeenCalled();
@@ -282,7 +282,7 @@ describe('createPresetManager', () => {
       const config: PluginConfig = {
         presets: {
           thinker: {
-            oracle: {
+            principal: {
               model: 'anthropic/claude-sonnet-4-6',
               variant: 'thinking',
             },
@@ -298,7 +298,7 @@ describe('createPresetManager', () => {
       );
 
       const text = getOutputText(output);
-      expect(text).toContain('oracle');
+      expect(text).toContain('principal');
       expect(text).toContain('model: anthropic/claude-sonnet-4-6');
       expect(text).toContain('variant: thinking');
       expect(ctx.client.config.update).not.toHaveBeenCalled();
@@ -309,7 +309,7 @@ describe('createPresetManager', () => {
       const ctx = createMockContext();
       const config: PluginConfig = {
         presets: {
-          cheap: { orchestrator: { model: 'anthropic/claude-3.5-haiku' } },
+          cheap: { conductor: { model: 'anthropic/claude-3.5-haiku' } },
         },
       };
       const manager = createPresetManager(ctx, config);
@@ -347,14 +347,14 @@ describe('createPresetManager', () => {
       setActiveRuntimePreset('cheap');
       recordTuiAgentModels({
         agentModels: {
-          explorer: 'openai/gpt-5.4-mini',
+          scribe: 'openai/gpt-5.4-mini',
         },
       });
 
       const ctx = createMockContext();
       const config: PluginConfig = {
         presets: {
-          cheap: { orchestrator: { model: 'anthropic/claude-3.5-haiku' } },
+          cheap: { conductor: { model: 'anthropic/claude-3.5-haiku' } },
         },
       };
       const manager = createPresetManager(ctx, config);
@@ -377,7 +377,7 @@ describe('createPresetManager', () => {
       const config: PluginConfig = {
         presets: {
           empty: {
-            orchestrator: {},
+            conductor: {},
           },
         },
       };
@@ -399,7 +399,7 @@ describe('createPresetManager', () => {
       const config: PluginConfig = {
         presets: {
           thinker: {
-            oracle: {
+            principal: {
               model: 'anthropic/claude-sonnet-4-6',
               options: {
                 thinking: { type: 'enabled', budgetTokens: 10000 },
@@ -417,7 +417,7 @@ describe('createPresetManager', () => {
       );
 
       const text = getOutputText(output);
-      expect(text).toContain('oracle');
+      expect(text).toContain('principal');
       expect(text).toContain('options: yes');
       expect(ctx.client.config.update).not.toHaveBeenCalled();
       expect(ctx.client.instance.dispose).not.toHaveBeenCalled();
@@ -427,7 +427,7 @@ describe('createPresetManager', () => {
       const ctx = createMockContext();
       const config: PluginConfig = {
         presets: {
-          cheap: { orchestrator: { model: 'anthropic/claude-3.5-haiku' } },
+          cheap: { conductor: { model: 'anthropic/claude-3.5-haiku' } },
         },
       };
       const manager = createPresetManager(ctx, config);
@@ -448,7 +448,7 @@ describe('createPresetManager', () => {
       const ctx = createMockContext();
       const config: PluginConfig = {
         presets: {
-          cheap: { orchestrator: { model: 'anthropic/claude-3.5-haiku' } },
+          cheap: { conductor: { model: 'anthropic/claude-3.5-haiku' } },
         },
       };
       const manager = createPresetManager(ctx, config);
@@ -469,7 +469,7 @@ describe('createPresetManager', () => {
       const ctx = createMockContext();
       const config: PluginConfig = {
         presets: {
-          cheap: { orchestrator: { model: 'anthropic/claude-3.5-haiku' } },
+          cheap: { conductor: { model: 'anthropic/claude-3.5-haiku' } },
         },
       };
       const manager = createPresetManager(ctx, config);
@@ -490,9 +490,9 @@ describe('createPresetManager', () => {
       const config: PluginConfig = {
         presets: {
           mixed: {
-            orchestrator: { model: 'anthropic/claude-3.5-haiku' },
-            explorer: {},
-            oracle: { temperature: 0.3 },
+            conductor: { model: 'anthropic/claude-3.5-haiku' },
+            scribe: {},
+            principal: { temperature: 0.3 },
           },
         },
       };
@@ -506,8 +506,8 @@ describe('createPresetManager', () => {
 
       const text = getOutputText(output);
       expect(text).toContain('Saved preset "mixed"');
-      expect(text).toContain('orchestrator');
-      expect(text).toContain('oracle');
+      expect(text).toContain('conductor');
+      expect(text).toContain('principal');
       expect(ctx.client.config.update).not.toHaveBeenCalled();
       expect(ctx.client.instance.dispose).not.toHaveBeenCalled();
     });
@@ -517,7 +517,7 @@ describe('createPresetManager', () => {
       const config: PluginConfig = {
         presets: {
           fallback: {
-            orchestrator: {
+            conductor: {
               model: ['anthropic/claude-3.5-haiku', 'openai/gpt-5.5'],
             },
           },
@@ -533,7 +533,7 @@ describe('createPresetManager', () => {
 
       const text = getOutputText(output);
       expect(text).toContain('Saved preset "fallback"');
-      expect(text).toContain('orchestrator');
+      expect(text).toContain('conductor');
       expect(text).toContain('anthropic/claude-3.5-haiku');
       expect(ctx.client.config.update).not.toHaveBeenCalled();
       expect(ctx.client.instance.dispose).not.toHaveBeenCalled();
@@ -544,7 +544,7 @@ describe('createPresetManager', () => {
       const config: PluginConfig = {
         presets: {
           thinker: {
-            oracle: {
+            principal: {
               model: [
                 { id: 'anthropic/claude-sonnet-4-6', variant: 'thinking' },
                 { id: 'openai/o3' },
@@ -563,7 +563,7 @@ describe('createPresetManager', () => {
 
       const text = getOutputText(output);
       expect(text).toContain('Saved preset "thinker"');
-      expect(text).toContain('oracle');
+      expect(text).toContain('principal');
       expect(text).toContain('variant: thinking');
       expect(ctx.client.config.update).not.toHaveBeenCalled();
       expect(ctx.client.instance.dispose).not.toHaveBeenCalled();
@@ -574,7 +574,7 @@ describe('createPresetManager', () => {
       const config: PluginConfig = {
         presets: {
           thinker: {
-            oracle: {
+            principal: {
               model: 'anthropic/claude-sonnet-4-6',
               variant: 'thinking',
               options: { thinking: { type: 'enabled', budgetTokens: 10000 } },
@@ -599,8 +599,8 @@ describe('createPresetManager', () => {
       const ctx = createMockContext();
       const config: PluginConfig = {
         presets: {
-          cheap: { orchestrator: { model: 'anthropic/claude-3.5-haiku' } },
-          powerful: { orchestrator: { model: 'openai/gpt-5.5' } },
+          cheap: { conductor: { model: 'anthropic/claude-3.5-haiku' } },
+          powerful: { conductor: { model: 'openai/gpt-5.5' } },
         },
       };
       const manager = createPresetManager(ctx, config);
@@ -681,14 +681,14 @@ describe('createPresetManager', () => {
       const config: PluginConfig = {
         presets: {
           cheap: {
-            oracle: { model: 'cheap-model', temperature: 0.3 },
+            principal: { model: 'cheap-model', temperature: 0.3 },
           },
           powerful: {
-            orchestrator: { model: 'powerful-model' },
+            conductor: { model: 'powerful-model' },
           },
         },
         agents: {
-          oracle: { model: 'baseline-model' },
+          principal: { model: 'baseline-model' },
         },
       };
       const manager = createPresetManager(ctx, config);
@@ -720,10 +720,10 @@ describe('createPresetManager', () => {
       const config: PluginConfig = {
         presets: {
           cheap: {
-            oracle: { model: 'a' },
+            principal: { model: 'a' },
           },
           cheaper: {
-            oracle: { model: 'b' },
+            principal: { model: 'b' },
           },
         },
       };
@@ -755,10 +755,10 @@ describe('createPresetManager', () => {
       const config: PluginConfig = {
         presets: {
           cheap: {
-            oracle: { model: 'a' },
+            principal: { model: 'a' },
           },
           expensive: {
-            oracle: { model: 'b' },
+            principal: { model: 'b' },
           },
         },
       };
@@ -793,10 +793,10 @@ describe('createPresetManager', () => {
       const config: PluginConfig = {
         presets: {
           cheap: {
-            oracle: { model: 'a' },
+            principal: { model: 'a' },
           },
           powerful: {
-            oracle: { model: 'b' },
+            principal: { model: 'b' },
           },
         },
       };

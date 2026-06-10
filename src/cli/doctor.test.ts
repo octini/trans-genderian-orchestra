@@ -59,7 +59,7 @@ describe('runDoctorCheck', () => {
     originalCwd = process.cwd();
     originalEnv = { ...process.env };
     delete process.env.OPENCODE_CONFIG_DIR;
-    delete process.env.OH_MY_OPENCODE_SLIM_PRESET;
+    delete process.env.TGO_PRESET;
     process.env.XDG_CONFIG_HOME = path.join(tempDir, 'user-config');
   });
 
@@ -89,11 +89,11 @@ describe('runDoctorCheck', () => {
     const configDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(configDir, { recursive: true });
     fs.writeFileSync(
-      path.join(configDir, 'oh-my-opencode-slim.jsonc'),
+      path.join(configDir, 'trans-genderian-orchestra.jsonc'),
       `{
         // JSONC comments are supported.
         "agents": {
-          "oracle": { "model": "test/model" },
+          "principal": { "model": "test/model" },
         },
       }`,
     );
@@ -110,7 +110,7 @@ describe('runDoctorCheck', () => {
     const configDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(configDir, { recursive: true });
     fs.writeFileSync(
-      path.join(configDir, 'oh-my-opencode-slim.json'),
+      path.join(configDir, 'trans-genderian-orchestra.json'),
       '{ invalid json }',
     );
 
@@ -125,7 +125,7 @@ describe('runDoctorCheck', () => {
   test('config deleted after discovery returns read error with path', () => {
     const projectDir = path.join(tempDir, 'project');
     const configDir = path.join(projectDir, '.opencode');
-    const configPath = path.join(configDir, 'oh-my-opencode-slim.json');
+    const configPath = path.join(configDir, 'trans-genderian-orchestra.json');
     fs.mkdirSync(configDir, { recursive: true });
     fs.writeFileSync(configPath, '{}');
 
@@ -155,8 +155,8 @@ describe('runDoctorCheck', () => {
     fs.mkdirSync(configDir, { recursive: true });
     // temperature must be 0-2
     fs.writeFileSync(
-      path.join(configDir, 'oh-my-opencode-slim.json'),
-      JSON.stringify({ agents: { oracle: { temperature: 99 } } }),
+      path.join(configDir, 'trans-genderian-orchestra.json'),
+      JSON.stringify({ agents: { principal: { temperature: 99 } } }),
     );
 
     const result = runDoctorCheck(projectDir);
@@ -173,9 +173,9 @@ describe('runDoctorCheck', () => {
     const configDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(configDir, { recursive: true });
     fs.writeFileSync(
-      path.join(configDir, 'oh-my-opencode-slim.json'),
+      path.join(configDir, 'trans-genderian-orchestra.json'),
       JSON.stringify({
-        agents: { oracle: { temperature: 99 } },
+        agents: { principal: { temperature: 99 } },
         multiplexer: { type: 'unknown' },
       }),
     );
@@ -187,7 +187,7 @@ describe('runDoctorCheck', () => {
     const issuePaths = result.configs[1].error?.issues?.map((i) =>
       i.path.join('.'),
     );
-    expect(issuePaths).toContain('agents.oracle.temperature');
+    expect(issuePaths).toContain('agents.principal.temperature');
     expect(issuePaths).toContain('multiplexer.type');
   });
 
@@ -195,7 +195,7 @@ describe('runDoctorCheck', () => {
     const projectDir = path.join(tempDir, 'project');
     const configDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(configDir, { recursive: true });
-    fs.writeFileSync(path.join(configDir, 'oh-my-opencode-slim.json'), '');
+    fs.writeFileSync(path.join(configDir, 'trans-genderian-orchestra.json'), '');
 
     const result = runDoctorCheck(projectDir);
 
@@ -208,7 +208,7 @@ describe('runDoctorCheck', () => {
     const userOpencodeDir = path.join(tempDir, 'user-config', 'opencode');
     fs.mkdirSync(userOpencodeDir, { recursive: true });
     fs.writeFileSync(
-      path.join(userOpencodeDir, 'oh-my-opencode-slim.json'),
+      path.join(userOpencodeDir, 'trans-genderian-orchestra.json'),
       '{ invalid }',
     );
 
@@ -216,10 +216,10 @@ describe('runDoctorCheck', () => {
     const configDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(configDir, { recursive: true });
     fs.writeFileSync(
-      path.join(configDir, 'oh-my-opencode-slim.json'),
+      path.join(configDir, 'trans-genderian-orchestra.json'),
       JSON.stringify({
         preset: 'mypreset',
-        presets: { mypreset: { oracle: { model: 'test/model' } } },
+        presets: { mypreset: { principal: { model: 'test/model' } } },
       }),
     );
 
@@ -235,10 +235,10 @@ describe('runDoctorCheck', () => {
     const configDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(configDir, { recursive: true });
     fs.writeFileSync(
-      path.join(configDir, 'oh-my-opencode-slim.json'),
+      path.join(configDir, 'trans-genderian-orchestra.json'),
       JSON.stringify({
         preset: 'mypreset',
-        presets: { mypreset: { oracle: { model: 'test/model' } } },
+        presets: { mypreset: { principal: { model: 'test/model' } } },
       }),
     );
 
@@ -253,7 +253,7 @@ describe('runDoctorCheck', () => {
     const configDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(configDir, { recursive: true });
     fs.writeFileSync(
-      path.join(configDir, 'oh-my-opencode-slim.json'),
+      path.join(configDir, 'trans-genderian-orchestra.json'),
       JSON.stringify({
         preset: 'nonexistent',
         presets: { other: {} },
@@ -272,17 +272,17 @@ describe('runDoctorCheck', () => {
     const configDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(configDir, { recursive: true });
     fs.writeFileSync(
-      path.join(configDir, 'oh-my-opencode-slim.json'),
+      path.join(configDir, 'trans-genderian-orchestra.json'),
       JSON.stringify({
         preset: 'config-preset',
         presets: {
-          'config-preset': { oracle: { model: 'config/model' } },
-          'env-preset': { oracle: { model: 'env/model' } },
+          'config-preset': { principal: { model: 'config/model' } },
+          'env-preset': { principal: { model: 'env/model' } },
         },
       }),
     );
 
-    process.env.OH_MY_OPENCODE_SLIM_PRESET = 'env-preset';
+    process.env.TGO_PRESET = 'env-preset';
 
     const result = runDoctorCheck(projectDir);
 
@@ -295,13 +295,13 @@ describe('runDoctorCheck', () => {
     const userOpencodeDir = path.join(tempDir, 'user-config', 'opencode');
     fs.mkdirSync(userOpencodeDir, { recursive: true });
     fs.writeFileSync(
-      path.join(userOpencodeDir, 'oh-my-opencode-slim.json'),
+      path.join(userOpencodeDir, 'trans-genderian-orchestra.json'),
       JSON.stringify({
-        agents: { oracle: { temperature: 0.5 } },
+        agents: { principal: { temperature: 0.5 } },
         presets: {
           'test-preset': {
-            oracle: { model: 'user/model' },
-            explorer: { model: 'user/explorer' },
+            principal: { model: 'user/model' },
+            scribe: { model: 'user/scribe' },
           },
         },
       }),
@@ -311,10 +311,10 @@ describe('runDoctorCheck', () => {
     const configDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(configDir, { recursive: true });
     fs.writeFileSync(
-      path.join(configDir, 'oh-my-opencode-slim.json'),
+      path.join(configDir, 'trans-genderian-orchestra.json'),
       JSON.stringify({
         preset: 'test-preset',
-        agents: { oracle: { model: 'project/model' } },
+        agents: { principal: { model: 'project/model' } },
       }),
     );
 
@@ -323,8 +323,8 @@ describe('runDoctorCheck', () => {
     expect(result.ok).toBe(true);
     expect(result.presetCheck?.preset).toBe('test-preset');
     expect(result.presetCheck?.ok).toBe(true);
-    expect(result.configs[0].config?.agents?.oracle?.temperature).toBe(0.5);
-    expect(result.configs[1].config?.agents?.oracle?.model).toBe(
+    expect(result.configs[0].config?.agents?.principal?.temperature).toBe(0.5);
+    expect(result.configs[1].config?.agents?.principal?.model).toBe(
       'project/model',
     );
   });
@@ -334,14 +334,14 @@ describe('runDoctorCheck', () => {
     const configDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(configDir, { recursive: true });
     fs.writeFileSync(
-      path.join(configDir, 'oh-my-opencode-slim.json'),
-      JSON.stringify({ agents: { oracle: { model: 'secret/model' } } }),
+      path.join(configDir, 'trans-genderian-orchestra.json'),
+      JSON.stringify({ agents: { principal: { model: 'secret/model' } } }),
     );
 
     const result = runDoctorCheck(projectDir);
     const parsed = JSON.parse(formatJsonDoctorResult(result));
 
-    expect(result.configs[1].config?.agents?.oracle?.model).toBe(
+    expect(result.configs[1].config?.agents?.principal?.model).toBe(
       'secret/model',
     );
     expect(parsed.configs[1].config).toBeUndefined();
@@ -351,12 +351,12 @@ describe('runDoctorCheck', () => {
     const userOpencodeDir = path.join(tempDir, 'user-config', 'opencode');
     fs.mkdirSync(userOpencodeDir, { recursive: true });
     fs.writeFileSync(
-      path.join(userOpencodeDir, 'oh-my-opencode-slim.json'),
+      path.join(userOpencodeDir, 'trans-genderian-orchestra.json'),
       JSON.stringify({
         preset: 'user-preset',
         presets: {
-          'user-preset': { oracle: { model: 'user/model' } },
-          'project-preset': { oracle: { model: 'project/model' } },
+          'user-preset': { principal: { model: 'user/model' } },
+          'project-preset': { principal: { model: 'project/model' } },
         },
       }),
     );
@@ -365,7 +365,7 @@ describe('runDoctorCheck', () => {
     const configDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(configDir, { recursive: true });
     fs.writeFileSync(
-      path.join(configDir, 'oh-my-opencode-slim.json'),
+      path.join(configDir, 'trans-genderian-orchestra.json'),
       JSON.stringify({
         preset: 'project-preset',
       }),
@@ -384,12 +384,12 @@ describe('runDoctorCheck', () => {
     fs.mkdirSync(configDir, { recursive: true });
 
     fs.writeFileSync(
-      path.join(configDir, 'oh-my-opencode-slim.json'),
-      JSON.stringify({ agents: { oracle: { model: 'json-model' } } }),
+      path.join(configDir, 'trans-genderian-orchestra.json'),
+      JSON.stringify({ agents: { principal: { model: 'json-model' } } }),
     );
     fs.writeFileSync(
-      path.join(configDir, 'oh-my-opencode-slim.jsonc'),
-      JSON.stringify({ agents: { oracle: { model: 'jsonc-model' } } }),
+      path.join(configDir, 'trans-genderian-orchestra.jsonc'),
+      JSON.stringify({ agents: { principal: { model: 'jsonc-model' } } }),
     );
 
     const result = runDoctorCheck(projectDir);
@@ -421,7 +421,7 @@ describe('doctor CLI wrapper', () => {
     originalCwd = process.cwd();
     originalEnv = { ...process.env };
     delete process.env.OPENCODE_CONFIG_DIR;
-    delete process.env.OH_MY_OPENCODE_SLIM_PRESET;
+    delete process.env.TGO_PRESET;
     process.env.XDG_CONFIG_HOME = path.join(tempDir, 'user-config');
   });
 
@@ -462,7 +462,7 @@ describe('doctor CLI wrapper', () => {
     const configDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(configDir, { recursive: true });
     fs.writeFileSync(
-      path.join(configDir, 'oh-my-opencode-slim.json'),
+      path.join(configDir, 'trans-genderian-orchestra.json'),
       '{ invalid }',
     );
 
@@ -498,8 +498,8 @@ describe('doctor CLI wrapper', () => {
     const configDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(configDir, { recursive: true });
     fs.writeFileSync(
-      path.join(configDir, 'oh-my-opencode-slim.json'),
-      JSON.stringify({ agents: { oracle: { temperature: 5 } } }),
+      path.join(configDir, 'trans-genderian-orchestra.json'),
+      JSON.stringify({ agents: { principal: { temperature: 5 } } }),
     );
 
     const consoleLogSpy = spyOn(console, 'log').mockImplementation(() => {});

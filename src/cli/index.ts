@@ -53,11 +53,11 @@ export function parseArgs(args: string[]): InstallArgs {
 
 function printHelp(): void {
   console.log(`
-oh-my-opencode-slim installer
+trans-genderian-orchestra installer
 
 Usage:
-  bunx oh-my-opencode-slim install [OPTIONS]
-  bunx oh-my-opencode-slim doctor [OPTIONS]
+  bunx trans-genderian-orchestra install [OPTIONS]
+  bunx trans-genderian-orchestra doctor [OPTIONS]
 
 Options:
   --skills=yes|no        Install bundled skills (default: yes)
@@ -82,12 +82,12 @@ OpenAI is active unless --preset selects another generated preset.
 For the full config reference, see docs/configuration.md.
 
 Examples:
-  bunx oh-my-opencode-slim install
-  bunx oh-my-opencode-slim install --no-tui --skills=yes
-  bunx oh-my-opencode-slim install --background-subagents=yes
-  bunx oh-my-opencode-slim install --preset=opencode-go
-  bunx oh-my-opencode-slim install --reset
-  bunx oh-my-opencode-slim doctor
+  bunx trans-genderian-orchestra install
+  bunx trans-genderian-orchestra install --no-tui --skills=yes
+  bunx trans-genderian-orchestra install --background-subagents=yes
+  bunx trans-genderian-orchestra install --preset=opencode-go
+  bunx trans-genderian-orchestra install --reset
+  bunx trans-genderian-orchestra doctor
 `);
 }
 

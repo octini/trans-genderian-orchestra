@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from 'bun:test';
 import type { CouncilResult } from '../config/council-schema';
 import type { CouncilManager } from '../council/council-manager';
-import { createCouncilTool } from './council';
+import { createCouncilTool } from './ensemble';
 
 function createMockPluginContext() {
   return {
@@ -139,11 +139,11 @@ describe('council_session tool', () => {
       );
     });
 
-    test('returns successful council result with output', async () => {
+    test('returns successful ensemble result with output', async () => {
       const ctx = createMockPluginContext();
       const councilManager = createMockCouncilManager({
         success: true,
-        result: 'Synthesized answer from council',
+        result: 'Synthesized answer from ensemble',
         councillorResults: [
           {
             name: 'alpha',
@@ -166,7 +166,7 @@ describe('council_session tool', () => {
         { sessionID: 'test-session' } as any,
       );
 
-      expect(result).toContain('Synthesized answer from council');
+      expect(result).toContain('Synthesized answer from ensemble');
       expect(result).toContain('Council: 2/2 councillors responded');
     });
 
@@ -339,7 +339,7 @@ describe('council_session tool', () => {
   });
 
   describe('agent guard', () => {
-    test('allows council agent to invoke council session', async () => {
+    test('allows ensemble agent to invoke ensemble session', async () => {
       const ctx = createMockPluginContext();
       const councilManager = createMockCouncilManager({
         success: true,
@@ -352,14 +352,14 @@ describe('council_session tool', () => {
 
       const result = await tools.council_session.execute({ prompt: 'Test' }, {
         sessionID: 'test',
-        agent: 'council',
+        agent: 'ensemble',
       } as any);
 
       expect(result).toContain('Synthesised answer');
       expect(councilManager.runCouncil).toHaveBeenCalledTimes(1);
     });
 
-    test('blocks orchestrator agent from invoking council session', async () => {
+    test('blocks conductor agent from invoking ensemble session', async () => {
       const ctx = createMockPluginContext();
       const councilManager = createMockCouncilManager();
       const tools = createCouncilTool(ctx, councilManager);
@@ -367,7 +367,7 @@ describe('council_session tool', () => {
       expect(
         tools.council_session.execute({ prompt: 'Test' }, {
           sessionID: 'test',
-          agent: 'orchestrator',
+          agent: 'conductor',
         } as any),
       ).rejects.toThrow(
         'Council sessions can only be invoked by the council agent',
@@ -375,7 +375,7 @@ describe('council_session tool', () => {
       expect(councilManager.runCouncil).not.toHaveBeenCalled();
     });
 
-    test('blocks disallowed agents from invoking council session', async () => {
+    test('blocks disallowed agents from invoking ensemble session', async () => {
       const ctx = createMockPluginContext();
       const councilManager = createMockCouncilManager();
       const tools = createCouncilTool(ctx, councilManager);
@@ -383,7 +383,7 @@ describe('council_session tool', () => {
       expect(
         tools.council_session.execute({ prompt: 'Test' }, {
           sessionID: 'test',
-          agent: 'explorer',
+          agent: 'scribe',
         } as any),
       ).rejects.toThrow(
         'Council sessions can only be invoked by the council agent',

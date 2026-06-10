@@ -8,7 +8,7 @@ describe('BackgroundJobBoard', () => {
     const job = board.registerLaunch({
       taskID: 'ses_1',
       parentSessionID: 'parent-1',
-      agent: 'explorer',
+      agent: 'scribe',
       description: 'map config',
       now: 100,
     });
@@ -16,10 +16,10 @@ describe('BackgroundJobBoard', () => {
     expect(job).toMatchObject({
       taskID: 'ses_1',
       parentSessionID: 'parent-1',
-      agent: 'explorer',
+      agent: 'scribe',
       description: 'map config',
       state: 'running',
-      alias: 'exp-1',
+      alias: 'scr-1',
       terminalUnreconciled: false,
     });
     expect(board.hasRunning('parent-1')).toBe(true);
@@ -30,7 +30,7 @@ describe('BackgroundJobBoard', () => {
     board.registerLaunch({
       taskID: 'ses_1',
       parentSessionID: 'parent-1',
-      agent: 'oracle',
+      agent: 'principal',
       description: 'review plan',
       now: 100,
     });
@@ -56,7 +56,7 @@ describe('BackgroundJobBoard', () => {
     board.registerLaunch({
       taskID: 'ses_1',
       parentSessionID: 'parent-1',
-      agent: 'fixer',
+      agent: 'composer',
       description: 'implement parser',
     });
 
@@ -78,13 +78,13 @@ describe('BackgroundJobBoard', () => {
     board.registerLaunch({
       taskID: 'ses_1',
       parentSessionID: 'parent-1',
-      agent: 'explorer',
+      agent: 'scribe',
       description: 'map config',
     });
     board.registerLaunch({
       taskID: 'ses_2',
       parentSessionID: 'parent-1',
-      agent: 'oracle',
+      agent: 'principal',
       description: 'review plan',
     });
     board.updateStatus({
@@ -96,9 +96,9 @@ describe('BackgroundJobBoard', () => {
     const prompt = board.formatForPrompt('parent-1');
 
     expect(prompt).toContain('### Background Job Board');
-    expect(prompt).toContain('exp-1 / ses_1 / explorer / running');
+    expect(prompt).toContain('scr-1 / ses_1 / scribe / running');
     expect(prompt).toContain(
-      'ora-1 / ses_2 / oracle / completed, unreconciled',
+      'pri-1 / ses_2 / principal / completed, unreconciled',
     );
     expect(prompt).toContain('Result: plan is sound');
   });
@@ -108,7 +108,7 @@ describe('BackgroundJobBoard', () => {
     board.registerLaunch({
       taskID: 'ses_1',
       parentSessionID: 'parent-1',
-      agent: 'oracle',
+      agent: 'principal',
       description: 'review plan',
     });
     board.updateStatus({ taskID: 'ses_1', state: 'completed' });
@@ -127,7 +127,7 @@ describe('BackgroundJobBoard', () => {
     board.registerLaunch({
       taskID: 'ses_1',
       parentSessionID: 'parent-1',
-      agent: 'oracle',
+      agent: 'principal',
       description: 'review plan',
     });
     board.updateStatus({ taskID: 'ses_1', state: 'completed' });
@@ -135,7 +135,7 @@ describe('BackgroundJobBoard', () => {
     const prompt = board.formatForPrompt('parent-1');
 
     expect(prompt).toContain(
-      'ora-1 / ses_1 / oracle / completed, unreconciled',
+      'pri-1 / ses_1 / principal / completed, unreconciled',
     );
     expect(prompt).toContain('#### Reusable Sessions\n- none');
   });
@@ -145,7 +145,7 @@ describe('BackgroundJobBoard', () => {
     board.registerLaunch({
       taskID: 'ses_cancelled',
       parentSessionID: 'parent-1',
-      agent: 'oracle',
+      agent: 'principal',
       description: 'cancelled review',
     });
     board.updateStatus({ taskID: 'ses_cancelled', state: 'cancelled' });
@@ -153,7 +153,7 @@ describe('BackgroundJobBoard', () => {
     board.registerLaunch({
       taskID: 'ses_error',
       parentSessionID: 'parent-1',
-      agent: 'oracle',
+      agent: 'principal',
       description: 'errored review',
     });
     board.updateStatus({ taskID: 'ses_error', state: 'error' });
@@ -164,12 +164,12 @@ describe('BackgroundJobBoard', () => {
     expect(board.resolveReusable('parent-1', 'ses_error')).toBeUndefined();
   });
 
-  test('prompt tells orchestrator to reuse completed sessions only', () => {
+  test('prompt tells conductor to reuse completed sessions only', () => {
     const board = new BackgroundJobBoard();
     board.registerLaunch({
       taskID: 'ses_1',
       parentSessionID: 'parent-1',
-      agent: 'oracle',
+      agent: 'principal',
       description: 'review plan',
     });
     board.updateStatus({ taskID: 'ses_1', state: 'completed' });
@@ -185,7 +185,7 @@ describe('BackgroundJobBoard', () => {
     board.registerLaunch({
       taskID: 'ses_1',
       parentSessionID: 'parent-1',
-      agent: 'fixer',
+      agent: 'composer',
       description: 'still running',
     });
 
@@ -198,7 +198,7 @@ describe('BackgroundJobBoard', () => {
     board.registerLaunch({
       taskID: 'ses_1',
       parentSessionID: 'parent-1',
-      agent: 'fixer',
+      agent: 'composer',
       description: 'first run',
       now: 100,
     });
@@ -212,7 +212,7 @@ describe('BackgroundJobBoard', () => {
     const relaunched = board.registerLaunch({
       taskID: 'ses_1',
       parentSessionID: 'parent-1',
-      agent: 'fixer',
+      agent: 'composer',
       description: 'second run',
       now: 300,
     });
@@ -234,7 +234,7 @@ describe('BackgroundJobBoard', () => {
     board.registerLaunch({
       taskID: 'ses_1',
       parentSessionID: 'parent-1',
-      agent: 'explorer',
+      agent: 'scribe',
       description: 'map files',
     });
 
@@ -260,7 +260,7 @@ describe('BackgroundJobBoard', () => {
     board.registerLaunch({
       taskID: 'ses_1',
       parentSessionID: 'parent-1',
-      agent: 'explorer',
+      agent: 'scribe',
       description: 'map files',
     });
 
@@ -287,17 +287,17 @@ describe('BackgroundJobBoard', () => {
     board.registerLaunch({
       taskID: 'ses_1',
       parentSessionID: 'parent-1',
-      agent: 'explorer',
+      agent: 'scribe',
     });
     board.registerLaunch({
       taskID: 'ses_2',
       parentSessionID: 'parent-2',
-      agent: 'explorer',
+      agent: 'scribe',
     });
 
     expect(board.resolve('parent-1', 'ses_1')?.taskID).toBe('ses_1');
-    expect(board.resolve('parent-1', 'exp-1')?.taskID).toBe('ses_1');
-    expect(board.resolve('parent-2', 'exp-1')?.taskID).toBe('ses_2');
+    expect(board.resolve('parent-1', 'scr-1')?.taskID).toBe('ses_1');
+    expect(board.resolve('parent-2', 'scr-1')?.taskID).toBe('ses_2');
     expect(board.resolve('parent-1', 'ses_2')).toBeUndefined();
   });
 
@@ -306,7 +306,7 @@ describe('BackgroundJobBoard', () => {
     board.registerLaunch({
       taskID: 'ses_1',
       parentSessionID: 'parent-1',
-      agent: 'fixer',
+      agent: 'composer',
       now: 100,
     });
 
@@ -321,7 +321,7 @@ describe('BackgroundJobBoard', () => {
     });
     expect(board.hasTerminalUnreconciled('parent-1')).toBe(true);
     expect(board.formatForPrompt('parent-1')).toContain(
-      'fix-1 / ses_1 / fixer / cancelled, unreconciled',
+      'com-1 / ses_1 / composer / cancelled, unreconciled',
     );
   });
 
@@ -330,7 +330,7 @@ describe('BackgroundJobBoard', () => {
     board.registerLaunch({
       taskID: 'ses_1',
       parentSessionID: 'parent-1',
-      agent: 'oracle',
+      agent: 'principal',
     });
     board.updateStatus({
       taskID: 'ses_1',
@@ -351,7 +351,7 @@ describe('BackgroundJobBoard', () => {
     board.registerLaunch({
       taskID: 'ses_1',
       parentSessionID: 'parent-1',
-      agent: 'fixer',
+      agent: 'composer',
     });
     board.markCancelled('ses_1', 'obsolete');
 
@@ -373,7 +373,7 @@ describe('BackgroundJobBoard', () => {
     board.registerLaunch({
       taskID: 'ses_1',
       parentSessionID: 'parent-1',
-      agent: 'fixer',
+      agent: 'composer',
     });
     board.markCancelled('ses_1', 'user requested');
 
@@ -403,7 +403,7 @@ describe('BackgroundJobBoard', () => {
     board.registerLaunch({
       taskID: 'ses_1',
       parentSessionID: 'parent-1',
-      agent: 'explorer',
+      agent: 'scribe',
     });
     board.updateStatus({
       taskID: 'ses_1',
@@ -429,7 +429,7 @@ describe('BackgroundJobBoard', () => {
     board.registerLaunch({
       taskID: 'ses_1',
       parentSessionID: 'parent-1',
-      agent: 'oracle',
+      agent: 'principal',
     });
     board.markCancelled('ses_1', 'user requested', 100);
 
@@ -447,7 +447,7 @@ describe('BackgroundJobBoard', () => {
     board.registerLaunch({
       taskID: 'ses_1',
       parentSessionID: 'parent-1',
-      agent: 'explorer',
+      agent: 'scribe',
     });
     board.updateStatus({ taskID: 'ses_1', state: 'cancelled', now: 100 });
     board.markReconciled('ses_1', 150);
@@ -467,7 +467,7 @@ describe('BackgroundJobBoard', () => {
     board.registerLaunch({
       taskID: 'ses_1',
       parentSessionID: 'parent-1',
-      agent: 'fixer',
+      agent: 'composer',
     });
     board.updateStatus({ taskID: 'ses_1', state: 'completed', now: 100 });
 
@@ -487,7 +487,7 @@ describe('BackgroundJobBoard', () => {
     board.registerLaunch({
       taskID: 'ses_1',
       parentSessionID: 'parent-1',
-      agent: 'oracle',
+      agent: 'principal',
       description: 'review plan',
     });
     board.updateStatus({ taskID: 'ses_1', state: 'completed' });
@@ -531,7 +531,7 @@ describe('BackgroundJobBoard', () => {
     board.registerLaunch({
       taskID: 'ses_1',
       parentSessionID: 'parent-1',
-      agent: 'fixer',
+      agent: 'composer',
       description: 'implement feature',
       now: 1_000,
     });
@@ -546,7 +546,7 @@ describe('BackgroundJobBoard', () => {
     board.registerLaunch({
       taskID: 'ses_1',
       parentSessionID: 'parent-1',
-      agent: 'fixer',
+      agent: 'composer',
       description: 'implement feature',
       now: 1_000,
     });
@@ -562,7 +562,7 @@ describe('BackgroundJobBoard', () => {
     board.registerLaunch({
       taskID: 'ses_1',
       parentSessionID: 'parent-1',
-      agent: 'oracle',
+      agent: 'principal',
       description: 'review plan',
       now: 100,
     });
@@ -573,7 +573,7 @@ describe('BackgroundJobBoard', () => {
     const relaunched = board.registerLaunch({
       taskID: 'ses_1',
       parentSessionID: 'parent-1',
-      agent: 'oracle',
+      agent: 'principal',
       description: 'review plan again',
       now: 400,
     });
@@ -593,7 +593,7 @@ describe('BackgroundJobBoard', () => {
     board.registerLaunch({
       taskID: 'ses_1',
       parentSessionID: 'parent-1',
-      agent: 'fixer',
+      agent: 'composer',
       description: 'implement feature',
       now: 1_000,
     });
@@ -601,7 +601,7 @@ describe('BackgroundJobBoard', () => {
     board.registerLaunch({
       taskID: 'ses_1',
       parentSessionID: 'parent-1',
-      agent: 'fixer',
+      agent: 'composer',
       description: 'implement feature continued',
       now: 5_000,
     });

@@ -97,14 +97,14 @@ describe('warmOpenCodePluginCache', () => {
 
     const packageRoot = join(
       tmpDir,
-      'bunx-1000-oh-my-opencode-slim@latest',
+      'bunx-1000-trans-genderian-orchestra@latest',
       'node_modules',
-      'oh-my-opencode-slim',
+      'trans-genderian-orchestra',
     );
     mkdirSync(join(packageRoot, 'dist', 'cli'), { recursive: true });
     writeFileSync(
       join(packageRoot, 'package.json'),
-      JSON.stringify({ name: 'oh-my-opencode-slim' }),
+      JSON.stringify({ name: 'trans-genderian-orchestra' }),
     );
     process.argv[1] = join(packageRoot, 'dist', 'cli', 'index.js');
 
@@ -115,7 +115,7 @@ describe('warmOpenCodePluginCache', () => {
       cacheHome,
       'opencode',
       'packages',
-      'oh-my-opencode-slim@latest',
+      'trans-genderian-orchestra@latest',
     );
 
     expect(result?.success).toBe(true);
@@ -132,10 +132,10 @@ describe('warmOpenCodePluginCache', () => {
     expect(
       JSON.parse(readFileSync(join(expectedCacheDir, 'package.json'), 'utf-8')),
     ).toEqual({
-      name: 'oh-my-opencode-slim-cache',
+      name: 'trans-genderian-orchestra-cache',
       private: true,
       dependencies: {
-        'oh-my-opencode-slim': 'latest',
+        'trans-genderian-orchestra': 'latest',
       },
     });
 
@@ -149,14 +149,14 @@ describe('warmOpenCodePluginCache', () => {
 
     const packageRoot = join(
       tmpDir,
-      'bunx-1000-oh-my-opencode-slim@latest',
+      'bunx-1000-trans-genderian-orchestra@latest',
       'node_modules',
-      'oh-my-opencode-slim',
+      'trans-genderian-orchestra',
     );
     mkdirSync(join(packageRoot, 'dist', 'cli'), { recursive: true });
     writeFileSync(
       join(packageRoot, 'package.json'),
-      JSON.stringify({ name: 'oh-my-opencode-slim' }),
+      JSON.stringify({ name: 'trans-genderian-orchestra' }),
     );
     process.argv[1] = join(packageRoot, 'dist', 'cli', 'index.js');
 
@@ -164,7 +164,7 @@ describe('warmOpenCodePluginCache', () => {
       cacheHome,
       'opencode',
       'packages',
-      'oh-my-opencode-slim@latest',
+      'trans-genderian-orchestra@latest',
     );
     mkdirSync(expectedCacheDir, { recursive: true });
     writeFileSync(
@@ -183,10 +183,10 @@ describe('warmOpenCodePluginCache', () => {
     expect(
       JSON.parse(readFileSync(join(expectedCacheDir, 'package.json'), 'utf-8')),
     ).toEqual({
-      name: 'oh-my-opencode-slim-cache',
+      name: 'trans-genderian-orchestra-cache',
       private: true,
       dependencies: {
-        'oh-my-opencode-slim': 'latest',
+        'trans-genderian-orchestra': 'latest',
       },
     });
 
@@ -200,14 +200,14 @@ describe('warmOpenCodePluginCache', () => {
 
     const packageRoot = join(
       tmpDir,
-      'bunx-1000-oh-my-opencode-slim@latest',
+      'bunx-1000-trans-genderian-orchestra@latest',
       'node_modules',
-      'oh-my-opencode-slim',
+      'trans-genderian-orchestra',
     );
     mkdirSync(join(packageRoot, 'dist', 'cli'), { recursive: true });
     writeFileSync(
       join(packageRoot, 'package.json'),
-      JSON.stringify({ name: 'oh-my-opencode-slim' }),
+      JSON.stringify({ name: 'trans-genderian-orchestra' }),
     );
     process.argv[1] = join(packageRoot, 'dist', 'cli', 'index.js');
     crossSpawnMock.mockImplementation(() => createSpawnResult());
@@ -221,15 +221,15 @@ describe('warmOpenCodePluginCache', () => {
         cacheHome,
         'opencode',
         'packages',
-        'oh-my-opencode-slim@latest',
+        'trans-genderian-orchestra@latest',
       ),
       error: `Cached plugin package not found at ${join(
         cacheHome,
         'opencode',
         'packages',
-        'oh-my-opencode-slim@latest',
+        'trans-genderian-orchestra@latest',
         'node_modules',
-        'oh-my-opencode-slim',
+        'trans-genderian-orchestra',
         'package.json',
       )}`,
     });
@@ -244,14 +244,14 @@ describe('warmOpenCodePluginCache', () => {
 
     const packageRoot = join(
       tmpDir,
-      'bunx-1000-oh-my-opencode-slim@latest',
+      'bunx-1000-trans-genderian-orchestra@latest',
       'node_modules',
-      'oh-my-opencode-slim',
+      'trans-genderian-orchestra',
     );
     mkdirSync(join(packageRoot, 'dist', 'cli'), { recursive: true });
     writeFileSync(
       join(packageRoot, 'package.json'),
-      JSON.stringify({ name: 'oh-my-opencode-slim' }),
+      JSON.stringify({ name: 'trans-genderian-orchestra' }),
     );
     process.argv[1] = join(packageRoot, 'dist', 'cli', 'index.js');
     crossSpawnMock.mockImplementation(() => ({
@@ -268,7 +268,7 @@ describe('warmOpenCodePluginCache', () => {
         cacheHome,
         'opencode',
         'packages',
-        'oh-my-opencode-slim@latest',
+        'trans-genderian-orchestra@latest',
       ),
       error: 'registry unavailable',
     });
@@ -283,19 +283,19 @@ describe('warmOpenCodePluginCache', () => {
 
     const packageRoot = join(
       tmpDir,
-      'bunx-1000-oh-my-opencode-slim@latest',
+      'bunx-1000-trans-genderian-orchestra@latest',
       'node_modules',
-      'oh-my-opencode-slim',
+      'trans-genderian-orchestra',
     );
     mkdirSync(join(packageRoot, 'dist', 'cli'), { recursive: true });
     writeFileSync(
       join(packageRoot, 'package.json'),
-      JSON.stringify({ name: 'oh-my-opencode-slim' }),
+      JSON.stringify({ name: 'trans-genderian-orchestra' }),
     );
     process.argv[1] = join(packageRoot, 'dist', 'cli', 'index.js');
 
     const packageJsonSuffix = join(
-      'oh-my-opencode-slim@latest',
+      'trans-genderian-orchestra@latest',
       'package.json',
     );
     const fs = await import('node:fs');
@@ -318,7 +318,7 @@ describe('warmOpenCodePluginCache', () => {
           cacheHome,
           'opencode',
           'packages',
-          'oh-my-opencode-slim@latest',
+          'trans-genderian-orchestra@latest',
         ),
         error: 'Failed to write cache package.json: Error: disk full',
       });
@@ -335,7 +335,7 @@ describe('warmOpenCodePluginCache', () => {
     mkdirSync(join(packageRoot, 'dist', 'cli'), { recursive: true });
     writeFileSync(
       join(packageRoot, 'package.json'),
-      JSON.stringify({ name: 'oh-my-opencode-slim' }),
+      JSON.stringify({ name: 'trans-genderian-orchestra' }),
     );
     process.argv[1] = join(packageRoot, 'dist', 'cli', 'index.js');
 
@@ -360,7 +360,7 @@ describe('warmOpenCodePluginCache', () => {
     writeFileSync(
       configPath,
       JSON.stringify({
-        plugin: ['oh-my-opencode-slim@1.2.3'],
+        plugin: ['trans-genderian-orchestra@1.2.3'],
       }),
     );
 
@@ -370,14 +370,14 @@ describe('warmOpenCodePluginCache', () => {
     try {
       const packageRoot = join(
         tmpDir,
-        'bunx-1000-oh-my-opencode-slim@latest',
+        'bunx-1000-trans-genderian-orchestra@latest',
         'node_modules',
-        'oh-my-opencode-slim',
+        'trans-genderian-orchestra',
       );
       mkdirSync(join(packageRoot, 'dist', 'cli'), { recursive: true });
       writeFileSync(
         join(packageRoot, 'package.json'),
-        JSON.stringify({ name: 'oh-my-opencode-slim' }),
+        JSON.stringify({ name: 'trans-genderian-orchestra' }),
       );
       process.argv[1] = join(packageRoot, 'dist', 'cli', 'index.js');
 
@@ -388,7 +388,7 @@ describe('warmOpenCodePluginCache', () => {
         cacheHome,
         'opencode',
         'packages',
-        'oh-my-opencode-slim@1.2.3',
+        'trans-genderian-orchestra@1.2.3',
       );
 
       expect(result?.success).toBe(true);
@@ -398,10 +398,10 @@ describe('warmOpenCodePluginCache', () => {
           readFileSync(join(expectedCacheDir, 'package.json'), 'utf-8'),
         ),
       ).toEqual({
-        name: 'oh-my-opencode-slim-cache',
+        name: 'trans-genderian-orchestra-cache',
         private: true,
         dependencies: {
-          'oh-my-opencode-slim': '1.2.3',
+          'trans-genderian-orchestra': '1.2.3',
         },
       });
     } finally {
@@ -417,14 +417,14 @@ describe('warmOpenCodePluginCache', () => {
     // Simulate bunx @beta: package.json has a beta version, config has no pinned version
     const packageRoot = join(
       tmpDir,
-      'bunx-1000-oh-my-opencode-slim@beta',
+      'bunx-1000-trans-genderian-orchestra@beta',
       'node_modules',
-      'oh-my-opencode-slim',
+      'trans-genderian-orchestra',
     );
     mkdirSync(join(packageRoot, 'dist', 'cli'), { recursive: true });
     writeFileSync(
       join(packageRoot, 'package.json'),
-      JSON.stringify({ name: 'oh-my-opencode-slim', version: '2.0.0-beta.13' }),
+      JSON.stringify({ name: 'trans-genderian-orchestra', version: '2.0.0-beta.13' }),
     );
     process.argv[1] = join(packageRoot, 'dist', 'cli', 'index.js');
 
@@ -436,7 +436,7 @@ describe('warmOpenCodePluginCache', () => {
       cacheHome,
       'opencode',
       'packages',
-      'oh-my-opencode-slim@2.0.0-beta.13',
+      'trans-genderian-orchestra@2.0.0-beta.13',
     );
 
     expect(result?.success).toBe(true);
@@ -444,10 +444,10 @@ describe('warmOpenCodePluginCache', () => {
     expect(
       JSON.parse(readFileSync(join(expectedCacheDir, 'package.json'), 'utf-8')),
     ).toEqual({
-      name: 'oh-my-opencode-slim-cache',
+      name: 'trans-genderian-orchestra-cache',
       private: true,
       dependencies: {
-        'oh-my-opencode-slim': '2.0.0-beta.13',
+        'trans-genderian-orchestra': '2.0.0-beta.13',
       },
     });
 
@@ -466,7 +466,7 @@ describe('warmOpenCodePluginCache', () => {
     writeFileSync(
       configPath,
       JSON.stringify({
-        plugin: [['oh-my-opencode-slim@1.2.3', { someOption: true }]],
+        plugin: [['trans-genderian-orchestra@1.2.3', { someOption: true }]],
       }),
     );
 
@@ -475,14 +475,14 @@ describe('warmOpenCodePluginCache', () => {
     try {
       const packageRoot = join(
         tmpDir,
-        'bunx-1000-oh-my-opencode-slim@latest',
+        'bunx-1000-trans-genderian-orchestra@latest',
         'node_modules',
-        'oh-my-opencode-slim',
+        'trans-genderian-orchestra',
       );
       mkdirSync(join(packageRoot, 'dist', 'cli'), { recursive: true });
       writeFileSync(
         join(packageRoot, 'package.json'),
-        JSON.stringify({ name: 'oh-my-opencode-slim' }),
+        JSON.stringify({ name: 'trans-genderian-orchestra' }),
       );
       process.argv[1] = join(packageRoot, 'dist', 'cli', 'index.js');
 
@@ -493,7 +493,7 @@ describe('warmOpenCodePluginCache', () => {
         cacheHome,
         'opencode',
         'packages',
-        'oh-my-opencode-slim@1.2.3',
+        'trans-genderian-orchestra@1.2.3',
       );
 
       expect(result?.success).toBe(true);
@@ -503,10 +503,10 @@ describe('warmOpenCodePluginCache', () => {
           readFileSync(join(expectedCacheDir, 'package.json'), 'utf-8'),
         ),
       ).toEqual({
-        name: 'oh-my-opencode-slim-cache',
+        name: 'trans-genderian-orchestra-cache',
         private: true,
         dependencies: {
-          'oh-my-opencode-slim': '1.2.3',
+          'trans-genderian-orchestra': '1.2.3',
         },
       });
     } finally {
@@ -522,14 +522,14 @@ describe('warmOpenCodePluginCache', () => {
     // Running version is beta
     const packageRoot = join(
       tmpDir,
-      'bunx-1000-oh-my-opencode-slim@beta',
+      'bunx-1000-trans-genderian-orchestra@beta',
       'node_modules',
-      'oh-my-opencode-slim',
+      'trans-genderian-orchestra',
     );
     mkdirSync(join(packageRoot, 'dist', 'cli'), { recursive: true });
     writeFileSync(
       join(packageRoot, 'package.json'),
-      JSON.stringify({ name: 'oh-my-opencode-slim', version: '2.0.0-beta.13' }),
+      JSON.stringify({ name: 'trans-genderian-orchestra', version: '2.0.0-beta.13' }),
     );
     process.argv[1] = join(packageRoot, 'dist', 'cli', 'index.js');
 
@@ -540,7 +540,7 @@ describe('warmOpenCodePluginCache', () => {
     writeFileSync(
       configPath,
       JSON.stringify({
-        plugin: ['oh-my-opencode-slim@1.2.3'],
+        plugin: ['trans-genderian-orchestra@1.2.3'],
       }),
     );
 
@@ -554,7 +554,7 @@ describe('warmOpenCodePluginCache', () => {
         cacheHome,
         'opencode',
         'packages',
-        'oh-my-opencode-slim@1.2.3',
+        'trans-genderian-orchestra@1.2.3',
       );
 
       expect(result?.success).toBe(true);
@@ -564,10 +564,10 @@ describe('warmOpenCodePluginCache', () => {
           readFileSync(join(expectedCacheDir, 'package.json'), 'utf-8'),
         ),
       ).toEqual({
-        name: 'oh-my-opencode-slim-cache',
+        name: 'trans-genderian-orchestra-cache',
         private: true,
         dependencies: {
-          'oh-my-opencode-slim': '1.2.3',
+          'trans-genderian-orchestra': '1.2.3',
         },
       });
     } finally {
@@ -583,10 +583,10 @@ function mkdirTemp(): string {
 function writeCachedPluginPackage(cacheDir?: string): void {
   if (!cacheDir) return;
 
-  const pluginRoot = join(cacheDir, 'node_modules', 'oh-my-opencode-slim');
+  const pluginRoot = join(cacheDir, 'node_modules', 'trans-genderian-orchestra');
   mkdirSync(pluginRoot, { recursive: true });
   writeFileSync(
     join(pluginRoot, 'package.json'),
-    JSON.stringify({ name: 'oh-my-opencode-slim' }),
+    JSON.stringify({ name: 'trans-genderian-orchestra' }),
   );
 }

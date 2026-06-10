@@ -211,7 +211,7 @@ export function createPresetManager(ctx: PluginInput, config: PluginConfig) {
    * Agent config fields shown in the saved preset summary.
    *
    * Excluded fields and why:
-   * - prompt, orchestratorPrompt: require restart (resolved at init by config() hook)
+   * - prompt, conductorPrompt: require restart (resolved at init by config() hook)
    * - skills, mcps: plugin-level concern, not part of SDK AgentConfig
    * - displayName: plugin-level concern, not part of SDK AgentConfig
    */

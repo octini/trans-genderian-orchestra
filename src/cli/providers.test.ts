@@ -28,15 +28,17 @@ describe('providers', () => {
     expect(config.preset).toBe('openai');
     expect(config.disabled_agents).toBeUndefined();
     expect((config.presets as any)['opencode-go']).toBeDefined();
-    expect((config.presets as any)['opencode-go'].observer.model).toBe(
+    expect((config.presets as any)['opencode-go'].ensemble.model).toBe(
       'opencode-go/kimi-k2.6',
     );
     const agents = (config.presets as any).openai;
     expect(agents).toBeDefined();
-    expect(agents.orchestrator.model).toBe('openai/gpt-5.5');
-    expect(agents.orchestrator.variant).toBeUndefined();
-    expect(agents.fixer.model).toBe('openai/gpt-5.4-mini');
-    expect(agents.fixer.variant).toBe('low');
+    expect(agents.conductor.model).toBe('openai/gpt-5.5');
+    expect(agents.conductor.variant).toBeUndefined();
+    expect(agents.scribe.model).toBe('openai/gpt-5.4-mini');
+    expect(agents.scribe.variant).toBe('low');
+    expect(agents.composer.model).toBe('openai/gpt-5.4-mini');
+    expect(agents.composer.variant).toBe('medium');
   });
 
   test('generateLiteConfig uses correct OpenAI models', () => {
@@ -47,17 +49,15 @@ describe('providers', () => {
     });
 
     const agents = (config.presets as any).openai;
-    expect(agents.orchestrator.model).toBe(
-      MODEL_MAPPINGS.openai.orchestrator.model,
-    );
-    expect(agents.oracle.model).toBe('openai/gpt-5.5');
-    expect(agents.oracle.variant).toBe('high');
-    expect(agents.librarian.model).toBe('openai/gpt-5.4-mini');
-    expect(agents.librarian.variant).toBe('low');
-    expect(agents.explorer.model).toBe('openai/gpt-5.4-mini');
-    expect(agents.explorer.variant).toBe('low');
-    expect(agents.designer.model).toBe('openai/gpt-5.4-mini');
-    expect(agents.designer.variant).toBe('medium');
+    expect(agents.conductor.model).toBe(MODEL_MAPPINGS.openai.conductor.model);
+    expect(agents.principal.model).toBe('openai/gpt-5.5');
+    expect(agents.principal.variant).toBe('high');
+    expect(agents.scribe.model).toBe('openai/gpt-5.4-mini');
+    expect(agents.scribe.variant).toBe('low');
+    expect(agents.scribe.model).toBe('openai/gpt-5.4-mini');
+    expect(agents.scribe.variant).toBe('low');
+    expect(agents.composer.model).toBe('openai/gpt-5.4-mini');
+    expect(agents.composer.variant).toBe('medium');
   });
 
   test('generateLiteConfig can set opencode-go as active preset', () => {
@@ -73,17 +73,13 @@ describe('providers', () => {
     expect((config.presets as any).openai).toBeDefined();
     const agents = (config.presets as any)['opencode-go'];
     expect(agents).toBeDefined();
-    expect(agents.orchestrator.model).toBe('opencode-go/glm-5.1');
-    expect(agents.oracle.model).toBe('opencode-go/deepseek-v4-pro');
-    expect(agents.oracle.variant).toBe('max');
-    expect(agents.council.model).toBe('opencode-go/deepseek-v4-pro');
-    expect(agents.council.variant).toBe('high');
-    expect(agents.librarian.model).toBe('opencode-go/minimax-m2.7');
-    expect(agents.explorer.model).toBe('opencode-go/minimax-m2.7');
-    expect(agents.designer.model).toBe('opencode-go/kimi-k2.6');
-    expect(agents.fixer.model).toBe('opencode-go/deepseek-v4-flash');
-    expect(agents.fixer.variant).toBe('high');
-    expect(agents.observer.model).toBe('opencode-go/kimi-k2.6');
+    expect(agents.conductor.model).toBe('opencode-go/glm-5.1');
+    expect(agents.principal.model).toBe('opencode-go/deepseek-v4-pro');
+    expect(agents.principal.variant).toBe('max');
+    expect(agents.ensemble.model).toBe('opencode-go/kimi-k2.6');
+    expect(agents.scribe.model).toBe('opencode-go/minimax-m2.7');
+    expect(agents.composer.model).toBe('opencode-go/kimi-k2.6');
+    expect(agents.composer.variant).toBe('medium');
   });
 
   test('generateLiteConfig rejects unsupported preset', () => {
@@ -140,22 +136,22 @@ describe('providers', () => {
 
     const agents = (config.presets as any).openai;
     // Orchestrator should always have '*'
-    expect(agents.orchestrator.skills).toEqual(['*']);
+    expect(agents.conductor.skills).toEqual(['*']);
 
     // Oracle should have bundled simplify
-    expect(agents.oracle.skills).toContain('simplify');
+    expect(agents.principal.skills).toContain('simplify');
 
     // Orchestrator should implicitly cover bundled codemap via '*'
-    expect(agents.orchestrator.skills).toContain('*');
+    expect(agents.conductor.skills).toContain('*');
 
     // Designer should have no bundled skills by default
-    expect(agents.designer.skills).toEqual([]);
+    expect(agents.composer.skills).toEqual([]);
 
     // Explorer should have no bundled skills by default
-    expect(agents.explorer.skills).toEqual([]);
+    expect(agents.scribe.skills).toEqual([]);
 
     // Fixer should have no bundled skills by default
-    expect(agents.fixer.skills).toEqual([]);
+    expect(agents.composer.skills).toEqual([]);
   });
 
   test('generateLiteConfig includes mcps field', () => {
@@ -166,10 +162,10 @@ describe('providers', () => {
     });
 
     const agents = (config.presets as any).openai;
-    expect(agents.orchestrator.mcps).toBeDefined();
-    expect(Array.isArray(agents.orchestrator.mcps)).toBe(true);
-    expect(agents.librarian.mcps).toBeDefined();
-    expect(Array.isArray(agents.librarian.mcps)).toBe(true);
+    expect(agents.conductor.mcps).toBeDefined();
+    expect(Array.isArray(agents.conductor.mcps)).toBe(true);
+    expect(agents.scribe.mcps).toBeDefined();
+    expect(Array.isArray(agents.scribe.mcps)).toBe(true);
   });
 
   test('generateLiteConfig openai includes correct mcps', () => {
@@ -180,10 +176,10 @@ describe('providers', () => {
     });
 
     const agents = (config.presets as any).openai;
-    expect(agents.orchestrator.mcps).toEqual(['*', '!context7']);
-    expect(agents.librarian.mcps).toContain('websearch');
-    expect(agents.librarian.mcps).toContain('context7');
-    expect(agents.librarian.mcps).toContain('grep_app');
-    expect(agents.designer.mcps).toEqual([]);
+    expect(agents.conductor.mcps).toEqual(['*', '!context7']);
+    expect(agents.scribe.mcps).toContain('websearch');
+    expect(agents.scribe.mcps).toContain('context7');
+    expect(agents.scribe.mcps).toContain('grep_app');
+    expect(agents.composer.mcps).toEqual([]);
   });
 });

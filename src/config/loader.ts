@@ -206,7 +206,7 @@ export function mergePluginConfigs(
     interview: deepMerge(base.interview, override.interview),
     backgroundJobs: deepMerge(base.backgroundJobs, override.backgroundJobs),
     fallback: deepMerge(base.fallback, override.fallback),
-    council: deepMerge(base.council, override.council),
+    ensemble: deepMerge(base.ensemble, override.ensemble),
   };
 }
 
@@ -344,7 +344,7 @@ export function loadPluginConfig(
  * If preset is provided and safe for paths, it first checks {preset}/ subdirectory,
  * then falls back to the root prompts directory.
  *
- * @param agentName - Name of the agent (e.g., "orchestrator", "explorer")
+ * @param agentName - Name of the agent (e.g., "conductor", "scribe")
  * @param preset - Optional preset name for preset-scoped prompt lookup
  * @returns Object with prompt and/or appendPrompt if files exist
  */

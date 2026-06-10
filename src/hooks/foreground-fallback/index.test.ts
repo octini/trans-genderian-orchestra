@@ -48,12 +48,12 @@ function makeChains(
   overrides?: Record<string, string[]>,
 ): Record<string, string[]> {
   return {
-    orchestrator: [
+    conductor: [
       'anthropic/claude-opus-4-5',
       'openai/gpt-4o',
       'google/gemini-2.5-pro',
     ],
-    explorer: ['openai/gpt-4o-mini', 'anthropic/claude-haiku'],
+    scribe: ['openai/gpt-4o-mini', 'anthropic/claude-haiku'],
     ...overrides,
   };
 }
@@ -271,13 +271,13 @@ describe('ForegroundFallbackManager message.updated', () => {
     const { client, mocks } = createMockClient();
     const mgr = new ForegroundFallbackManager(client, makeChains(), true);
 
-    // explorer message with its model
+    // scribe message with its model
     await mgr.handleEvent({
       type: 'message.updated',
       properties: {
         info: {
           sessionID: 'sess-3',
-          agent: 'explorer',
+          agent: 'scribe',
           providerID: 'openai',
           modelID: 'gpt-4o-mini',
           error: { message: 'quota exceeded' },
@@ -291,7 +291,7 @@ describe('ForegroundFallbackManager message.updated', () => {
         body: { model: { providerID: string; modelID: string } };
       },
     ];
-    // explorer chain: ['openai/gpt-4o-mini', 'anthropic/claude-haiku']
+    // scribe chain: ['openai/gpt-4o-mini', 'anthropic/claude-haiku']
     // current=gpt-4o-mini is tried → next = claude-haiku
     expect(call[0].body.model.providerID).toBe('anthropic');
     expect(call[0].body.model.modelID).toBe('claude-haiku');
@@ -383,7 +383,7 @@ describe('ForegroundFallbackManager chain exhaustion', () => {
     const { client, mocks } = createMockClient();
     const mgr = new ForegroundFallbackManager(
       client,
-      { orchestrator: ['openai/gpt-b'] },
+      { conductor: ['openai/gpt-b'] },
       true,
     );
 
@@ -420,7 +420,7 @@ describe('ForegroundFallbackManager chain exhaustion', () => {
     const chain = ['openai/model-x', 'openai/model-y'];
     const mgr = new ForegroundFallbackManager(
       client,
-      { orchestrator: chain },
+      { conductor: chain },
       true,
     );
 
@@ -430,7 +430,7 @@ describe('ForegroundFallbackManager chain exhaustion', () => {
       properties: {
         info: {
           sessionID: 'sess-exhaust',
-          agent: 'orchestrator',
+          agent: 'conductor',
           providerID: 'openai',
           modelID: 'model-x',
           error: { message: 'rate limit exceeded' },
@@ -444,7 +444,7 @@ describe('ForegroundFallbackManager chain exhaustion', () => {
     const { client: client2, mocks: mocks2 } = createMockClient();
     const mgr2 = new ForegroundFallbackManager(
       client2,
-      { orchestrator: ['openai/model-y'] }, // single-entry chain already in use
+      { conductor: ['openai/model-y'] }, // single-entry chain already in use
       true,
     );
     await mgr2.handleEvent({
@@ -452,7 +452,7 @@ describe('ForegroundFallbackManager chain exhaustion', () => {
       properties: {
         info: {
           sessionID: 'sess-exhaust-2',
-          agent: 'orchestrator',
+          agent: 'conductor',
           providerID: 'openai',
           modelID: 'model-y',
           error: { message: 'rate limit exceeded' },
@@ -512,13 +512,13 @@ describe('ForegroundFallbackManager subagent.session.created', () => {
     const { client, mocks } = createMockClient();
     const mgr = new ForegroundFallbackManager(client, makeChains(), true);
 
-    // Register the session as 'explorer' via subagent creation event
+    // Register the session as 'scribe' via subagent creation event
     await mgr.handleEvent({
       type: 'subagent.session.created',
-      properties: { sessionID: 'sub-1', agentName: 'explorer' },
+      properties: { sessionID: 'sub-1', agentName: 'scribe' },
     });
 
-    // Now trigger rate limit — should use explorer's chain
+    // Now trigger rate limit — should use scribe's chain
     await mgr.handleEvent({
       type: 'session.error',
       properties: { sessionID: 'sub-1', error: { message: 'rate limit' } },
@@ -530,7 +530,7 @@ describe('ForegroundFallbackManager subagent.session.created', () => {
         body: { model: { providerID: string; modelID: string } };
       },
     ];
-    // explorer chain: ['openai/gpt-4o-mini', 'anthropic/claude-haiku']
+    // scribe chain: ['openai/gpt-4o-mini', 'anthropic/claude-haiku']
     // no current model tracked → first untried = openai/gpt-4o-mini
     expect(call[0].body.model.providerID).toBe('openai');
     expect(call[0].body.model.modelID).toBe('gpt-4o-mini');
@@ -552,7 +552,7 @@ describe('ForegroundFallbackManager session.deleted', () => {
       properties: {
         info: {
           sessionID: 'sess-del',
-          agent: 'orchestrator',
+          agent: 'conductor',
           providerID: 'anthropic',
           modelID: 'claude-opus-4-5',
         },
@@ -581,7 +581,7 @@ describe('ForegroundFallbackManager session.deleted', () => {
     const call = mocks.promptAsync.mock.calls[0] as [
       { body: { model: { providerID: string; modelID: string } } },
     ];
-    // orchestrator chain: ['anthropic/claude-opus-4-5', 'openai/gpt-4o', 'google/gemini-2.5-pro']
+    // conductor chain: ['anthropic/claude-opus-4-5', 'openai/gpt-4o', 'google/gemini-2.5-pro']
     // no current model → first untried = anthropic/claude-opus-4-5
     expect(call[0].body.model.providerID).toBe('anthropic');
     expect(call[0].body.model.modelID).toBe('claude-opus-4-5');
@@ -608,7 +608,7 @@ describe('ForegroundFallbackManager session.deleted', () => {
       properties: {
         info: {
           sessionID: 'sess-info-del',
-          agent: 'orchestrator',
+          agent: 'conductor',
           providerID: 'anthropic',
           modelID: 'claude-opus-4-5',
         },
@@ -641,15 +641,15 @@ describe('ForegroundFallbackManager session.deleted', () => {
 
 describe('ForegroundFallbackManager resolveChain cross-agent isolation', () => {
   test('does not use another agent chain when known agent has no configured chain', async () => {
-    // oracle has no chain in runtimeChains; without the fix resolveChain would
+    // principal has no chain in runtimeChains; without the fix resolveChain would
     // fall through to the cross-agent "last resort" and pick a model from
-    // orchestrator's chain — re-prompting oracle with an orchestrator model.
+    // conductor's chain — re-prompting principal with an conductor model.
     const { client, mocks } = createMockClient();
     const mgr = new ForegroundFallbackManager(
       client,
       {
-        // oracle intentionally absent — no chain configured
-        orchestrator: ['openai/gpt-4o', 'google/gemini-2.5-pro'],
+        // principal intentionally absent — no chain configured
+        conductor: ['openai/gpt-4o', 'google/gemini-2.5-pro'],
       },
       true,
     );
@@ -658,8 +658,8 @@ describe('ForegroundFallbackManager resolveChain cross-agent isolation', () => {
       type: 'message.updated',
       properties: {
         info: {
-          sessionID: 'oracle-sess',
-          agent: 'oracle', // agent IS known
+          sessionID: 'principal-sess',
+          agent: 'principal', // agent IS known
           providerID: 'anthropic',
           modelID: 'claude-opus-4-5',
           error: { message: 'rate limit exceeded' },
@@ -667,7 +667,7 @@ describe('ForegroundFallbackManager resolveChain cross-agent isolation', () => {
       },
     });
 
-    // oracle has no chain → should not fall back at all
+    // principal has no chain → should not fall back at all
     expect(mocks.promptAsync).not.toHaveBeenCalled();
   });
 
@@ -677,7 +677,7 @@ describe('ForegroundFallbackManager resolveChain cross-agent isolation', () => {
     const { client, mocks } = createMockClient();
     const mgr = new ForegroundFallbackManager(
       client,
-      { orchestrator: ['openai/gpt-4o'] },
+      { conductor: ['openai/gpt-4o'] },
       true,
     );
 

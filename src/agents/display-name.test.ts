@@ -6,72 +6,72 @@ describe('displayName', () => {
   test('stores displayName on agent when configured', () => {
     const config: PluginConfig = {
       agents: {
-        explorer: { displayName: 'researcher' },
+        scribe: { displayName: 'researcher' },
       },
     };
 
     const agents = createAgents(config);
-    const explorer = agents.find((a) => a.name === 'explorer');
-    expect(explorer?.displayName).toBe('researcher');
+    const scribe = agents.find((a) => a.name === 'scribe');
+    expect(scribe?.displayName).toBe('researcher');
 
     const sdkConfigs = getAgentConfigs(config);
-    expect((sdkConfigs.explorer as { displayName?: string }).displayName).toBe(
+    expect((sdkConfigs.scribe as { displayName?: string }).displayName).toBe(
       'researcher',
     );
   });
 
-  test('injects configured displayName into orchestrator prompt mentions', () => {
+  test('injects configured displayName into conductor prompt mentions', () => {
     const config: PluginConfig = {
       agents: {
-        explorer: { displayName: 'researcher' },
+        scribe: { displayName: 'researcher' },
       },
     };
 
     const agents = createAgents(config);
-    const orchestrator = agents.find((a) => a.name === 'orchestrator');
-    const prompt = orchestrator?.config.prompt ?? '';
+    const conductor = agents.find((a) => a.name === 'conductor');
+    const prompt = conductor?.config.prompt ?? '';
 
     expect(prompt).toContain('@researcher');
-    expect(prompt).not.toMatch(/@explorer\b/);
+    expect(prompt).not.toMatch(/@scribe\b/);
   });
 
   test('normalizes @-prefixed displayName in prompt injection', () => {
     const config: PluginConfig = {
       agents: {
-        explorer: { displayName: '@researcher' },
+        scribe: { displayName: '@researcher' },
       },
     };
 
     const agents = createAgents(config);
-    const orchestrator = agents.find((a) => a.name === 'orchestrator');
-    const prompt = orchestrator?.config.prompt ?? '';
+    const conductor = agents.find((a) => a.name === 'conductor');
+    const prompt = conductor?.config.prompt ?? '';
 
     expect(prompt).toContain('@researcher');
     expect(prompt).not.toContain('@@researcher');
-    expect(prompt).not.toMatch(/@explorer\b/);
+    expect(prompt).not.toMatch(/@scribe\b/);
   });
 
   test('normalizes whitespace-padded displayName in prompt injection', () => {
     const config: PluginConfig = {
       agents: {
-        explorer: { displayName: '  researcher  ' },
+        scribe: { displayName: '  researcher  ' },
       },
     };
 
     const agents = createAgents(config);
-    const orchestrator = agents.find((a) => a.name === 'orchestrator');
-    const prompt = orchestrator?.config.prompt ?? '';
+    const conductor = agents.find((a) => a.name === 'conductor');
+    const prompt = conductor?.config.prompt ?? '';
 
     expect(prompt).toContain('@researcher');
     expect(prompt).not.toContain('@ researcher ');
-    expect(prompt).not.toMatch(/@explorer\b/);
+    expect(prompt).not.toMatch(/@scribe\b/);
   });
 
   test('throws when duplicate displayName is assigned', () => {
     const config: PluginConfig = {
       agents: {
-        explorer: { displayName: 'helper' },
-        librarian: { displayName: 'helper' },
+        scribe: { displayName: 'helper' },
+        principal: { displayName: 'helper' },
       },
     };
 
@@ -83,8 +83,8 @@ describe('displayName', () => {
   test('throws when normalized duplicate displayName is assigned', () => {
     const config: PluginConfig = {
       agents: {
-        explorer: { displayName: 'advisor' },
-        librarian: { displayName: ' @advisor ' },
+        scribe: { displayName: 'advisor' },
+        principal: { displayName: ' @advisor ' },
       },
     };
 
@@ -96,31 +96,31 @@ describe('displayName', () => {
   test('throws when displayName conflicts with internal agent name', () => {
     const config: PluginConfig = {
       agents: {
-        explorer: { displayName: 'oracle' },
+        scribe: { displayName: 'principal' },
       },
     };
 
     expect(() => createAgents(config)).toThrow(
-      "displayName 'oracle' conflicts with an agent name",
+      "displayName 'principal' conflicts with an agent name",
     );
   });
 
   test('throws when normalized displayName conflicts with internal agent name', () => {
     const config: PluginConfig = {
       agents: {
-        explorer: { displayName: ' @oracle ' },
+        scribe: { displayName: ' @principal ' },
       },
     };
 
     expect(() => createAgents(config)).toThrow(
-      "displayName 'oracle' conflicts with an agent name",
+      "displayName 'principal' conflicts with an agent name",
     );
   });
 
-  test('throws when orchestrator displayName conflicts with internal agent name', () => {
+  test('throws when conductor displayName conflicts with internal agent name', () => {
     const config: PluginConfig = {
       agents: {
-        orchestrator: { displayName: 'oracle' },
+        conductor: { displayName: 'principal' },
       },
     };
 
@@ -132,7 +132,7 @@ describe('displayName', () => {
   test('throws when displayName is not a safe agent alias', () => {
     const config: PluginConfig = {
       agents: {
-        explorer: { displayName: 'senior reviewer' },
+        scribe: { displayName: 'senior reviewer' },
       },
     };
 
@@ -141,7 +141,7 @@ describe('displayName', () => {
     );
   });
 
-  test('resolves legacy alias for explorer displayName override', () => {
+  test('resolves legacy alias for scribe displayName override', () => {
     const config: PluginConfig = {
       agents: {
         explore: { displayName: 'researcher' },
@@ -149,15 +149,15 @@ describe('displayName', () => {
     };
 
     const agents = createAgents(config);
-    const explorer = agents.find((a) => a.name === 'explorer');
+    const scribe = agents.find((a) => a.name === 'scribe');
 
-    expect(explorer?.displayName).toBe('researcher');
+    expect(scribe?.displayName).toBe('researcher');
   });
 
   test('uses displayName as host-facing registry key with hidden internal alias', () => {
     const config: PluginConfig = {
       agents: {
-        oracle: { displayName: 'advisor' },
+        principal: { displayName: 'advisor' },
       },
     };
 
@@ -170,15 +170,15 @@ describe('displayName', () => {
     expect(sdkConfigs.advisor.mode).toBe('subagent');
     expect(sdkConfigs.advisor.hidden).toBeUndefined();
 
-    expect(sdkConfigs.oracle).toBeDefined();
-    expect(sdkConfigs.oracle.mode).toBe('subagent');
-    expect(sdkConfigs.oracle.hidden).toBe(true);
+    expect(sdkConfigs.principal).toBeDefined();
+    expect(sdkConfigs.principal.mode).toBe('subagent');
+    expect(sdkConfigs.principal.hidden).toBe(true);
   });
 
-  test('uses orchestrator displayName as host-facing key with hidden internal alias', () => {
+  test('uses conductor displayName as host-facing key with hidden internal alias', () => {
     const config: PluginConfig = {
       agents: {
-        orchestrator: { displayName: 'engineer' },
+        conductor: { displayName: 'engineer' },
       },
     };
 
@@ -191,12 +191,12 @@ describe('displayName', () => {
     expect(sdkConfigs.engineer.mode).toBe('primary');
     expect(sdkConfigs.engineer.hidden).toBeUndefined();
 
-    expect(sdkConfigs.orchestrator).toBeDefined();
-    expect(sdkConfigs.orchestrator.mode).toBe('primary');
-    expect(sdkConfigs.orchestrator.hidden).toBe(true);
+    expect(sdkConfigs.conductor).toBeDefined();
+    expect(sdkConfigs.conductor.mode).toBe('primary');
+    expect(sdkConfigs.conductor.hidden).toBe(true);
   });
 
-  test('keeps internal-only council agents hidden even with displayName configured', () => {
+  test('keeps internal-only ensemble agents hidden even with displayName configured', () => {
     const config: PluginConfig = {
       disabled_agents: [],
       agents: {

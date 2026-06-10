@@ -379,7 +379,7 @@ describe('MultiplexerSessionManager', () => {
       board.registerLaunch({
         taskID: 'running-idle-child',
         parentSessionID: 'parent-1',
-        agent: 'explorer',
+        agent: 'scribe',
       });
       mockMultiplexer.spawnPane.mockResolvedValue({
         success: true,
@@ -498,7 +498,7 @@ describe('MultiplexerSessionManager', () => {
       board.registerLaunch({
         taskID: 'running-background-job',
         parentSessionID: 'parent-1',
-        agent: 'explorer',
+        agent: 'scribe',
       });
       mockMultiplexer.spawnPane.mockResolvedValue({
         success: true,

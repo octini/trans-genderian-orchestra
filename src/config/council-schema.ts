@@ -39,7 +39,7 @@ export type CouncillorConfig = z.infer<typeof CouncillorConfigSchema>;
  *
  * All keys are treated as councillor names mapping to councillor configs.
  * The reserved key `"master"` is silently ignored (legacy from when
- * council-master was a separate agent).
+ * ensemble-master was a separate agent).
  */
 export const CouncilPresetSchema = z
   .record(z.string(), z.record(z.string(), z.unknown()))
@@ -106,12 +106,12 @@ export const CouncillorExecutionModeSchema = z
   );
 
 /**
- * Top-level council configuration.
+ * Top-level ensemble configuration.
  *
  * Example JSONC:
  * ```jsonc
  * {
- *   "council": {
+ *   "ensemble": {
  *     "presets": {
  *       "default": {
  *         "alpha": { "model": "openai/gpt-5.4-mini" },
@@ -144,7 +144,7 @@ export const CouncilConfigSchema = z
           '(e.g. due to provider rate limiting). Default: 3 retries.',
       ),
     // Deprecated fields — accepted for backward compatibility but ignored.
-    // The council agent now synthesizes directly; no separate master session.
+    // The ensemble agent now synthesizes directly; no separate master session.
     // Uses permissive schemas since the values are discarded — strict
     // validation would break old configs with non-standard model IDs.
     master: z
@@ -167,9 +167,9 @@ export const CouncilConfigSchema = z
     if (data.master_timeout !== undefined) deprecated.push('master_timeout');
     if (data.master_fallback !== undefined) deprecated.push('master_fallback');
 
-    // Backward compat: extract master.model so the council agent can use it
-    // as a fallback when no explicit council entry exists in the active preset.
-    // See https://github.com/alvinunreal/oh-my-opencode-slim/issues/369
+    // Backward compat: extract master.model so the ensemble agent can use it
+    // as a fallback when no explicit ensemble entry exists in the active preset.
+    // See https://github.com/alvinunreal/trans-genderian-orchestra/issues/369
     const legacyMasterModel: string | undefined =
       typeof data.master === 'object' &&
       data.master !== null &&
@@ -195,13 +195,13 @@ export type CouncillorExecutionMode = z.infer<
 >;
 
 /**
- * A sensible default council configuration that users can copy into their
+ * A sensible default ensemble configuration that users can copy into their
  * opencode.jsonc. Provides a 3-councillor preset using common models.
  *
  * Users should replace models with ones they have access to.
  *
  * ```jsonc
- * "council": DEFAULT_COUNCIL_CONFIG
+ * "ensemble": DEFAULT_COUNCIL_CONFIG
  * ```
  */
 export const DEFAULT_COUNCIL_CONFIG: z.input<typeof CouncilConfigSchema> = {
@@ -215,7 +215,7 @@ export const DEFAULT_COUNCIL_CONFIG: z.input<typeof CouncilConfigSchema> = {
 };
 
 /**
- * Result of a council session.
+ * Result of a ensemble session.
  */
 export interface CouncilResult {
   success: boolean;

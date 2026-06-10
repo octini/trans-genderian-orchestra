@@ -23,24 +23,24 @@ describe('tui sidebar agents', () => {
     const agentNames = getSidebarAgentNames(
       createSnapshot({
         agentModels: {
-          explorer: 'openai/gpt-5.4-mini',
-          fixer: 'openai/gpt-5.4-mini',
+          scribe: 'openai/gpt-5.4-mini',
+          composer: 'openai/gpt-5.4-mini',
         },
       }),
     );
 
-    expect(agentNames).toEqual(['explorer', 'fixer']);
+    expect(agentNames).toEqual(['scribe', 'composer']);
     expect(agentNames).not.toContain('observer');
-    expect(agentNames).not.toContain('librarian');
+    expect(agentNames).not.toContain('principal');
   });
 
   test('uses default-enabled fallback before models are persisted', () => {
     const agentNames = getSidebarAgentNames(createSnapshot({}));
 
-    expect(agentNames).toContain('explorer');
-    expect(agentNames).toContain('fixer');
+    expect(agentNames).toContain('scribe');
+    expect(agentNames).toContain('composer');
     expect(agentNames).not.toContain('observer');
-    expect(agentNames).not.toContain('council');
+    expect(agentNames).not.toContain('ensemble');
     expect(agentNames).not.toContain('councillor');
   });
 });
@@ -68,7 +68,7 @@ describe('readConfigInvalid', () => {
     originalEnv = { ...process.env };
     // Isolate from real user config and env presets
     delete process.env.OPENCODE_CONFIG_DIR;
-    delete process.env.OH_MY_OPENCODE_SLIM_PRESET;
+    delete process.env.TGO_PRESET;
     configHome = fs.mkdtempSync(path.join(os.tmpdir(), 'omos-tui-env-'));
     process.env.XDG_CONFIG_HOME = configHome;
   });
@@ -85,8 +85,8 @@ describe('readConfigInvalid', () => {
       const configDir = path.join(projectDir, '.opencode');
       fs.mkdirSync(configDir, { recursive: true });
       fs.writeFileSync(
-        path.join(configDir, 'oh-my-opencode-slim.json'),
-        JSON.stringify({ agents: { oracle: { temperature: 5 } } }),
+        path.join(configDir, 'trans-genderian-orchestra.json'),
+        JSON.stringify({ agents: { principal: { temperature: 5 } } }),
       );
 
       expect(readConfigInvalid(projectDir)).toBe(true);
@@ -102,8 +102,8 @@ describe('readConfigInvalid', () => {
       const configDir = path.join(projectDir, '.opencode');
       fs.mkdirSync(configDir, { recursive: true });
       fs.writeFileSync(
-        path.join(configDir, 'oh-my-opencode-slim.json'),
-        JSON.stringify({ agents: { oracle: { model: 'valid/model' } } }),
+        path.join(configDir, 'trans-genderian-orchestra.json'),
+        JSON.stringify({ agents: { principal: { model: 'valid/model' } } }),
       );
 
       expect(readConfigInvalid(projectDir)).toBe(false);

@@ -14,7 +14,7 @@ import {
   getPreviousRuntimePreset,
   setActiveRuntimePreset,
 } from './config/runtime-preset';
-import { CouncilManager } from './council';
+import { CouncilManager } from './ensemble';
 import {
   createApplyPatchHook,
   createAutoUpdateCheckerHook,
@@ -240,8 +240,8 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
 
     depthTracker = new SubagentDepthTracker();
 
-    // Initialize council tools (only when council is configured)
-    councilTools = config.council
+    // Initialize ensemble tools (only when ensemble is configured)
+    councilTools = config.ensemble
       ? createCouncilTool(
           ctx,
           new CouncilManager(ctx, config, depthTracker, multiplexerEnabled),
@@ -526,7 +526,7 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
       if (runtimePresetName && config.presets?.[runtimePresetName]) {
         const runtimePreset = config.presets[runtimePresetName];
         for (const [agentName, override] of Object.entries(runtimePreset)) {
-          // Resolve legacy alias keys (e.g. "explore" → "explorer")
+          // Resolve legacy alias keys (e.g. "explore" → "scribe")
           // so presets using aliases work in this path.
           const resolvedName = AGENT_ALIASES[agentName] ?? agentName;
           const entry = configAgent[resolvedName] as
@@ -584,7 +584,7 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
         if (prevPresetName && config.presets?.[prevPresetName]) {
           const prevPreset = config.presets[prevPresetName];
           // Build resolved key set from new preset for correct comparison
-          // (handles alias keys like "explore" → "explorer")
+          // (handles alias keys like "explore" → "scribe")
           const newPresetResolved = new Set(
             Object.keys(runtimePreset).map((k) => AGENT_ALIASES[k] ?? k),
           );

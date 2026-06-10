@@ -39,16 +39,16 @@ describe('loadPluginConfig', () => {
     const projectConfigDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(projectConfigDir, { recursive: true });
     fs.writeFileSync(
-      path.join(projectConfigDir, 'oh-my-opencode-slim.json'),
+      path.join(projectConfigDir, 'trans-genderian-orchestra.json'),
       JSON.stringify({
         agents: {
-          oracle: { model: 'test/model' },
+          principal: { model: 'test/model' },
         },
       }),
     );
 
     const config = loadPluginConfig(projectDir);
-    expect(config.agents?.oracle?.model).toBe('test/model');
+    expect(config.agents?.principal?.model).toBe('test/model');
   });
 
   test('loads scoringEngineVersion flag when configured', () => {
@@ -56,7 +56,7 @@ describe('loadPluginConfig', () => {
     const projectConfigDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(projectConfigDir, { recursive: true });
     fs.writeFileSync(
-      path.join(projectConfigDir, 'oh-my-opencode-slim.json'),
+      path.join(projectConfigDir, 'trans-genderian-orchestra.json'),
       JSON.stringify({
         scoringEngineVersion: 'v2-shadow',
       }),
@@ -71,7 +71,7 @@ describe('loadPluginConfig', () => {
     const projectConfigDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(projectConfigDir, { recursive: true });
     fs.writeFileSync(
-      path.join(projectConfigDir, 'oh-my-opencode-slim.json'),
+      path.join(projectConfigDir, 'trans-genderian-orchestra.json'),
       JSON.stringify({
         balanceProviderUsage: true,
       }),
@@ -86,7 +86,7 @@ describe('loadPluginConfig', () => {
     const projectConfigDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(projectConfigDir, { recursive: true });
     fs.writeFileSync(
-      path.join(projectConfigDir, 'oh-my-opencode-slim.json'),
+      path.join(projectConfigDir, 'trans-genderian-orchestra.json'),
       JSON.stringify({
         autoUpdate: false,
       }),
@@ -101,40 +101,40 @@ describe('loadPluginConfig', () => {
     const projectConfigDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(projectConfigDir, { recursive: true });
     fs.writeFileSync(
-      path.join(projectConfigDir, 'oh-my-opencode-slim.json'),
+      path.join(projectConfigDir, 'trans-genderian-orchestra.json'),
       JSON.stringify({
         manualPlan: {
-          orchestrator: {
+          conductor: {
             primary: 'openai/gpt-5.5',
             fallback1: 'anthropic/claude-opus-4-6',
             fallback2: 'chutes/kimi-k2.5',
             fallback3: 'opencode/gpt-5-nano',
           },
-          oracle: {
+          principal: {
             primary: 'openai/gpt-5.5',
             fallback1: 'anthropic/claude-opus-4-6',
             fallback2: 'chutes/Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8-TEE',
             fallback3: 'opencode/gpt-5-nano',
           },
-          designer: {
+          composer: {
             primary: 'openai/gpt-5.5',
             fallback1: 'anthropic/claude-opus-4-6',
             fallback2: 'chutes/kimi-k2.5',
             fallback3: 'opencode/gpt-5-nano',
           },
-          explorer: {
+          scribe: {
             primary: 'openai/gpt-5.5',
             fallback1: 'anthropic/claude-opus-4-6',
             fallback2: 'chutes/kimi-k2.5',
             fallback3: 'opencode/gpt-5-nano',
           },
-          librarian: {
+          scribe: {
             primary: 'openai/gpt-5.5',
             fallback1: 'anthropic/claude-opus-4-6',
             fallback2: 'chutes/kimi-k2.5',
             fallback3: 'opencode/gpt-5-nano',
           },
-          fixer: {
+          composer: {
             primary: 'openai/gpt-5.5',
             fallback1: 'anthropic/claude-opus-4-6',
             fallback2: 'chutes/kimi-k2.5',
@@ -145,7 +145,7 @@ describe('loadPluginConfig', () => {
     );
 
     const config = loadPluginConfig(projectDir);
-    expect(config.manualPlan?.oracle?.fallback2).toBe(
+    expect(config.manualPlan?.principal?.fallback2).toBe(
       'chutes/Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8-TEE',
     );
   });
@@ -157,14 +157,14 @@ describe('loadPluginConfig', () => {
 
     // Test 1: Invalid temperature (out of range)
     fs.writeFileSync(
-      path.join(projectConfigDir, 'oh-my-opencode-slim.json'),
-      JSON.stringify({ agents: { oracle: { temperature: 5 } } }),
+      path.join(projectConfigDir, 'trans-genderian-orchestra.json'),
+      JSON.stringify({ agents: { principal: { temperature: 5 } } }),
     );
     expect(loadPluginConfig(projectDir)).toEqual({});
 
     // Test 2: Malformed JSON
     fs.writeFileSync(
-      path.join(projectConfigDir, 'oh-my-opencode-slim.json'),
+      path.join(projectConfigDir, 'trans-genderian-orchestra.json'),
       '{ invalid json }',
     );
     expect(loadPluginConfig(projectDir)).toEqual({});
@@ -176,10 +176,10 @@ describe('loadPluginConfig', () => {
     fs.mkdirSync(projectConfigDir, { recursive: true });
 
     fs.writeFileSync(
-      path.join(projectConfigDir, 'oh-my-opencode-slim.json'),
+      path.join(projectConfigDir, 'trans-genderian-orchestra.json'),
       JSON.stringify({
         agents: {
-          oracle: {
+          principal: {
             model: 'openai/gpt-5.5',
             prompt: 'This should be rejected for built-in agents.',
           },
@@ -198,9 +198,11 @@ describe('loadPluginConfig', () => {
 
     // Write plugin config in the custom directory
     fs.writeFileSync(
-      path.join(customDir, 'oh-my-opencode-slim.json'),
+      path.join(customDir, 'trans-genderian-orchestra.json'),
       JSON.stringify({
-        agents: { oracle: { model: 'custom/model-from-opencode-config-dir' } },
+        agents: {
+          principal: { model: 'custom/model-from-opencode-config-dir' },
+        },
       }),
     );
 
@@ -208,7 +210,7 @@ describe('loadPluginConfig', () => {
     fs.mkdirSync(projectDir, { recursive: true });
 
     const config = loadPluginConfig(projectDir);
-    expect(config.agents?.oracle?.model).toBe(
+    expect(config.agents?.principal?.model).toBe(
       'custom/model-from-opencode-config-dir',
     );
 
@@ -224,9 +226,9 @@ describe('loadPluginConfig', () => {
     const defaultConfigDir = path.join(userConfigDir, 'opencode');
     fs.mkdirSync(defaultConfigDir, { recursive: true });
     fs.writeFileSync(
-      path.join(defaultConfigDir, 'oh-my-opencode-slim.json'),
+      path.join(defaultConfigDir, 'trans-genderian-orchestra.json'),
       JSON.stringify({
-        agents: { oracle: { model: 'fallback/default-config' } },
+        agents: { principal: { model: 'fallback/default-config' } },
       }),
     );
 
@@ -234,7 +236,7 @@ describe('loadPluginConfig', () => {
     fs.mkdirSync(projectDir, { recursive: true });
 
     const config = loadPluginConfig(projectDir);
-    expect(config.agents?.oracle?.model).toBe('fallback/default-config');
+    expect(config.agents?.principal?.model).toBe('fallback/default-config');
 
     fs.rmSync(customDir, { recursive: true, force: true });
   });
@@ -261,8 +263,8 @@ describe('onWarning callback', () => {
     const projectConfigDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(projectConfigDir, { recursive: true });
     fs.writeFileSync(
-      path.join(projectConfigDir, 'oh-my-opencode-slim.json'),
-      JSON.stringify({ agents: { oracle: { temperature: 5 } } }),
+      path.join(projectConfigDir, 'trans-genderian-orchestra.json'),
+      JSON.stringify({ agents: { principal: { temperature: 5 } } }),
     );
 
     const warnings: ConfigLoadWarning[] = [];
@@ -273,7 +275,7 @@ describe('onWarning callback', () => {
     expect(warnings).toHaveLength(1);
     expect(warnings[0]?.kind).toBe('invalid-schema');
     expect(warnings[0]?.path).toBe(
-      path.join(projectConfigDir, 'oh-my-opencode-slim.json'),
+      path.join(projectConfigDir, 'trans-genderian-orchestra.json'),
     );
     expect(warnings[0]?.message).toBe('Config does not match schema');
     expect(config).toEqual({});
@@ -284,7 +286,7 @@ describe('onWarning callback', () => {
     const projectConfigDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(projectConfigDir, { recursive: true });
     fs.writeFileSync(
-      path.join(projectConfigDir, 'oh-my-opencode-slim.json'),
+      path.join(projectConfigDir, 'trans-genderian-orchestra.json'),
       '{ invalid json }',
     );
 
@@ -296,7 +298,7 @@ describe('onWarning callback', () => {
     expect(warnings).toHaveLength(1);
     expect(warnings[0]?.kind).toBe('invalid-json');
     expect(warnings[0]?.path).toBe(
-      path.join(projectConfigDir, 'oh-my-opencode-slim.json'),
+      path.join(projectConfigDir, 'trans-genderian-orchestra.json'),
     );
     expect(config).toEqual({});
   });
@@ -306,7 +308,7 @@ describe('onWarning callback', () => {
     const projectConfigDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(projectConfigDir, { recursive: true });
     fs.writeFileSync(
-      path.join(projectConfigDir, 'oh-my-opencode-slim.json'),
+      path.join(projectConfigDir, 'trans-genderian-orchestra.json'),
       '{ invalid json }',
     );
 
@@ -329,7 +331,10 @@ describe('onWarning callback', () => {
   test('read error calls onWarning with read-error', () => {
     const projectDir = path.join(tempDir, 'project');
     const projectConfigDir = path.join(projectDir, '.opencode');
-    const configPath = path.join(projectConfigDir, 'oh-my-opencode-slim.json');
+    const configPath = path.join(
+      projectConfigDir,
+      'trans-genderian-orchestra.json',
+    );
     fs.mkdirSync(projectConfigDir, { recursive: true });
     fs.writeFileSync(configPath, JSON.stringify({}));
 
@@ -368,11 +373,11 @@ describe('onWarning callback', () => {
     const projectConfigDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(projectConfigDir, { recursive: true });
     fs.writeFileSync(
-      path.join(projectConfigDir, 'oh-my-opencode-slim.json'),
+      path.join(projectConfigDir, 'trans-genderian-orchestra.json'),
       JSON.stringify({
         preset: 'nonexistent',
-        presets: { other: { oracle: { model: 'other' } } },
-        agents: { oracle: { model: 'root' } },
+        presets: { other: { principal: { model: 'other' } } },
+        agents: { principal: { model: 'root' } },
       }),
     );
 
@@ -384,7 +389,7 @@ describe('onWarning callback', () => {
     expect(warnings).toHaveLength(1);
     expect(warnings[0]?.kind).toBe('missing-preset');
     expect(warnings[0]?.message).toContain('Preset "nonexistent" not found');
-    expect(config.agents?.oracle?.model).toBe('root');
+    expect(config.agents?.principal?.model).toBe('root');
   });
 
   test('silent: true on missing preset still calls onWarning but not console.warn', () => {
@@ -392,11 +397,11 @@ describe('onWarning callback', () => {
     const projectConfigDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(projectConfigDir, { recursive: true });
     fs.writeFileSync(
-      path.join(projectConfigDir, 'oh-my-opencode-slim.json'),
+      path.join(projectConfigDir, 'trans-genderian-orchestra.json'),
       JSON.stringify({
         preset: 'nonexistent',
-        presets: { other: { oracle: { model: 'other' } } },
-        agents: { oracle: { model: 'root' } },
+        presets: { other: { principal: { model: 'other' } } },
+        agents: { principal: { model: 'root' } },
       }),
     );
 
@@ -410,7 +415,7 @@ describe('onWarning callback', () => {
 
       expect(warnings).toHaveLength(1);
       expect(warnings[0]?.kind).toBe('missing-preset');
-      expect(config.agents?.oracle?.model).toBe('root');
+      expect(config.agents?.principal?.model).toBe('root');
       expect(warnSpy).not.toHaveBeenCalled();
     } finally {
       warnSpy.mockRestore();
@@ -422,8 +427,8 @@ describe('onWarning callback', () => {
     const projectConfigDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(projectConfigDir, { recursive: true });
     fs.writeFileSync(
-      path.join(projectConfigDir, 'oh-my-opencode-slim.json'),
-      JSON.stringify({ agents: { oracle: { model: 'valid/model' } } }),
+      path.join(projectConfigDir, 'trans-genderian-orchestra.json'),
+      JSON.stringify({ agents: { principal: { model: 'valid/model' } } }),
     );
 
     const warnings: ConfigLoadWarning[] = [];
@@ -432,7 +437,7 @@ describe('onWarning callback', () => {
     });
 
     expect(warnings).toHaveLength(0);
-    expect(config.agents?.oracle?.model).toBe('valid/model');
+    expect(config.agents?.principal?.model).toBe('valid/model');
   });
 
   test('no options object does not break loadPluginConfig', () => {
@@ -440,12 +445,12 @@ describe('onWarning callback', () => {
     const projectConfigDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(projectConfigDir, { recursive: true });
     fs.writeFileSync(
-      path.join(projectConfigDir, 'oh-my-opencode-slim.json'),
-      JSON.stringify({ agents: { oracle: { model: 'model' } } }),
+      path.join(projectConfigDir, 'trans-genderian-orchestra.json'),
+      JSON.stringify({ agents: { principal: { model: 'model' } } }),
     );
 
     const config = loadPluginConfig(projectDir);
-    expect(config.agents?.oracle?.model).toBe('model');
+    expect(config.agents?.principal?.model).toBe('model');
   });
 });
 
@@ -474,11 +479,11 @@ describe('deepMerge behavior', () => {
     const userOpencodeDir = path.join(userConfigDir, 'opencode');
     fs.mkdirSync(userOpencodeDir, { recursive: true });
     fs.writeFileSync(
-      path.join(userOpencodeDir, 'oh-my-opencode-slim.json'),
+      path.join(userOpencodeDir, 'trans-genderian-orchestra.json'),
       JSON.stringify({
         agents: {
-          oracle: { model: 'user/oracle-model', temperature: 0.5 },
-          explorer: { model: 'user/explorer-model' },
+          principal: { model: 'user/principal-model', temperature: 0.5 },
+          scribe: { model: 'user/scribe-model' },
         },
       }),
     );
@@ -488,33 +493,33 @@ describe('deepMerge behavior', () => {
     const projectConfigDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(projectConfigDir, { recursive: true });
     fs.writeFileSync(
-      path.join(projectConfigDir, 'oh-my-opencode-slim.json'),
+      path.join(projectConfigDir, 'trans-genderian-orchestra.json'),
       JSON.stringify({
         agents: {
-          oracle: { temperature: 0.8 }, // Override temperature only
-          designer: { model: 'project/designer-model' }, // Add new agent
+          principal: { temperature: 0.8 }, // Override temperature only
+          composer: { model: 'project/composer-model' }, // Add new agent
         },
       }),
     );
 
     const config = loadPluginConfig(projectDir);
 
-    // oracle: model from user, temperature from project
-    expect(config.agents?.oracle?.model).toBe('user/oracle-model');
-    expect(config.agents?.oracle?.temperature).toBe(0.8);
+    // principal: model from user, temperature from project
+    expect(config.agents?.principal?.model).toBe('user/principal-model');
+    expect(config.agents?.principal?.temperature).toBe(0.8);
 
-    // explorer: from user only
-    expect(config.agents?.explorer?.model).toBe('user/explorer-model');
+    // scribe: from user only
+    expect(config.agents?.scribe?.model).toBe('user/scribe-model');
 
-    // designer: from project only
-    expect(config.agents?.designer?.model).toBe('project/designer-model');
+    // composer: from project only
+    expect(config.agents?.composer?.model).toBe('project/composer-model');
   });
 
   test('merges nested tmux configs', () => {
     const userOpencodeDir = path.join(userConfigDir, 'opencode');
     fs.mkdirSync(userOpencodeDir, { recursive: true });
     fs.writeFileSync(
-      path.join(userOpencodeDir, 'oh-my-opencode-slim.json'),
+      path.join(userOpencodeDir, 'trans-genderian-orchestra.json'),
       JSON.stringify({
         tmux: {
           enabled: true,
@@ -528,7 +533,7 @@ describe('deepMerge behavior', () => {
     const projectConfigDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(projectConfigDir, { recursive: true });
     fs.writeFileSync(
-      path.join(projectConfigDir, 'oh-my-opencode-slim.json'),
+      path.join(projectConfigDir, 'trans-genderian-orchestra.json'),
       JSON.stringify({
         tmux: {
           enabled: false, // Override enabled
@@ -548,7 +553,7 @@ describe('deepMerge behavior', () => {
     const userOpencodeDir = path.join(userConfigDir, 'opencode');
     fs.mkdirSync(userOpencodeDir, { recursive: true });
     fs.writeFileSync(
-      path.join(userOpencodeDir, 'oh-my-opencode-slim.json'),
+      path.join(userOpencodeDir, 'trans-genderian-orchestra.json'),
       JSON.stringify({
         tmux: {
           enabled: true,
@@ -561,9 +566,9 @@ describe('deepMerge behavior', () => {
     const projectConfigDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(projectConfigDir, { recursive: true });
     fs.writeFileSync(
-      path.join(projectConfigDir, 'oh-my-opencode-slim.json'),
+      path.join(projectConfigDir, 'trans-genderian-orchestra.json'),
       JSON.stringify({
-        agents: { oracle: { model: 'test' } }, // No tmux override
+        agents: { principal: { model: 'test' } }, // No tmux override
       }),
     );
 
@@ -577,7 +582,7 @@ describe('deepMerge behavior', () => {
     const userOpencodeDir = path.join(userConfigDir, 'opencode');
     fs.mkdirSync(userOpencodeDir, { recursive: true });
     fs.writeFileSync(
-      path.join(userOpencodeDir, 'oh-my-opencode-slim.json'),
+      path.join(userOpencodeDir, 'trans-genderian-orchestra.json'),
       JSON.stringify({
         disabled_mcps: ['websearch'],
       }),
@@ -587,7 +592,7 @@ describe('deepMerge behavior', () => {
     const projectConfigDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(projectConfigDir, { recursive: true });
     fs.writeFileSync(
-      path.join(projectConfigDir, 'oh-my-opencode-slim.json'),
+      path.join(projectConfigDir, 'trans-genderian-orchestra.json'),
       JSON.stringify({
         disabled_mcps: ['context7'],
       }),
@@ -605,26 +610,26 @@ describe('deepMerge behavior', () => {
     const projectConfigDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(projectConfigDir, { recursive: true });
     fs.writeFileSync(
-      path.join(projectConfigDir, 'oh-my-opencode-slim.json'),
+      path.join(projectConfigDir, 'trans-genderian-orchestra.json'),
       JSON.stringify({
         agents: {
-          oracle: { model: 'project/model' },
+          principal: { model: 'project/model' },
         },
       }),
     );
 
     const config = loadPluginConfig(projectDir);
-    expect(config.agents?.oracle?.model).toBe('project/model');
+    expect(config.agents?.principal?.model).toBe('project/model');
   });
 
   test('handles missing project config gracefully', () => {
     const userOpencodeDir = path.join(userConfigDir, 'opencode');
     fs.mkdirSync(userOpencodeDir, { recursive: true });
     fs.writeFileSync(
-      path.join(userOpencodeDir, 'oh-my-opencode-slim.json'),
+      path.join(userOpencodeDir, 'trans-genderian-orchestra.json'),
       JSON.stringify({
         agents: {
-          oracle: { model: 'user/model' },
+          principal: { model: 'user/model' },
         },
       }),
     );
@@ -634,19 +639,19 @@ describe('deepMerge behavior', () => {
     fs.mkdirSync(projectDir, { recursive: true });
 
     const config = loadPluginConfig(projectDir);
-    expect(config.agents?.oracle?.model).toBe('user/model');
+    expect(config.agents?.principal?.model).toBe('user/model');
   });
 
   test('merges fallback timeout and chains from user and project', () => {
     const userOpencodeDir = path.join(userConfigDir, 'opencode');
     fs.mkdirSync(userOpencodeDir, { recursive: true });
     fs.writeFileSync(
-      path.join(userOpencodeDir, 'oh-my-opencode-slim.json'),
+      path.join(userOpencodeDir, 'trans-genderian-orchestra.json'),
       JSON.stringify({
         fallback: {
           timeoutMs: 15000,
           chains: {
-            oracle: ['openai/gpt-5.5', 'opencode/glm-4.7-free'],
+            principal: ['openai/gpt-5.5', 'opencode/glm-4.7-free'],
           },
         },
       }),
@@ -656,11 +661,11 @@ describe('deepMerge behavior', () => {
     const projectConfigDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(projectConfigDir, { recursive: true });
     fs.writeFileSync(
-      path.join(projectConfigDir, 'oh-my-opencode-slim.json'),
+      path.join(projectConfigDir, 'trans-genderian-orchestra.json'),
       JSON.stringify({
         fallback: {
           chains: {
-            explorer: ['google/antigravity-gemini-3-flash'],
+            scribe: ['google/antigravity-gemini-3-flash'],
           },
         },
       }),
@@ -668,11 +673,11 @@ describe('deepMerge behavior', () => {
 
     const config = loadPluginConfig(projectDir);
     expect(config.fallback?.timeoutMs).toBe(15000);
-    expect(config.fallback?.chains.oracle).toEqual([
+    expect(config.fallback?.chains.principal).toEqual([
       'openai/gpt-5.5',
       'opencode/glm-4.7-free',
     ]);
-    expect(config.fallback?.chains.explorer).toEqual([
+    expect(config.fallback?.chains.scribe).toEqual([
       'google/antigravity-gemini-3-flash',
     ]);
   });
@@ -682,7 +687,7 @@ describe('deepMerge behavior', () => {
     const projectConfigDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(projectConfigDir, { recursive: true });
     fs.writeFileSync(
-      path.join(projectConfigDir, 'oh-my-opencode-slim.json'),
+      path.join(projectConfigDir, 'trans-genderian-orchestra.json'),
       JSON.stringify({
         fallback: {
           chains: {
@@ -718,14 +723,14 @@ describe('preset resolution', () => {
     const projectConfigDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(projectConfigDir, { recursive: true });
     fs.writeFileSync(
-      path.join(projectConfigDir, 'oh-my-opencode-slim.json'),
+      path.join(projectConfigDir, 'trans-genderian-orchestra.json'),
       JSON.stringify({
-        agents: { oracle: { model: 'direct-model' } },
+        agents: { principal: { model: 'direct-model' } },
       }),
     );
 
     const config = loadPluginConfig(projectDir);
-    expect(config.agents?.oracle?.model).toBe('direct-model');
+    expect(config.agents?.principal?.model).toBe('direct-model');
     expect(config.preset).toBeUndefined();
   });
 
@@ -734,17 +739,17 @@ describe('preset resolution', () => {
     const projectConfigDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(projectConfigDir, { recursive: true });
     fs.writeFileSync(
-      path.join(projectConfigDir, 'oh-my-opencode-slim.json'),
+      path.join(projectConfigDir, 'trans-genderian-orchestra.json'),
       JSON.stringify({
         preset: 'fast',
         presets: {
-          fast: { oracle: { model: 'fast-model' } },
+          fast: { principal: { model: 'fast-model' } },
         },
       }),
     );
 
     const config = loadPluginConfig(projectDir);
-    expect(config.agents?.oracle?.model).toBe('fast-model');
+    expect(config.agents?.principal?.model).toBe('fast-model');
   });
 
   test('root agents override preset agents', () => {
@@ -752,25 +757,25 @@ describe('preset resolution', () => {
     const projectConfigDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(projectConfigDir, { recursive: true });
     fs.writeFileSync(
-      path.join(projectConfigDir, 'oh-my-opencode-slim.json'),
+      path.join(projectConfigDir, 'trans-genderian-orchestra.json'),
       JSON.stringify({
         preset: 'fast',
         presets: {
           fast: {
-            oracle: { model: 'fast-model', temperature: 0.1 },
-            explorer: { model: 'explorer-model' },
+            principal: { model: 'fast-model', temperature: 0.1 },
+            scribe: { model: 'scribe-model' },
           },
         },
         agents: {
-          oracle: { temperature: 0.9 }, // Should override preset temperature
+          principal: { temperature: 0.9 }, // Should override preset temperature
         },
       }),
     );
 
     const config = loadPluginConfig(projectDir);
-    expect(config.agents?.oracle?.model).toBe('fast-model');
-    expect(config.agents?.oracle?.temperature).toBe(0.9);
-    expect(config.agents?.explorer?.model).toBe('explorer-model');
+    expect(config.agents?.principal?.model).toBe('fast-model');
+    expect(config.agents?.principal?.temperature).toBe(0.9);
+    expect(config.agents?.scribe?.model).toBe('scribe-model');
   });
 
   test('missing preset: preset set but not in presets -> returns empty/root agents', () => {
@@ -778,18 +783,18 @@ describe('preset resolution', () => {
     const projectConfigDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(projectConfigDir, { recursive: true });
     fs.writeFileSync(
-      path.join(projectConfigDir, 'oh-my-opencode-slim.json'),
+      path.join(projectConfigDir, 'trans-genderian-orchestra.json'),
       JSON.stringify({
         preset: 'nonexistent',
         presets: {
-          other: { oracle: { model: 'other' } },
+          other: { principal: { model: 'other' } },
         },
-        agents: { oracle: { model: 'root' } },
+        agents: { principal: { model: 'root' } },
       }),
     );
 
     const config = loadPluginConfig(projectDir);
-    expect(config.agents?.oracle?.model).toBe('root');
+    expect(config.agents?.principal?.model).toBe('root');
   });
 
   test('preset only: no root agents, just preset works', () => {
@@ -797,17 +802,17 @@ describe('preset resolution', () => {
     const projectConfigDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(projectConfigDir, { recursive: true });
     fs.writeFileSync(
-      path.join(projectConfigDir, 'oh-my-opencode-slim.json'),
+      path.join(projectConfigDir, 'trans-genderian-orchestra.json'),
       JSON.stringify({
         preset: 'dev',
         presets: {
-          dev: { oracle: { model: 'dev-model' } },
+          dev: { principal: { model: 'dev-model' } },
         },
       }),
     );
 
     const config = loadPluginConfig(projectDir);
-    expect(config.agents?.oracle?.model).toBe('dev-model');
+    expect(config.agents?.principal?.model).toBe('dev-model');
   });
 
   test('invalid preset shape: bad agent config in preset fails schema validation', () => {
@@ -817,11 +822,11 @@ describe('preset resolution', () => {
 
     // preset agents with invalid temperature
     fs.writeFileSync(
-      path.join(projectConfigDir, 'oh-my-opencode-slim.json'),
+      path.join(projectConfigDir, 'trans-genderian-orchestra.json'),
       JSON.stringify({
         preset: 'invalid',
         presets: {
-          invalid: { oracle: { temperature: 5 } },
+          invalid: { principal: { temperature: 5 } },
         },
       }),
     );
@@ -835,19 +840,19 @@ describe('preset resolution', () => {
     const projectConfigDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(projectConfigDir, { recursive: true });
     fs.writeFileSync(
-      path.join(projectConfigDir, 'oh-my-opencode-slim.json'),
+      path.join(projectConfigDir, 'trans-genderian-orchestra.json'),
       JSON.stringify({
         preset: 'nonexistent',
         presets: {
-          other: { oracle: { model: 'other' } },
+          other: { principal: { model: 'other' } },
         },
-        agents: { oracle: { model: 'root' } },
+        agents: { principal: { model: 'root' } },
       }),
     );
 
     const consoleWarnSpy = spyOn(console, 'warn');
     const config = loadPluginConfig(projectDir);
-    expect(config.agents?.oracle?.model).toBe('root');
+    expect(config.agents?.principal?.model).toBe('root');
     expect(consoleWarnSpy).toHaveBeenCalled();
     const warningMessage = consoleWarnSpy.mock.calls[0][0] as string;
     expect(warningMessage).toContain('Preset "nonexistent" not found');
@@ -859,11 +864,11 @@ describe('preset resolution', () => {
     const projectConfigDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(projectConfigDir, { recursive: true });
     fs.writeFileSync(
-      path.join(projectConfigDir, 'oh-my-opencode-slim.json'),
+      path.join(projectConfigDir, 'trans-genderian-orchestra.json'),
       JSON.stringify({
         preset: 'nonexistent',
         presets: {
-          other: { oracle: { model: 'other' } },
+          other: { principal: { model: 'other' } },
         },
       }),
     );
@@ -881,19 +886,19 @@ describe('preset resolution', () => {
     const projectConfigDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(projectConfigDir, { recursive: true });
     fs.writeFileSync(
-      path.join(projectConfigDir, 'oh-my-opencode-slim.json'),
+      path.join(projectConfigDir, 'trans-genderian-orchestra.json'),
       JSON.stringify({
         preset: 'openai',
         presets: {
           openai: {
-            oracle: {
+            principal: {
               model: 'openai/gpt-5.5',
               options: { textVerbosity: 'low' },
             },
           },
         },
         agents: {
-          oracle: {
+          principal: {
             options: { reasoningEffort: 'medium' },
           },
         },
@@ -901,9 +906,9 @@ describe('preset resolution', () => {
     );
 
     const config = loadPluginConfig(projectDir);
-    expect(config.agents?.oracle?.model).toBe('openai/gpt-5.5');
+    expect(config.agents?.principal?.model).toBe('openai/gpt-5.5');
     // deepMerge should combine both option keys
-    expect(config.agents?.oracle?.options).toEqual({
+    expect(config.agents?.principal?.options).toEqual({
       textVerbosity: 'low',
       reasoningEffort: 'medium',
     });
@@ -914,12 +919,12 @@ describe('preset resolution', () => {
     const projectConfigDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(projectConfigDir, { recursive: true });
     fs.writeFileSync(
-      path.join(projectConfigDir, 'oh-my-opencode-slim.json'),
+      path.join(projectConfigDir, 'trans-genderian-orchestra.json'),
       JSON.stringify({
         preset: 'anthropic-thinking',
         presets: {
           'anthropic-thinking': {
-            oracle: {
+            principal: {
               model: 'anthropic/claude-sonnet-4-6',
               options: {
                 thinking: { type: 'enabled', budgetTokens: 16000 },
@@ -931,8 +936,8 @@ describe('preset resolution', () => {
     );
 
     const config = loadPluginConfig(projectDir);
-    expect(config.agents?.oracle?.model).toBe('anthropic/claude-sonnet-4-6');
-    expect(config.agents?.oracle?.options).toEqual({
+    expect(config.agents?.principal?.model).toBe('anthropic/claude-sonnet-4-6');
+    expect(config.agents?.principal?.options).toEqual({
       thinking: { type: 'enabled', budgetTokens: 16000 },
     });
   });
@@ -942,19 +947,19 @@ describe('preset resolution', () => {
     const projectConfigDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(projectConfigDir, { recursive: true });
     fs.writeFileSync(
-      path.join(projectConfigDir, 'oh-my-opencode-slim.json'),
+      path.join(projectConfigDir, 'trans-genderian-orchestra.json'),
       JSON.stringify({
         preset: 'concise',
         presets: {
           concise: {
-            oracle: {
+            principal: {
               model: 'openai/gpt-5.5',
               options: { textVerbosity: 'low' },
             },
           },
         },
         agents: {
-          oracle: {
+          principal: {
             options: { textVerbosity: 'high' },
           },
         },
@@ -962,9 +967,9 @@ describe('preset resolution', () => {
     );
 
     const config = loadPluginConfig(projectDir);
-    expect(config.agents?.oracle?.model).toBe('openai/gpt-5.5');
+    expect(config.agents?.principal?.model).toBe('openai/gpt-5.5');
     // root wins over preset for same key
-    expect(config.agents?.oracle?.options).toEqual({
+    expect(config.agents?.principal?.options).toEqual({
       textVerbosity: 'high',
     });
   });
@@ -991,20 +996,20 @@ describe('environment variable preset override', () => {
     const projectConfigDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(projectConfigDir, { recursive: true });
     fs.writeFileSync(
-      path.join(projectConfigDir, 'oh-my-opencode-slim.json'),
+      path.join(projectConfigDir, 'trans-genderian-orchestra.json'),
       JSON.stringify({
         preset: 'config-preset',
         presets: {
-          'config-preset': { oracle: { model: 'config-model' } },
-          'env-preset': { oracle: { model: 'env-model' } },
+          'config-preset': { principal: { model: 'config-model' } },
+          'env-preset': { principal: { model: 'env-model' } },
         },
       }),
     );
 
-    process.env.OH_MY_OPENCODE_SLIM_PRESET = 'env-preset';
+    process.env.TGO_PRESET = 'env-preset';
     const config = loadPluginConfig(projectDir);
     expect(config.preset).toBe('env-preset');
-    expect(config.agents?.oracle?.model).toBe('env-model');
+    expect(config.agents?.principal?.model).toBe('env-model');
   });
 
   test('Env var works when config has no preset', () => {
@@ -1012,18 +1017,18 @@ describe('environment variable preset override', () => {
     const projectConfigDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(projectConfigDir, { recursive: true });
     fs.writeFileSync(
-      path.join(projectConfigDir, 'oh-my-opencode-slim.json'),
+      path.join(projectConfigDir, 'trans-genderian-orchestra.json'),
       JSON.stringify({
         presets: {
-          'env-preset': { oracle: { model: 'env-model' } },
+          'env-preset': { principal: { model: 'env-model' } },
         },
       }),
     );
 
-    process.env.OH_MY_OPENCODE_SLIM_PRESET = 'env-preset';
+    process.env.TGO_PRESET = 'env-preset';
     const config = loadPluginConfig(projectDir);
     expect(config.preset).toBe('env-preset');
-    expect(config.agents?.oracle?.model).toBe('env-model');
+    expect(config.agents?.principal?.model).toBe('env-model');
   });
 
   test('Env var is ignored if empty string', () => {
@@ -1031,19 +1036,19 @@ describe('environment variable preset override', () => {
     const projectConfigDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(projectConfigDir, { recursive: true });
     fs.writeFileSync(
-      path.join(projectConfigDir, 'oh-my-opencode-slim.json'),
+      path.join(projectConfigDir, 'trans-genderian-orchestra.json'),
       JSON.stringify({
         preset: 'config-preset',
         presets: {
-          'config-preset': { oracle: { model: 'config-model' } },
+          'config-preset': { principal: { model: 'config-model' } },
         },
       }),
     );
 
-    process.env.OH_MY_OPENCODE_SLIM_PRESET = '';
+    process.env.TGO_PRESET = '';
     const config = loadPluginConfig(projectDir);
     expect(config.preset).toBe('config-preset');
-    expect(config.agents?.oracle?.model).toBe('config-model');
+    expect(config.agents?.principal?.model).toBe('config-model');
   });
 
   test('Env var is ignored if undefined', () => {
@@ -1051,19 +1056,19 @@ describe('environment variable preset override', () => {
     const projectConfigDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(projectConfigDir, { recursive: true });
     fs.writeFileSync(
-      path.join(projectConfigDir, 'oh-my-opencode-slim.json'),
+      path.join(projectConfigDir, 'trans-genderian-orchestra.json'),
       JSON.stringify({
         preset: 'config-preset',
         presets: {
-          'config-preset': { oracle: { model: 'config-model' } },
+          'config-preset': { principal: { model: 'config-model' } },
         },
       }),
     );
 
-    delete process.env.OH_MY_OPENCODE_SLIM_PRESET;
+    delete process.env.TGO_PRESET;
     const config = loadPluginConfig(projectDir);
     expect(config.preset).toBe('config-preset');
-    expect(config.agents?.oracle?.model).toBe('config-model');
+    expect(config.agents?.principal?.model).toBe('config-model');
   });
 
   test('Env var with nonexistent preset warns and falls back', () => {
@@ -1071,21 +1076,21 @@ describe('environment variable preset override', () => {
     const projectConfigDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(projectConfigDir, { recursive: true });
     fs.writeFileSync(
-      path.join(projectConfigDir, 'oh-my-opencode-slim.json'),
+      path.join(projectConfigDir, 'trans-genderian-orchestra.json'),
       JSON.stringify({
         preset: 'config-preset',
         presets: {
-          'config-preset': { oracle: { model: 'config-model' } },
+          'config-preset': { principal: { model: 'config-model' } },
         },
-        agents: { oracle: { model: 'fallback' } },
+        agents: { principal: { model: 'fallback' } },
       }),
     );
 
-    process.env.OH_MY_OPENCODE_SLIM_PRESET = 'typo-preset';
+    process.env.TGO_PRESET = 'typo-preset';
     const consoleWarnSpy = spyOn(console, 'warn');
     const config = loadPluginConfig(projectDir);
     expect(config.preset).toBe('typo-preset');
-    expect(config.agents?.oracle?.model).toBe('fallback');
+    expect(config.agents?.principal?.model).toBe('fallback');
     expect(consoleWarnSpy).toHaveBeenCalled();
     const calls = consoleWarnSpy.mock.calls as string[][];
     const warningMessage =
@@ -1117,17 +1122,17 @@ describe('JSONC config support', () => {
     const projectConfigDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(projectConfigDir, { recursive: true });
     fs.writeFileSync(
-      path.join(projectConfigDir, 'oh-my-opencode-slim.jsonc'),
+      path.join(projectConfigDir, 'trans-genderian-orchestra.jsonc'),
       `{
         // This is a comment
         "agents": {
-          "oracle": { "model": "test/model" } // inline comment
+          "principal": { "model": "test/model" } // inline comment
         }
       }`,
     );
 
     const config = loadPluginConfig(projectDir);
-    expect(config.agents?.oracle?.model).toBe('test/model');
+    expect(config.agents?.principal?.model).toBe('test/model');
   });
 
   test('loads .jsonc file with multi-line comments', () => {
@@ -1135,18 +1140,18 @@ describe('JSONC config support', () => {
     const projectConfigDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(projectConfigDir, { recursive: true });
     fs.writeFileSync(
-      path.join(projectConfigDir, 'oh-my-opencode-slim.jsonc'),
+      path.join(projectConfigDir, 'trans-genderian-orchestra.jsonc'),
       `{
         /* Multi-line
            comment block */
         "agents": {
-          "explorer": { "model": "explorer-model" }
+          "scribe": { "model": "scribe-model" }
         }
       }`,
     );
 
     const config = loadPluginConfig(projectDir);
-    expect(config.agents?.explorer?.model).toBe('explorer-model');
+    expect(config.agents?.scribe?.model).toBe('scribe-model');
   });
 
   test('loads .jsonc file with trailing commas', () => {
@@ -1154,16 +1159,16 @@ describe('JSONC config support', () => {
     const projectConfigDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(projectConfigDir, { recursive: true });
     fs.writeFileSync(
-      path.join(projectConfigDir, 'oh-my-opencode-slim.jsonc'),
+      path.join(projectConfigDir, 'trans-genderian-orchestra.jsonc'),
       `{
         "agents": {
-          "oracle": { "model": "test-model", },
+          "principal": { "model": "test-model", },
         },
       }`,
     );
 
     const config = loadPluginConfig(projectDir);
-    expect(config.agents?.oracle?.model).toBe('test-model');
+    expect(config.agents?.principal?.model).toBe('test-model');
   });
 
   test('prefers .jsonc over .json when both exist', () => {
@@ -1173,19 +1178,19 @@ describe('JSONC config support', () => {
 
     // Create both files
     fs.writeFileSync(
-      path.join(projectConfigDir, 'oh-my-opencode-slim.json'),
-      JSON.stringify({ agents: { oracle: { model: 'json-model' } } }),
+      path.join(projectConfigDir, 'trans-genderian-orchestra.json'),
+      JSON.stringify({ agents: { principal: { model: 'json-model' } } }),
     );
     fs.writeFileSync(
-      path.join(projectConfigDir, 'oh-my-opencode-slim.jsonc'),
+      path.join(projectConfigDir, 'trans-genderian-orchestra.jsonc'),
       `{
         // JSONC version
-        "agents": { "oracle": { "model": "jsonc-model" } }
+        "agents": { "principal": { "model": "jsonc-model" } }
       }`,
     );
 
     const config = loadPluginConfig(projectDir);
-    expect(config.agents?.oracle?.model).toBe('jsonc-model');
+    expect(config.agents?.principal?.model).toBe('jsonc-model');
   });
 
   test('falls back to .json when .jsonc does not exist', () => {
@@ -1195,22 +1200,22 @@ describe('JSONC config support', () => {
 
     // Only create .json file
     fs.writeFileSync(
-      path.join(projectConfigDir, 'oh-my-opencode-slim.json'),
-      JSON.stringify({ agents: { oracle: { model: 'json-model' } } }),
+      path.join(projectConfigDir, 'trans-genderian-orchestra.json'),
+      JSON.stringify({ agents: { principal: { model: 'json-model' } } }),
     );
 
     const config = loadPluginConfig(projectDir);
-    expect(config.agents?.oracle?.model).toBe('json-model');
+    expect(config.agents?.principal?.model).toBe('json-model');
   });
 
   test('loads user config from .jsonc', () => {
     const userOpencodeDir = path.join(tempDir, 'user-config', 'opencode');
     fs.mkdirSync(userOpencodeDir, { recursive: true });
     fs.writeFileSync(
-      path.join(userOpencodeDir, 'oh-my-opencode-slim.jsonc'),
+      path.join(userOpencodeDir, 'trans-genderian-orchestra.jsonc'),
       `{
         // User config with comments
-        "agents": { "librarian": { "model": "user-librarian" } }
+        "agents": { "scribe": { "model": "user-scribe" } }
       }`,
     );
 
@@ -1218,18 +1223,18 @@ describe('JSONC config support', () => {
     fs.mkdirSync(projectDir, { recursive: true });
 
     const config = loadPluginConfig(projectDir);
-    expect(config.agents?.librarian?.model).toBe('user-librarian');
+    expect(config.agents?.scribe?.model).toBe('user-scribe');
   });
 
   test('merges user .jsonc with project .jsonc', () => {
     const userOpencodeDir = path.join(tempDir, 'user-config', 'opencode');
     fs.mkdirSync(userOpencodeDir, { recursive: true });
     fs.writeFileSync(
-      path.join(userOpencodeDir, 'oh-my-opencode-slim.jsonc'),
+      path.join(userOpencodeDir, 'trans-genderian-orchestra.jsonc'),
       `{
         // User config
         "agents": {
-          "oracle": { "model": "user-oracle", "temperature": 0.5 }
+          "principal": { "model": "user-principal", "temperature": 0.5 }
         }
       }`,
     );
@@ -1238,16 +1243,16 @@ describe('JSONC config support', () => {
     const projectConfigDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(projectConfigDir, { recursive: true });
     fs.writeFileSync(
-      path.join(projectConfigDir, 'oh-my-opencode-slim.jsonc'),
+      path.join(projectConfigDir, 'trans-genderian-orchestra.jsonc'),
       `{
         // Project config
-        "agents": { "oracle": { "temperature": 0.8 } }
+        "agents": { "principal": { "temperature": 0.8 } }
       }`,
     );
 
     const config = loadPluginConfig(projectDir);
-    expect(config.agents?.oracle?.model).toBe('user-oracle');
-    expect(config.agents?.oracle?.temperature).toBe(0.8);
+    expect(config.agents?.principal?.model).toBe('user-principal');
+    expect(config.agents?.principal?.temperature).toBe(0.8);
   });
 
   test('handles complex JSONC with mixed comments and trailing commas', () => {
@@ -1255,7 +1260,7 @@ describe('JSONC config support', () => {
     const projectConfigDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(projectConfigDir, { recursive: true });
     fs.writeFileSync(
-      path.join(projectConfigDir, 'oh-my-opencode-slim.jsonc'),
+      path.join(projectConfigDir, 'trans-genderian-orchestra.jsonc'),
       `{
         // Main configuration
         "preset": "dev",
@@ -1263,8 +1268,8 @@ describe('JSONC config support', () => {
         "presets": {
           "dev": {
             // Development agents
-            "oracle": { "model": "dev-oracle", },
-            "explorer": { "model": "dev-explorer", },
+            "principal": { "model": "dev-principal", },
+            "scribe": { "model": "dev-scribe", },
           },
         },
         "tmux": {
@@ -1276,8 +1281,8 @@ describe('JSONC config support', () => {
 
     const config = loadPluginConfig(projectDir);
     expect(config.preset).toBe('dev');
-    expect(config.agents?.oracle?.model).toBe('dev-oracle');
-    expect(config.agents?.explorer?.model).toBe('dev-explorer');
+    expect(config.agents?.principal?.model).toBe('dev-principal');
+    expect(config.agents?.scribe?.model).toBe('dev-scribe');
     expect(config.tmux?.enabled).toBe(true);
     expect(config.tmux?.layout).toBe('main-vertical');
   });
@@ -1300,49 +1305,71 @@ describe('loadAgentPrompt', () => {
   });
 
   test('returns empty object when no prompt files exist', () => {
-    const result = loadAgentPrompt('oracle');
+    const result = loadAgentPrompt('principal');
     expect(result).toEqual({});
   });
 
   test('loads replacement prompt from {agent}.md', () => {
-    const promptsDir = path.join(tempDir, 'opencode', 'oh-my-opencode-slim');
+    const promptsDir = path.join(
+      tempDir,
+      'opencode',
+      'trans-genderian-orchestra',
+    );
     fs.mkdirSync(promptsDir, { recursive: true });
-    fs.writeFileSync(path.join(promptsDir, 'oracle.md'), 'replacement prompt');
+    fs.writeFileSync(
+      path.join(promptsDir, 'principal.md'),
+      'replacement prompt',
+    );
 
-    const result = loadAgentPrompt('oracle');
+    const result = loadAgentPrompt('principal');
     expect(result.prompt).toBe('replacement prompt');
     expect(result.appendPrompt).toBeUndefined();
   });
 
   test('loads append prompt from {agent}_append.md', () => {
-    const promptsDir = path.join(tempDir, 'opencode', 'oh-my-opencode-slim');
+    const promptsDir = path.join(
+      tempDir,
+      'opencode',
+      'trans-genderian-orchestra',
+    );
     fs.mkdirSync(promptsDir, { recursive: true });
     fs.writeFileSync(
-      path.join(promptsDir, 'oracle_append.md'),
+      path.join(promptsDir, 'principal_append.md'),
       'append prompt',
     );
 
-    const result = loadAgentPrompt('oracle');
+    const result = loadAgentPrompt('principal');
     expect(result.prompt).toBeUndefined();
     expect(result.appendPrompt).toBe('append prompt');
   });
 
   test('loads both replacement and append prompts', () => {
-    const promptsDir = path.join(tempDir, 'opencode', 'oh-my-opencode-slim');
+    const promptsDir = path.join(
+      tempDir,
+      'opencode',
+      'trans-genderian-orchestra',
+    );
     fs.mkdirSync(promptsDir, { recursive: true });
-    fs.writeFileSync(path.join(promptsDir, 'oracle.md'), 'replacement prompt');
     fs.writeFileSync(
-      path.join(promptsDir, 'oracle_append.md'),
+      path.join(promptsDir, 'principal.md'),
+      'replacement prompt',
+    );
+    fs.writeFileSync(
+      path.join(promptsDir, 'principal_append.md'),
       'append prompt',
     );
 
-    const result = loadAgentPrompt('oracle');
+    const result = loadAgentPrompt('principal');
     expect(result.prompt).toBe('replacement prompt');
     expect(result.appendPrompt).toBe('append prompt');
   });
 
   test('handles file read errors gracefully', () => {
-    const promptsDir = path.join(tempDir, 'opencode', 'oh-my-opencode-slim');
+    const promptsDir = path.join(
+      tempDir,
+      'opencode',
+      'trans-genderian-orchestra',
+    );
     fs.mkdirSync(promptsDir, { recursive: true });
     const promptPath = path.join(promptsDir, 'error-agent.md');
     fs.writeFileSync(promptPath, 'content');
@@ -1375,75 +1402,101 @@ describe('loadAgentPrompt', () => {
   });
 
   test('prefers preset prompt files over root prompts', () => {
-    const promptsDir = path.join(tempDir, 'opencode', 'oh-my-opencode-slim');
+    const promptsDir = path.join(
+      tempDir,
+      'opencode',
+      'trans-genderian-orchestra',
+    );
     const presetDir = path.join(promptsDir, 'test');
     fs.mkdirSync(presetDir, { recursive: true });
 
-    fs.writeFileSync(path.join(promptsDir, 'oracle.md'), 'root replacement');
-    fs.writeFileSync(path.join(presetDir, 'oracle.md'), 'preset replacement');
+    fs.writeFileSync(path.join(promptsDir, 'principal.md'), 'root replacement');
     fs.writeFileSync(
-      path.join(promptsDir, 'oracle_append.md'),
+      path.join(presetDir, 'principal.md'),
+      'preset replacement',
+    );
+    fs.writeFileSync(
+      path.join(promptsDir, 'principal_append.md'),
       'root append prompt',
     );
     fs.writeFileSync(
-      path.join(presetDir, 'oracle_append.md'),
+      path.join(presetDir, 'principal_append.md'),
       'preset append prompt',
     );
 
-    const result = loadAgentPrompt('oracle', 'test');
+    const result = loadAgentPrompt('principal', 'test');
     expect(result.prompt).toBe('preset replacement');
     expect(result.appendPrompt).toBe('preset append prompt');
   });
 
   test('falls back to root prompt files when preset files are missing', () => {
-    const promptsDir = path.join(tempDir, 'opencode', 'oh-my-opencode-slim');
+    const promptsDir = path.join(
+      tempDir,
+      'opencode',
+      'trans-genderian-orchestra',
+    );
     const presetDir = path.join(promptsDir, 'test');
     fs.mkdirSync(presetDir, { recursive: true });
 
-    fs.writeFileSync(path.join(promptsDir, 'oracle.md'), 'root replacement');
+    fs.writeFileSync(path.join(promptsDir, 'principal.md'), 'root replacement');
     fs.writeFileSync(
-      path.join(promptsDir, 'oracle_append.md'),
+      path.join(promptsDir, 'principal_append.md'),
       'root append prompt',
     );
 
-    const result = loadAgentPrompt('oracle', 'test');
+    const result = loadAgentPrompt('principal', 'test');
     expect(result.prompt).toBe('root replacement');
     expect(result.appendPrompt).toBe('root append prompt');
   });
 
   test('falls back independently between preset and root files', () => {
-    const promptsDir = path.join(tempDir, 'opencode', 'oh-my-opencode-slim');
+    const promptsDir = path.join(
+      tempDir,
+      'opencode',
+      'trans-genderian-orchestra',
+    );
     const presetDir = path.join(promptsDir, 'test');
     fs.mkdirSync(presetDir, { recursive: true });
 
-    fs.writeFileSync(path.join(presetDir, 'oracle.md'), 'preset replacement');
     fs.writeFileSync(
-      path.join(promptsDir, 'oracle_append.md'),
+      path.join(presetDir, 'principal.md'),
+      'preset replacement',
+    );
+    fs.writeFileSync(
+      path.join(promptsDir, 'principal_append.md'),
       'root append prompt',
     );
 
-    const result = loadAgentPrompt('oracle', 'test');
+    const result = loadAgentPrompt('principal', 'test');
     expect(result.prompt).toBe('preset replacement');
     expect(result.appendPrompt).toBe('root append prompt');
   });
 
   test('ignores unsafe preset names for prompt lookup', () => {
-    const promptsDir = path.join(tempDir, 'opencode', 'oh-my-opencode-slim');
+    const promptsDir = path.join(
+      tempDir,
+      'opencode',
+      'trans-genderian-orchestra',
+    );
     fs.mkdirSync(promptsDir, { recursive: true });
-    fs.writeFileSync(path.join(promptsDir, 'oracle.md'), 'root replacement');
+    fs.writeFileSync(path.join(promptsDir, 'principal.md'), 'root replacement');
 
-    const result = loadAgentPrompt('oracle', '../test');
+    const result = loadAgentPrompt('principal', '../test');
     expect(result.prompt).toBe('root replacement');
     expect(result.appendPrompt).toBeUndefined();
   });
 
   test('falls back to root when preset prompt file read fails', () => {
-    const promptsDir = path.join(tempDir, 'opencode', 'oh-my-opencode-slim');
+    const promptsDir = path.join(
+      tempDir,
+      'opencode',
+      'trans-genderian-orchestra',
+    );
     const presetDir = path.join(promptsDir, 'test');
     fs.mkdirSync(presetDir, { recursive: true });
-    const presetPromptPath = path.join(presetDir, 'oracle.md');
+    const presetPromptPath = path.join(presetDir, 'principal.md');
     fs.writeFileSync(presetPromptPath, 'preset replacement');
-    fs.writeFileSync(path.join(promptsDir, 'oracle.md'), 'root replacement');
+    fs.writeFileSync(path.join(promptsDir, 'principal.md'), 'root replacement');
 
     const consoleWarnSpy = spyOn(console, 'warn');
     const originalReadFileSync = fs.readFileSync;
@@ -1458,7 +1511,7 @@ describe('loadAgentPrompt', () => {
     }) as typeof fs.readFileSync);
 
     try {
-      const result = loadAgentPrompt('oracle', 'test');
+      const result = loadAgentPrompt('principal', 'test');
       expect(result.prompt).toBe('root replacement');
       expect(consoleWarnSpy).toHaveBeenCalled();
     } finally {
@@ -1473,7 +1526,7 @@ describe('loadAgentPrompt', () => {
     const promptsDir = path.join(
       customConfigHome,
       'opencode',
-      'oh-my-opencode-slim',
+      'trans-genderian-orchestra',
     );
     fs.mkdirSync(promptsDir, { recursive: true });
     fs.writeFileSync(path.join(promptsDir, 'xdg-agent.md'), 'xdg prompt');
@@ -1488,14 +1541,14 @@ describe('loadAgentPrompt', () => {
     );
     process.env.OPENCODE_CONFIG_DIR = customDir;
 
-    const promptsDir = path.join(customDir, 'oh-my-opencode-slim');
+    const promptsDir = path.join(customDir, 'trans-genderian-orchestra');
     fs.mkdirSync(promptsDir, { recursive: true });
     fs.writeFileSync(
-      path.join(promptsDir, 'oracle.md'),
+      path.join(promptsDir, 'principal.md'),
       'prompt from OPENCODE_CONFIG_DIR dir',
     );
 
-    const result = loadAgentPrompt('oracle');
+    const result = loadAgentPrompt('principal');
     expect(result.prompt).toBe('prompt from OPENCODE_CONFIG_DIR dir');
 
     fs.rmSync(customDir, { recursive: true, force: true });
@@ -1507,11 +1560,15 @@ describe('loadAgentPrompt', () => {
     );
     process.env.OPENCODE_CONFIG_DIR = customDir;
 
-    const promptsDir = path.join(tempDir, 'opencode', 'oh-my-opencode-slim');
+    const promptsDir = path.join(
+      tempDir,
+      'opencode',
+      'trans-genderian-orchestra',
+    );
     fs.mkdirSync(promptsDir, { recursive: true });
-    fs.writeFileSync(path.join(promptsDir, 'oracle.md'), 'fallback prompt');
+    fs.writeFileSync(path.join(promptsDir, 'principal.md'), 'fallback prompt');
 
-    const result = loadAgentPrompt('oracle');
+    const result = loadAgentPrompt('principal');
     expect(result.prompt).toBe('fallback prompt');
 
     fs.rmSync(customDir, { recursive: true, force: true });
@@ -1540,14 +1597,14 @@ describe('env variable interpolation', () => {
     const projectConfigDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(projectConfigDir, { recursive: true });
     fs.writeFileSync(
-      path.join(projectConfigDir, 'oh-my-opencode-slim.json'),
+      path.join(projectConfigDir, 'trans-genderian-orchestra.json'),
       JSON.stringify({
-        agents: { oracle: { model: '{env:FOO}' } },
+        agents: { principal: { model: '{env:FOO}' } },
       }),
     );
 
     const config = loadPluginConfig(projectDir);
-    expect(config.agents?.oracle?.model).toBe('foo-model');
+    expect(config.agents?.principal?.model).toBe('foo-model');
   });
 
   test('multiple variables: multiple {env:...} tokens resolve', () => {
@@ -1557,18 +1614,18 @@ describe('env variable interpolation', () => {
     const projectConfigDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(projectConfigDir, { recursive: true });
     fs.writeFileSync(
-      path.join(projectConfigDir, 'oh-my-opencode-slim.json'),
+      path.join(projectConfigDir, 'trans-genderian-orchestra.json'),
       JSON.stringify({
         agents: {
-          oracle: { model: '{env:FOO}' },
-          explorer: { model: '{env:BAR}' },
+          principal: { model: '{env:FOO}' },
+          scribe: { model: '{env:BAR}' },
         },
       }),
     );
 
     const config = loadPluginConfig(projectDir);
-    expect(config.agents?.oracle?.model).toBe('foo-model');
-    expect(config.agents?.explorer?.model).toBe('bar-model');
+    expect(config.agents?.principal?.model).toBe('foo-model');
+    expect(config.agents?.scribe?.model).toBe('bar-model');
   });
 
   test('undefined variable: {env:NONEXISTENT} resolves to empty string', () => {
@@ -1577,14 +1634,14 @@ describe('env variable interpolation', () => {
     const projectConfigDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(projectConfigDir, { recursive: true });
     fs.writeFileSync(
-      path.join(projectConfigDir, 'oh-my-opencode-slim.json'),
+      path.join(projectConfigDir, 'trans-genderian-orchestra.json'),
       JSON.stringify({
-        agents: { oracle: { model: '{env:NONEXISTENT}' } },
+        agents: { principal: { model: '{env:NONEXISTENT}' } },
       }),
     );
 
     const config = loadPluginConfig(projectDir);
-    expect(config.agents?.oracle?.model).toBe('');
+    expect(config.agents?.principal?.model).toBe('');
   });
 
   test('no interpolation needed: config without {env:...} works unchanged', () => {
@@ -1592,14 +1649,14 @@ describe('env variable interpolation', () => {
     const projectConfigDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(projectConfigDir, { recursive: true });
     fs.writeFileSync(
-      path.join(projectConfigDir, 'oh-my-opencode-slim.json'),
+      path.join(projectConfigDir, 'trans-genderian-orchestra.json'),
       JSON.stringify({
-        agents: { oracle: { model: 'foo-model' } },
+        agents: { principal: { model: 'foo-model' } },
       }),
     );
 
     const config = loadPluginConfig(projectDir);
-    expect(config.agents?.oracle?.model).toBe('foo-model');
+    expect(config.agents?.principal?.model).toBe('foo-model');
   });
 
   test('partial string: "prefix-{env:FOO}-suffix" resolves correctly', () => {
@@ -1608,14 +1665,14 @@ describe('env variable interpolation', () => {
     const projectConfigDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(projectConfigDir, { recursive: true });
     fs.writeFileSync(
-      path.join(projectConfigDir, 'oh-my-opencode-slim.json'),
+      path.join(projectConfigDir, 'trans-genderian-orchestra.json'),
       JSON.stringify({
-        agents: { oracle: { model: 'prefix-{env:FOO}-suffix' } },
+        agents: { principal: { model: 'prefix-{env:FOO}-suffix' } },
       }),
     );
 
     const config = loadPluginConfig(projectDir);
-    expect(config.agents?.oracle?.model).toBe('prefix-foo-suffix');
+    expect(config.agents?.principal?.model).toBe('prefix-foo-suffix');
   });
 
   test('works in JSONC files with comments', () => {
@@ -1624,15 +1681,15 @@ describe('env variable interpolation', () => {
     const projectConfigDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(projectConfigDir, { recursive: true });
     fs.writeFileSync(
-      path.join(projectConfigDir, 'oh-my-opencode-slim.jsonc'),
+      path.join(projectConfigDir, 'trans-genderian-orchestra.jsonc'),
       `{
         // Use env variable for model
-        "agents": { "oracle": { "model": "{env:FOO}" } }
+        "agents": { "principal": { "model": "{env:FOO}" } }
       }`,
     );
 
     const config = loadPluginConfig(projectDir);
-    expect(config.agents?.oracle?.model).toBe('foo-model');
+    expect(config.agents?.principal?.model).toBe('foo-model');
   });
 
   test('multiple env vars in a single value', () => {
@@ -1642,15 +1699,15 @@ describe('env variable interpolation', () => {
     const projectConfigDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(projectConfigDir, { recursive: true });
     fs.writeFileSync(
-      path.join(projectConfigDir, 'oh-my-opencode-slim.json'),
+      path.join(projectConfigDir, 'trans-genderian-orchestra.json'),
       JSON.stringify({
         agents: {
-          oracle: { model: '{env:FOO}/{env:BAR}' },
+          principal: { model: '{env:FOO}/{env:BAR}' },
         },
       }),
     );
 
     const config = loadPluginConfig(projectDir);
-    expect(config.agents?.oracle?.model).toBe('foo/bar');
+    expect(config.agents?.principal?.model).toBe('foo/bar');
   });
 });

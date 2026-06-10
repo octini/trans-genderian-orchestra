@@ -251,8 +251,7 @@ export const PluginConfigSchema = z
       .describe(
         'Agent names to disable completely. ' +
           'Disabled agents are not instantiated and cannot be delegated to. ' +
-          'Orchestrator and council internal agents (councillor) cannot be disabled. ' +
-          "By default, 'observer' is disabled. Remove it from this list and configure a vision-capable model to enable.",
+          'Conductor and councillor internal agents cannot be disabled.',
       ),
     disabled_mcps: z.array(z.string()).optional(),
     // Multiplexer config (new unified config - preferred)
@@ -264,7 +263,7 @@ export const PluginConfigSchema = z
     interview: InterviewConfigSchema.optional(),
     backgroundJobs: BackgroundJobsConfigSchema.optional(),
     fallback: FailoverConfigSchema.optional(),
-    council: CouncilConfigSchema.optional(),
+    ensemble: CouncilConfigSchema.optional(),
   })
   .superRefine((value, ctx) => {
     if (value.agents) {

@@ -40,12 +40,12 @@ Use only for obsolete, wrong, conflicting, or user-requested cancellation. Accep
     async execute(args, toolContext) {
       const parentSessionID = toolContext?.sessionID;
       if (!parentSessionID) throw new Error('cancel_task requires sessionID');
-      if (toolContext.agent && toolContext.agent !== 'orchestrator') {
-        throw new Error('cancel_task can only be used by orchestrator');
+      if (toolContext.agent && toolContext.agent !== 'conductor') {
+        throw new Error('cancel_task can only be used by conductor');
       }
       if (!options.shouldManageSession(parentSessionID)) {
         throw new Error(
-          'cancel_task can only be used in orchestrator sessions',
+          'cancel_task can only be used in conductor sessions',
         );
       }
 

@@ -83,12 +83,12 @@ describe('auto-update-checker/checker', () => {
         (p: string) => {
           if (p.includes('opencode.json')) {
             return JSON.stringify({
-              plugin: ['file:///dev/oh-my-opencode-slim'],
+              plugin: ['file:///dev/trans-genderian-orchestra'],
             });
           }
           if (p.includes('package.json')) {
             return JSON.stringify({
-              name: 'oh-my-opencode-slim',
+              name: 'trans-genderian-orchestra',
               version: '1.2.3-dev',
             });
           }
@@ -115,7 +115,7 @@ describe('auto-update-checker/checker', () => {
       );
       const readSpy = spyOn(fs, 'readFileSync').mockReturnValue(
         JSON.stringify({
-          plugin: ['oh-my-opencode-slim'],
+          plugin: ['trans-genderian-orchestra'],
         }),
       );
 
@@ -125,7 +125,7 @@ describe('auto-update-checker/checker', () => {
 
       const entry = findPluginEntry('/test');
       expect(entry).not.toBeNull();
-      expect(entry?.entry).toBe('oh-my-opencode-slim');
+      expect(entry?.entry).toBe('trans-genderian-orchestra');
       expect(entry?.isPinned).toBe(false);
       expect(entry?.pinnedVersion).toBeNull();
 
@@ -139,7 +139,7 @@ describe('auto-update-checker/checker', () => {
       );
       const readSpy = spyOn(fs, 'readFileSync').mockReturnValue(
         JSON.stringify({
-          plugin: ['oh-my-opencode-slim@1.0.0'],
+          plugin: ['trans-genderian-orchestra@1.0.0'],
         }),
       );
 

@@ -223,7 +223,7 @@ const SUBAGENT_FACTORIES: Record<SubagentName, AgentFactory> = {
  */
 export function createAgents(config?: PluginConfig): AgentDefinition[] {
   const disabled = getDisabledAgents(config);
-  if (!config?.council) {
+  if (!config?.ensemble) {
     disabled.add('ensemble');
   }
 
@@ -292,9 +292,9 @@ export function createAgents(config?: PluginConfig): AgentDefinition[] {
   });
 
   // 2b. Backward compat: if ensemble has no preset override and still uses the
-  // hardcoded default model, fall back to the deprecated council.master.model.
-  // See https://github.com/alvinunreal/oh-my-opencode-slim/issues/369
-  const legacyMasterModel = config?.council?._legacyMasterModel;
+  // hardcoded default model, fall back to the deprecated ensemble.master.model.
+  // See https://github.com/alvinunreal/trans-genderian-orchestra/issues/369
+  const legacyMasterModel = config?.ensemble?._legacyMasterModel;
   if (legacyMasterModel) {
     const ensembleAgent = builtInSubAgents.find((a) => a.name === 'ensemble');
     if (
@@ -498,7 +498,7 @@ export function getDisabledAgents(config?: PluginConfig): Set<string> {
  */
 export function getEnabledAgentNames(config?: PluginConfig): string[] {
   const disabled = getDisabledAgents(config);
-  if (!config?.council) {
+  if (!config?.ensemble) {
     disabled.add('ensemble');
   }
   const customAgentNames = getCustomAgentNames(config).filter(
