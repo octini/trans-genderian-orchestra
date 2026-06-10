@@ -53,8 +53,12 @@
 Create `src/hooks/review-loop-enforcer/change-classifier.test.ts` with these exact test names:
 
 ```ts
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { describe, expect, test } from 'bun:test';
-import { classifyChanges } from './change-classifier.js';
+import { classifyChanges, collectGitChangeSet } from './change-classifier.js';
 import type { ChangeSet } from './types.js';
 
 function changeSet(files: ChangeSet['files']): ChangeSet {
@@ -73,7 +77,7 @@ describe('review-loop change classifier', () => {
 
   test('classifies under 10 changed lines outside risk paths as principal-only', () => {
     const result = classifyChanges(
-      changeSet([{ path: 'src/utils/string.ts', added: 4, deleted: 5 }]),
+      changeSet([{ path: 'src/helpers/string.ts', added: 4, deleted: 5 }]),
     );
     expect(result.requiredReview).toBe('principal');
     expect(result.skipEnsemble).toBe(true);
@@ -82,7 +86,7 @@ describe('review-loop change classifier', () => {
 
   test('requires ensemble at exactly 10 changed lines', () => {
     const result = classifyChanges(
-      changeSet([{ path: 'src/utils/string.ts', added: 5, deleted: 5 }]),
+      changeSet([{ path: 'src/helpers/string.ts', added: 5, deleted: 5 }]),
     );
     expect(result.requiredReview).toBe('ensemble');
     expect(result.skipEnsemble).toBe(false);
@@ -103,6 +107,20 @@ describe('review-loop change classifier', () => {
     expect(result.requiredReview).toBe('ensemble');
   });
 
+  test('requires ensemble for task output utility changes even under 10 changed lines', () => {
+    const result = classifyChanges(
+      changeSet([{ path: 'src/utils/task.ts', added: 1, deleted: 0 }]),
+    );
+    expect(result.requiredReview).toBe('ensemble');
+    expect(result.reason).toContain('risk path');
+  });
+
+  test('requires ensemble when no changed files are detected', () => {
+    const result = classifyChanges(changeSet([]));
+    expect(result.requiredReview).toBe('ensemble');
+    expect(result.reason).toContain('no changed files detected');
+  });
+
   test('requires ensemble for unknown file types', () => {
     const result = classifyChanges(
       changeSet([{ path: 'assets/logo.bin', added: 1, deleted: 0, binary: true }]),
@@ -118,6 +136,32 @@ describe('review-loop change classifier', () => {
       ]),
     );
     expect(result.requiredReview).toBe('ensemble');
+  });
+
+  test('collectGitChangeSet reads tracked and untracked changes from a real git repo', () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'review-loop-enforcer-'));
+    const git = (...args: string[]) =>
+      execFileSync('git', args, { cwd: dir, stdio: 'ignore' });
+
+    try {
+      git('init');
+      git('config', 'user.email', 'test@example.com');
+      git('config', 'user.name', 'Test User');
+      writeFileSync(path.join(dir, 'tracked.txt'), 'one\n');
+      git('add', 'tracked.txt');
+      git('commit', '-m', 'init');
+
+      writeFileSync(path.join(dir, 'tracked.txt'), 'one\ntwo\n');
+      mkdirSync(path.join(dir, 'docs'));
+      writeFileSync(path.join(dir, 'docs/new.md'), '# New doc\n');
+
+      const result = collectGitChangeSet(dir);
+      const paths = result?.files.map((file) => file.path) ?? [];
+      expect(paths).toContain('tracked.txt');
+      expect(paths).toContain('docs/new.md');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 ```
@@ -192,6 +236,7 @@ const RISK_PATH_PREFIXES = [
   'src/council/',
   'src/tools/',
   'src/multiplexer/',
+  'src/utils/',
 ];
 
 const RISK_EXACT_PATHS = new Set(['src/index.ts']);
@@ -276,7 +321,7 @@ export function classifyChanges(changeSet: ChangeSet | undefined): ChangeClassif
   const riskPaths = changeSet.files.filter(isRiskPath).map((file) => file.path);
 
   if (changeSet.files.length === 0) {
-    return requirePrincipal('no changed files detected', changedLines, riskPaths);
+    return requireEnsemble('no changed files detected; classification unknown', changedLines, riskPaths);
   }
 
   if (changeSet.files.some((file) => file.binary || isUnknownFileType(file.path))) {
@@ -341,7 +386,7 @@ function requireEnsemble(
 bun test src/hooks/review-loop-enforcer/change-classifier.test.ts
 ```
 
-Expected: All 7 classifier tests pass.
+Expected: All 10 classifier tests pass.
 
 ---
 
@@ -686,6 +731,9 @@ describe('ReviewGateStore', () => {
 
   test('loop count 3 requires principal escalation', () => {
     const store = new ReviewGateStore();
+    // Existing review-loop-counter semantics set wheelsSpinning at the
+    // start of the third Composer review round (loopCount >= 3), not after
+    // a third Ensemble rejection completes.
     store.recordComposerCompletion('parent-1', 'task-1', ensembleClassification);
     store.recordEnsembleVerdict('parent-1', {
       valid: true,
@@ -771,6 +819,7 @@ Required behavior:
   - If an active gate exists for the parent session and its `requiredNextAction` is `composer`, keep the existing gate `taskId` as the correlation key.
   - Otherwise use `reportedTaskId` as the correlation key.
   - Call `recordReviewIteration(taskId)`.
+  - Treat `review-loop-counter`'s `wheelsSpinning` semantics explicitly: escalation happens at the start of the third Composer review round (`loopCount >= 3`), before asking Ensemble to perform a third review.
   - If `wheelsSpinning` is true, require `principal-escalation` with `wheelsSpinning: true`.
   - Else require `classification.requiredReview` (`ensemble` or `principal`).
 - `recordEnsembleVerdict(parentSessionId, parsed)`:
@@ -842,10 +891,9 @@ Expected: All state tests pass and existing review-loop-counter tests still pass
 Create `src/hooks/review-loop-enforcer/index.test.ts` with these exact test names:
 
 ```ts
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { resetAllReviewLoops } from '../../workflow/review-loop-counter.js';
 import { createReviewLoopEnforcerHook } from './index.js';
-import type { ChangeSet } from './types.js';
 
 function createMessages(sessionID: string, text = 'continue') {
   return {
@@ -860,6 +908,21 @@ function createMessages(sessionID: string, text = 'continue') {
 
 function completedTaskOutput(taskId: string, result: string): string {
   return [`task_id: ${taskId}`, 'state: completed', '', '<task_result>', result, '</task_result>'].join('\n');
+}
+
+async function completeTask(
+  hook: ReturnType<typeof createReviewLoopEnforcerHook>,
+  agent: 'composer' | 'ensemble' | 'principal',
+  callID: string,
+  taskID: string,
+  result: string,
+): Promise<void> {
+  await hook['tool.execute.before']({ tool: 'task', sessionID: 'parent-1', callID }, {
+    args: { subagent_type: agent },
+  });
+  await hook['tool.execute.after']({ tool: 'task', sessionID: 'parent-1', callID }, {
+    output: completedTaskOutput(taskID, result),
+  });
 }
 
 describe('review-loop enforcer hook', () => {
@@ -905,7 +968,7 @@ describe('review-loop enforcer hook', () => {
   test('small non-risk change injects principal-required reminder', async () => {
     const hook = createReviewLoopEnforcerHook({ directory: '/repo' } as never, {
       shouldManageSession: () => true,
-      collectChanges: () => ({ files: [{ path: 'src/utils/string.ts', added: 3, deleted: 1 }] }),
+      collectChanges: () => ({ files: [{ path: 'src/helpers/string.ts', added: 3, deleted: 1 }] }),
     });
 
     await hook['tool.execute.before']({ tool: 'task', sessionID: 'parent-1', callID: 'call-1' }, {
@@ -988,16 +1051,90 @@ describe('review-loop enforcer hook', () => {
     expect(messages.messages[0].parts[0].text).toContain('Required next action: principal');
   });
 
-  test('does not invoke ensemble or principal from the hook', async () => {
+  test('re-injects the same required reminder on a fresh user message while gate is pending', async () => {
     const hook = createReviewLoopEnforcerHook({ directory: '/repo' } as never, {
       shouldManageSession: () => true,
       collectChanges: () => ({ files: [{ path: 'src/runtime.ts', added: 20, deleted: 0 }] }),
     });
-    expect(Object.keys(hook)).toEqual([
-      'tool.execute.before',
-      'tool.execute.after',
-      'experimental.chat.messages.transform',
-    ]);
+
+    await completeTask(
+      hook,
+      'composer',
+      'composer-1',
+      'task-1',
+      '<review_metadata>{"taskId":"task-1"}</review_metadata>',
+    );
+
+    const firstMessage = createMessages('parent-1', 'continue');
+    await hook['experimental.chat.messages.transform']({}, firstMessage);
+    expect(firstMessage.messages[0].parts[0].text).toContain('Required next action: ensemble');
+
+    const freshMessage = createMessages('parent-1', 'summarize and finish');
+    await hook['experimental.chat.messages.transform']({}, freshMessage);
+    expect(freshMessage.messages[0].parts[0].text).toContain('Required next action: ensemble');
+    expect(freshMessage.messages[0].parts[0].text).toContain('Do not summarize or finish');
+  });
+
+  test('loop count 3 injects principal escalation reminder', async () => {
+    const hook = createReviewLoopEnforcerHook({ directory: '/repo' } as never, {
+      shouldManageSession: () => true,
+      collectChanges: () => ({ files: [{ path: 'src/runtime.ts', added: 20, deleted: 0 }] }),
+    });
+
+    await completeTask(hook, 'composer', 'composer-1', 'composer-run-1', '<review_metadata>{"taskId":"task-1"}</review_metadata>');
+    await completeTask(hook, 'ensemble', 'ensemble-1', 'ensemble-run-1', JSON.stringify({ reviewedTaskId: 'task-1', verdict: 'reject', issues: [], consensus: 'majority' }));
+    await completeTask(hook, 'composer', 'composer-2', 'composer-run-2', '<review_metadata>{"taskId":"task-1"}</review_metadata>');
+    await completeTask(hook, 'ensemble', 'ensemble-2', 'ensemble-run-2', JSON.stringify({ reviewedTaskId: 'task-1', verdict: 'reject', issues: [], consensus: 'majority' }));
+    // Existing review-loop-counter semantics escalate at the start of the
+    // third Composer review round.
+    await completeTask(hook, 'composer', 'composer-3', 'composer-run-3', '<review_metadata>{"taskId":"task-1"}</review_metadata>');
+
+    const messages = createMessages('parent-1');
+    await hook['experimental.chat.messages.transform']({}, messages);
+    expect(messages.messages[0].parts[0].text).toContain('Required next action: principal-escalation');
+    expect(messages.messages[0].parts[0].text).toContain('wheelsSpinning: true');
+  });
+
+  test('does not invoke ensemble or principal from the hook', async () => {
+    const sessionCreate = mock(async () => {
+      throw new Error('review-loop enforcer must not create sessions');
+    });
+    const sessionPrompt = mock(async () => {
+      throw new Error('review-loop enforcer must not prompt sessions');
+    });
+    const sessionMessages = mock(async () => {
+      throw new Error('review-loop enforcer must not read sessions to invoke agents');
+    });
+    const taskCreate = mock(async () => {
+      throw new Error('review-loop enforcer must not create tasks');
+    });
+
+    const hook = createReviewLoopEnforcerHook({
+      directory: '/repo',
+      client: {
+        session: { create: sessionCreate, prompt: sessionPrompt, messages: sessionMessages },
+        task: { create: taskCreate },
+      },
+    } as never, {
+      shouldManageSession: () => true,
+      collectChanges: () => ({ files: [{ path: 'src/runtime.ts', added: 20, deleted: 0 }] }),
+    });
+
+    await completeTask(
+      hook,
+      'composer',
+      'composer-1',
+      'task-1',
+      '<review_metadata>{"taskId":"task-1"}</review_metadata>',
+    );
+    const messages = createMessages('parent-1');
+    await hook['experimental.chat.messages.transform']({}, messages);
+
+    expect(sessionCreate).not.toHaveBeenCalled();
+    expect(sessionPrompt).not.toHaveBeenCalled();
+    expect(sessionMessages).not.toHaveBeenCalled();
+    expect(taskCreate).not.toHaveBeenCalled();
+    expect(messages.messages[0].parts[0].text).toContain('Required next action: ensemble');
   });
 });
 ```
@@ -1174,7 +1311,7 @@ export function createReviewLoopEnforcerHook(
 bun test src/hooks/review-loop-enforcer/index.test.ts
 ```
 
-Expected: All 7 hook-flow tests pass.
+Expected: All 9 hook-flow tests pass.
 
 ---
 
@@ -1380,7 +1517,9 @@ Expected: All targeted tests pass. These tests cover the required spec cases:
 - Agent/plugin logic change → Ensemble required.
 - Ensemble reject → Composer required.
 - Ensemble approve → Principal required.
-- Loop count 3 → Principal escalation with `wheelsSpinning: true`.
+- Loop count 3 → Principal escalation with `wheelsSpinning: true` at the start of the third Composer review round.
+- Fresh user message while gate is pending → same blocking reminder re-injected.
+- Real `collectGitChangeSet` temp-repo parsing → tracked and untracked changes detected.
 
 - [ ] **Step 2: Run TypeScript check**
 
@@ -1423,6 +1562,9 @@ Expected: Build succeeds and declaration emit succeeds.
 - [ ] Skip conditions are exactly: markdown-only docs changes OR under 10 changed lines with no risk path touched.
 - [ ] There is no standalone “simple configuration tweak” classifier category.
 - [ ] Agent/review/plugin logic changes require Ensemble even when under 10 changed lines.
+- [ ] `src/utils/` changes require Ensemble because task output parsing and review-support utilities are risk paths.
+- [ ] Empty change sets require Ensemble because “no changes detected” is conservative/unknown, not a principal-only skip.
 - [ ] Ensemble remains usable for both general consensus and review-panel mode; no council redesign occurs.
 - [ ] Prompt edits are limited to Composer `taskId`, Ensemble `reviewedTaskId`, and Principal `reviewedTaskId` confirmation.
 - [ ] Existing `src/workflow/review-loop-counter.ts` remains the loop-count source of truth.
+- [ ] Loop escalation is interpreted per existing counter semantics: `loopCount >= 3` means principal escalation at the start of the third Composer review round.
