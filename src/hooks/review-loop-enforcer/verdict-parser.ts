@@ -58,7 +58,11 @@ export function parsePrincipalReviewMetadata(
 
   try {
     const data = JSON.parse(metadataMatch[1]);
-    if (!isRecord(data) || typeof data.reviewedTaskId !== 'string') {
+    if (
+      !isRecord(data) ||
+      typeof data.reviewedTaskId !== 'string' ||
+      data.reviewedTaskId.trim() === ''
+    ) {
       return { valid: false, reason: 'Missing reviewedTaskId' };
     }
     return {

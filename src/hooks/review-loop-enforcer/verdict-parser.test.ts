@@ -82,4 +82,13 @@ after`);
       expect(parsed.verdict).toBe('pass');
     }
   });
+
+  test('returns invalid when principal reviewedTaskId is whitespace-only', () => {
+    const parsed = parsePrincipalReviewMetadata(`
+<results>
+  <verdict>pass</verdict>
+  <review_metadata>{"reviewedTaskId":"   "}</review_metadata>
+</results>`);
+    expect(parsed.valid).toBe(false);
+  });
 });
