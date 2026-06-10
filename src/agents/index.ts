@@ -14,14 +14,11 @@ import {
 } from '../config';
 import { getAgentMcpList } from '../config/agent-mcps';
 
-import { createCouncilAgent } from './council';
+import { createEnsembleAgent } from './ensemble';
 import { createCouncillorAgent } from './councillor';
 import { createComposerAgent } from './composer';
-import { createExplorerAgent } from './explorer';
-import { createFixerAgent } from './fixer';
-import { createLibrarianAgent } from './librarian';
-import { createObserverAgent } from './observer';
-import { createOracleAgent } from './oracle';
+import { createPrincipalAgent } from './principal';
+import { createScribeAgent } from './scribe';
 import {
   type AgentDefinition,
   createConductorAgent,
@@ -36,7 +33,7 @@ type AgentFactory = (
   customAppendPrompt?: string,
 ) => AgentDefinition;
 
-const COUNCIL_TOOL_ALLOWED_AGENTS = new Set(['council']);
+const COUNCIL_TOOL_ALLOWED_AGENTS = new Set(['ensemble']);
 const CANCEL_TASK_ALLOWED_AGENTS = new Set(['conductor']);
 const SAFE_AGENT_ALIAS_RE = /^[a-z][a-z0-9_-]*$/i;
 
@@ -127,7 +124,7 @@ function buildCustomAgentDefinition(
       model:
         typeof override.model === 'string'
           ? override.model
-          : (DEFAULT_MODELS.conductor ?? DEFAULT_MODELS.oracle),
+          : (DEFAULT_MODELS.conductor ?? DEFAULT_MODELS.principal),
       temperature: 0.2,
       prompt: resolvePrompt(basePrompt, filePrompt, fileAppendPrompt),
     },
@@ -208,13 +205,10 @@ export function isSubagent(name: string): name is SubagentName {
 // Agent Factories
 
 const SUBAGENT_FACTORIES: Record<SubagentName, AgentFactory> = {
-  explorer: createExplorerAgent,
-  librarian: createLibrarianAgent,
-  oracle: createOracleAgent,
+  scribe: createScribeAgent,
+  principal: createPrincipalAgent,
   composer: createComposerAgent,
-  fixer: createFixerAgent,
-  observer: createObserverAgent,
-  council: createCouncilAgent,
+  ensemble: createEnsembleAgent,
   councillor: createCouncillorAgent,
 };
 
@@ -230,24 +224,11 @@ const SUBAGENT_FACTORIES: Record<SubagentName, AgentFactory> = {
 export function createAgents(config?: PluginConfig): AgentDefinition[] {
   const disabled = getDisabledAgents(config);
   if (!config?.council) {
-    disabled.add('council');
+    disabled.add('ensemble');
   }
 
-  // TEMP: If fixer has no config, inherit from librarian's model to avoid breaking
-  // existing users who don't have fixer in their config yet
+  // Subagents always have a defined default model; cast is safe here
   const getModelForAgent = (name: SubagentName): string => {
-    if (name === 'fixer' && !getAgentOverride(config, 'fixer')?.model) {
-      const librarianOverride = getAgentOverride(config, 'librarian')?.model;
-      let librarianModel: string | undefined;
-      if (Array.isArray(librarianOverride)) {
-        const first = librarianOverride[0];
-        librarianModel = typeof first === 'string' ? first : first?.id;
-      } else {
-        librarianModel = librarianOverride;
-      }
-      return librarianModel ?? (DEFAULT_MODELS.librarian as string);
-    }
-    // Subagents always have a defined default model; cast is safe here
     return DEFAULT_MODELS[name] as string;
   };
 
@@ -310,18 +291,18 @@ export function createAgents(config?: PluginConfig): AgentDefinition[] {
     return agent;
   });
 
-  // 2b. Backward compat: if council has no preset override and still uses the
+  // 2b. Backward compat: if ensemble has no preset override and still uses the
   // hardcoded default model, fall back to the deprecated council.master.model.
   // See https://github.com/alvinunreal/oh-my-opencode-slim/issues/369
   const legacyMasterModel = config?.council?._legacyMasterModel;
   if (legacyMasterModel) {
-    const councilAgent = builtInSubAgents.find((a) => a.name === 'council');
+    const ensembleAgent = builtInSubAgents.find((a) => a.name === 'ensemble');
     if (
-      councilAgent &&
-      !getAgentOverride(config, 'council')?.model &&
-      councilAgent.config.model === DEFAULT_MODELS.council
+      ensembleAgent &&
+      !getAgentOverride(config, 'ensemble')?.model &&
+      ensembleAgent.config.model === DEFAULT_MODELS.ensemble
     ) {
-      councilAgent.config.model = legacyMasterModel;
+      ensembleAgent.config.model = legacyMasterModel;
     }
   }
 
@@ -442,8 +423,8 @@ export function getAgentConfigs(
       hidden?: boolean;
     },
   ): void => {
-    if (name === 'council') {
-      // Council is callable both as a primary agent (user-facing)
+    if (name === 'ensemble') {
+      // Ensemble is callable both as a primary agent (user-facing)
       // and as a subagent (conductor can delegate to it)
       sdkConfig.mode = 'all';
     } else if (name === 'councillor') {
@@ -518,7 +499,7 @@ export function getDisabledAgents(config?: PluginConfig): Set<string> {
 export function getEnabledAgentNames(config?: PluginConfig): string[] {
   const disabled = getDisabledAgents(config);
   if (!config?.council) {
-    disabled.add('council');
+    disabled.add('ensemble');
   }
   const customAgentNames = getCustomAgentNames(config).filter(
     (name) => !disabled.has(name),

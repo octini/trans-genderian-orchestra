@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { formatCouncillorPrompt, formatCouncillorResults } from './council';
+import { formatCouncillorPrompt, formatCouncillorResults } from './ensemble';
 
 describe('formatCouncillorResults', () => {
   const originalPrompt =

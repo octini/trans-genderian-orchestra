@@ -9,7 +9,7 @@ import type { PluginInput } from '@opencode-ai/plugin';
 import {
   formatCouncillorPrompt,
   formatCouncillorResults,
-} from '../agents/council';
+} from '../agents/ensemble';
 import type { PluginConfig } from '../config';
 import {
   COUNCILLOR_STAGGER_MS,

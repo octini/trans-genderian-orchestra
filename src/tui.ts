@@ -12,10 +12,7 @@ import {
 const PLUGIN_NAME = 'oh-my-opencode-slim';
 const CONFIG_WARNING_COLOR = 'orange';
 const FALLBACK_SIDEBAR_AGENTS = SUBAGENT_NAMES.filter(
-  (agent) =>
-    agent !== 'councillor' &&
-    agent !== 'council' &&
-    !DEFAULT_DISABLED_AGENTS.includes(agent),
+  (agent) => agent !== 'councillor' && !DEFAULT_DISABLED_AGENTS.includes(agent),
 );
 const BORDER = { type: 'single' };
 

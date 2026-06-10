@@ -29,14 +29,11 @@ interface PendingTaskCall {
 }
 
 const AGENT_NAME_SET = new Set<AgentName>([
-  'orchestrator',
-  'oracle',
-  'designer',
-  'explorer',
-  'librarian',
-  'fixer',
-  'observer',
-  'council',
+  'conductor',
+  'scribe',
+  'principal',
+  'composer',
+  'ensemble',
   'councillor',
 ]);
 
