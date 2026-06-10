@@ -1,4 +1,5 @@
 {
+  "$id": "https://raw.githubusercontent.com/anomalyco/trans-genderian-orchestra/main/trans-genderian-orchestra.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "properties": {
@@ -26,7 +27,7 @@
     "manualPlan": {
       "type": "object",
       "properties": {
-        "orchestrator": {
+        "conductor": {
           "type": "object",
           "properties": {
             "primary": {
@@ -53,7 +54,7 @@
             "fallback3"
           ]
         },
-        "oracle": {
+        "principal": {
           "type": "object",
           "properties": {
             "primary": {
@@ -80,7 +81,7 @@
             "fallback3"
           ]
         },
-        "designer": {
+        "composer": {
           "type": "object",
           "properties": {
             "primary": {
@@ -107,61 +108,7 @@
             "fallback3"
           ]
         },
-        "explorer": {
-          "type": "object",
-          "properties": {
-            "primary": {
-              "type": "string",
-              "pattern": "^[^/\\s]+\\/[^\\s]+$"
-            },
-            "fallback1": {
-              "type": "string",
-              "pattern": "^[^/\\s]+\\/[^\\s]+$"
-            },
-            "fallback2": {
-              "type": "string",
-              "pattern": "^[^/\\s]+\\/[^\\s]+$"
-            },
-            "fallback3": {
-              "type": "string",
-              "pattern": "^[^/\\s]+\\/[^\\s]+$"
-            }
-          },
-          "required": [
-            "primary",
-            "fallback1",
-            "fallback2",
-            "fallback3"
-          ]
-        },
-        "librarian": {
-          "type": "object",
-          "properties": {
-            "primary": {
-              "type": "string",
-              "pattern": "^[^/\\s]+\\/[^\\s]+$"
-            },
-            "fallback1": {
-              "type": "string",
-              "pattern": "^[^/\\s]+\\/[^\\s]+$"
-            },
-            "fallback2": {
-              "type": "string",
-              "pattern": "^[^/\\s]+\\/[^\\s]+$"
-            },
-            "fallback3": {
-              "type": "string",
-              "pattern": "^[^/\\s]+\\/[^\\s]+$"
-            }
-          },
-          "required": [
-            "primary",
-            "fallback1",
-            "fallback2",
-            "fallback3"
-          ]
-        },
-        "fixer": {
+        "scribe": {
           "type": "object",
           "properties": {
             "primary": {
@@ -190,12 +137,10 @@
         }
       },
       "required": [
-        "orchestrator",
-        "oracle",
-        "designer",
-        "explorer",
-        "librarian",
-        "fixer"
+        "conductor",
+        "principal",
+        "composer",
+        "scribe"
       ],
       "additionalProperties": false
     },
@@ -268,7 +213,7 @@
               "type": "string",
               "minLength": 1
             },
-            "orchestratorPrompt": {
+            "conductorPrompt": {
               "type": "string",
               "minLength": 1
             },
@@ -352,7 +297,7 @@
             "type": "string",
             "minLength": 1
           },
-          "orchestratorPrompt": {
+          "conductorPrompt": {
             "type": "string",
             "minLength": 1
           },
@@ -372,7 +317,7 @@
       }
     },
     "disabled_agents": {
-      "description": "Agent names to disable completely. Disabled agents are not instantiated and cannot be delegated to. Orchestrator and council internal agents (councillor) cannot be disabled. By default, 'observer' is disabled. Remove it from this list and configure a vision-capable model to enable.",
+      "description": "Agent names to disable completely. Disabled agents are not instantiated and cannot be delegated to. Conductor and ensemble internal agents (councillor) cannot be disabled.",
       "type": "array",
       "items": {
         "type": "string"
@@ -509,65 +454,6 @@
         }
       }
     },
-    "divoom": {
-      "type": "object",
-      "properties": {
-        "enabled": {
-          "default": false,
-          "type": "boolean"
-        },
-        "python": {
-          "default": "/Applications/Divoom MiniToo.app/Contents/Resources/.venv/bin/python",
-          "type": "string",
-          "minLength": 1
-        },
-        "script": {
-          "default": "/Applications/Divoom MiniToo.app/Contents/Resources/tools/divoom_send.py",
-          "type": "string",
-          "minLength": 1
-        },
-        "size": {
-          "default": 128,
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 1024
-        },
-        "fps": {
-          "default": 8,
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 60
-        },
-        "speed": {
-          "default": 125,
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 10000
-        },
-        "maxFrames": {
-          "default": 24,
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 500
-        },
-        "posterizeBits": {
-          "default": 3,
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 8
-        },
-        "gifs": {
-          "type": "object",
-          "propertyNames": {
-            "type": "string"
-          },
-          "additionalProperties": {
-            "type": "string",
-            "minLength": 1
-          }
-        }
-      }
-    },
     "fallback": {
       "type": "object",
       "properties": {
@@ -589,42 +475,28 @@
           "default": {},
           "type": "object",
           "properties": {
-            "orchestrator": {
+            "conductor": {
               "minItems": 1,
               "type": "array",
               "items": {
                 "type": "string"
               }
             },
-            "oracle": {
+            "principal": {
               "minItems": 1,
               "type": "array",
               "items": {
                 "type": "string"
               }
             },
-            "designer": {
+            "composer": {
               "minItems": 1,
               "type": "array",
               "items": {
                 "type": "string"
               }
             },
-            "explorer": {
-              "minItems": 1,
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "librarian": {
-              "minItems": 1,
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "fixer": {
+            "scribe": {
               "minItems": 1,
               "type": "array",
               "items": {
@@ -647,7 +519,7 @@
         }
       }
     },
-    "council": {
+    "ensemble": {
       "type": "object",
       "properties": {
         "presets": {
@@ -695,13 +567,13 @@
           "maximum": 5
         },
         "master": {
-          "description": "DEPRECATED — ignored. Council agent synthesizes directly."
+          "description": "DEPRECATED - ignored. Council agent synthesizes directly."
         },
         "master_timeout": {
-          "description": "DEPRECATED — ignored. Use \"timeout\" instead."
+          "description": "DEPRECATED - ignored. Use \"timeout\" instead."
         },
         "master_fallback": {
-          "description": "DEPRECATED — ignored. No separate master session."
+          "description": "DEPRECATED - ignored. No separate master session."
         }
       },
       "required": [
@@ -709,6 +581,6 @@
       ]
     }
   },
-  "title": "oh-my-opencode-slim",
-  "description": "Configuration schema for oh-my-opencode-slim plugin for OpenCode"
+  "title": "trans-genderian-orchestra",
+  "description": "Configuration schema for Trans-Genderian Orchestra (TGO) plugin for OpenCode"
 }
