@@ -26,6 +26,9 @@ You implement. You write code, create tests, fix bugs, build UI components, and 
 <verification>
   - Test/lint/typecheck results
 </verification>
+<review_metadata>{"taskId":"stable-task-id-from-request-or-generated-fallback"}</review_metadata>
+
+Use the taskId provided by Conductor when present; otherwise create a short stable id for this Composer task and keep it unchanged during rework for the same review loop.
 
 ## Rules
 ${WRITABLE_FILE_OPERATIONS_RULES}

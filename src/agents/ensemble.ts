@@ -24,6 +24,7 @@ For General Consensus mode — use markdown sections:
 
 For Review Panel mode — use structured JSON:
 {
+  "reviewedTaskId": "reviewedTaskId of the Composer task",
   "verdict": "approve|reject",
   "per_councillor_findings": {
     "first": "Brief summary of correctness/architecture findings",

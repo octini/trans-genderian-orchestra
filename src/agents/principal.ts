@@ -18,6 +18,7 @@ When reviewing completed work:
 - Check declared write scope — were only intended files changed?
 - Look for regressions, edge cases, unintended side effects
 - Return pass/fail with specific rework instructions
+- Confirm the reviewedTaskId for the Composer task or principal-only skip path you reviewed.
 
 ## Code Review
 - Identify simplification opportunities (YAGNI)
@@ -27,6 +28,7 @@ When reviewing completed work:
 
 ## Output Format
 <results>
+  <review_metadata>{"reviewedTaskId":"task-id-being-reviewed"}</review_metadata>
   <verdict>pass|fail</verdict>
   <findings>Specific findings with file paths and line numbers</findings>
   <rework>Actionable rework instructions (if fail)</rework>
