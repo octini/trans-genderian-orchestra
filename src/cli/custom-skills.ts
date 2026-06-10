@@ -31,34 +31,34 @@ export const CUSTOM_SKILLS: CustomSkill[] = [
   {
     name: 'simplify',
     description: 'Code simplification and readability-focused refactoring',
-    allowedAgents: ['oracle'],
+    allowedAgents: ['principal'],
     sourcePath: 'src/skills/simplify',
   },
   {
     name: 'codemap',
     description: 'Repository understanding and hierarchical codemap generation',
-    allowedAgents: ['orchestrator'],
+    allowedAgents: ['conductor'],
     sourcePath: 'src/skills/codemap',
   },
   {
     name: 'clonedeps',
     description: 'Clone important dependency source for local inspection',
-    allowedAgents: ['orchestrator'],
+    allowedAgents: ['conductor'],
     sourcePath: 'src/skills/clonedeps',
   },
   {
     name: 'deepwork',
     description:
       'Heavy/complex coding sessions and large modifications workflow',
-    allowedAgents: ['orchestrator'],
+    allowedAgents: ['conductor'],
     sourcePath: 'src/skills/deepwork',
   },
   {
-    name: 'oh-my-opencode-slim',
+    name: 'trans-genderian-orchestra',
     description:
-      'Configure, customize, and safely improve oh-my-opencode-slim setups',
-    allowedAgents: ['orchestrator'],
-    sourcePath: 'src/skills/oh-my-opencode-slim',
+      'Configure, customize, and safely improve trans-genderian-orchestra setups',
+    allowedAgents: ['conductor'],
+    sourcePath: 'src/skills/trans-genderian-orchestra',
   },
 ];
 
