@@ -55,6 +55,9 @@ import { initLogger, log } from './utils/logger';
 import { SubagentDepthTracker } from './utils/subagent-depth';
 import { collapseSystemInPlace } from './utils/system-collapse';
 
+export const TGO_ISSUES_URL =
+  'github.com/octini/trans-genderian-orchestra/issues';
+
 /**
  * Best-effort log to opencode's app logger.
  * Wrapped in try/catch to avoid deadlocking on opencode v1.4.8–v1.4.9
@@ -337,7 +340,7 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
     await appLog(
       ctx,
       'error',
-      `INIT FAILED: ${String(err)}. Report at github.com/anomalyco/trans-genderian-orchestra/issues`,
+      `INIT FAILED: ${String(err)}. Report at ${TGO_ISSUES_URL}`,
     );
     throw err;
   }
@@ -363,7 +366,7 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
       `  mcps:   ${mcpCount} (expected >=${mcpThreshold})`,
       'This usually means a dependency failed to resolve (jsdom, etc).',
       'If you recently updated opencode, see:',
-      '  github.com/anomalyco/trans-genderian-orchestra/issues',
+      `  ${TGO_ISSUES_URL}`,
     ].join('\n');
     log(`[plugin] WARN: ${msg}`);
     await appLog(ctx, 'warn', msg);

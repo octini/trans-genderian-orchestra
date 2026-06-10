@@ -1394,8 +1394,8 @@ Search for `github.com/alvinunreal/oh-my-opencode-slim` and replace with the TGO
 // Before
 `INIT FAILED: ${String(err)}. Report at github.com/alvinunreal/oh-my-opencode-slim/issues/310`
 
-// After (substitute with actual repo URL — e.g., github.com/anomalyco/trans-genderian-orchestra)
-`INIT FAILED: ${String(err)}. Report at github.com/anomalyco/trans-genderian-orchestra/issues`
+// After (substitute with actual repo URL — e.g., github.com/octini/trans-genderian-orchestra)
+`INIT FAILED: ${String(err)}. Report at github.com/octini/trans-genderian-orchestra/issues`
 ```
 
 - [ ] **Step 5: Update default_agent assignment**
@@ -2326,7 +2326,7 @@ Open `trans-genderian-orchestra.schema.json` and update the top-level `$id` URI 
 
 ```json
 {
-  "$id": "https://raw.githubusercontent.com/anomalyco/trans-genderian-orchestra/main/trans-genderian-orchestra.schema.json",
+  "$id": "https://raw.githubusercontent.com/octini/trans-genderian-orchestra/main/trans-genderian-orchestra.schema.json",
   "$schema": "http://json-schema.org/draft-07/schema#",
   ...
 }
