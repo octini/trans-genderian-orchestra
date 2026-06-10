@@ -1718,10 +1718,8 @@ describe('renderInterviewPage', () => {
   test('renders the hosted brand logo', () => {
     const html = renderInterviewPage('brand-test', 'brand-test');
 
-    expect(html).toContain('<img class="brand-mark"');
-    expect(html).toContain(
-      'https://ohmyopencodeslim.com/android-chrome-512x512.png',
-    );
+    // When BRAND_LOGO_URL is empty, no brand image is rendered
+    expect(html).not.toContain('<img class="brand-mark"');
   });
 
   test('shows explicit Enter guidance for option questions', () => {

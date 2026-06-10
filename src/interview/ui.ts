@@ -8,8 +8,7 @@ interface DashboardInterviewItem extends InterviewListItem {
   directory?: string;
 }
 
-const BRAND_LOGO_URL =
-  'https://ohmyopencodeslim.com/android-chrome-512x512.png';
+const BRAND_LOGO_URL = '';
 
 export function escapeHtml(value: string): string {
   return value
@@ -123,7 +122,8 @@ function sharedStyles(): string {
 // ─── Dashboard brand image ─────────────────────────────────────────
 
 function brandImage(size: number): string {
-  return `<img class="brand-mark" src="${BRAND_LOGO_URL}" alt="Oh My Opencode Slim" width="${size}" height="${size}" />`;
+  if (!BRAND_LOGO_URL) return '';
+  return `<img class="brand-mark" src="${BRAND_LOGO_URL}" alt="Trans-Genderian Orchestra" width="${size}" height="${size}" />`;
 }
 
 export function renderDashboardPage(
@@ -402,7 +402,7 @@ export function renderDashboardPage(
       ${emptyState}
       ${activeSection}
       ${fileSection}
-      <div class="footer">OH MY OPENCODE SLIM</div>
+      <div class="footer">TRANS-GENDERIAN ORCHESTRA</div>
     </div>
     <div class="update-banner" id="updateBanner">Dashboard updated — tap to refresh</div>
     <script>
@@ -893,7 +893,7 @@ export function renderInterviewPage(
       
       <div class="meta">
         <span id="status">INITIALIZING</span>
-        <span>OH MY OPENCODE SLIM</span>
+        <span>TRANS-GENDERIAN ORCHESTRA</span>
       </div>
       
       <div id="filePathContainer" class="file-path-container" style="display: none;">
