@@ -17,3 +17,6 @@ dist/
 
 # Local deepwork progress state
 .slim/deepwork/
+
+# Discovery sweep output files (local working checklists)
+discovery-sweep-*.txt
