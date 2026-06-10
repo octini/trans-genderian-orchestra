@@ -53,7 +53,7 @@ type CloseReason = 'idle' | 'deleted' | 'missing';
 
 const SESSION_MISSING_GRACE_MS = POLL_INTERVAL_BACKGROUND_MS * 3;
 const SHARED_STATE_KEY = Symbol.for(
-  'oh-my-opencode-slim.multiplexer-session-manager.state',
+  'trans-genderian-orchestra.multiplexer-session-manager.state',
 );
 
 function getSharedState(): SharedSessionState {
