@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { resetAllReviewLoops } from '../../workflow/review-loop-counter.js';
+import { formatReviewGateReminder, ReviewGateStore } from './state.js';
 import type { ChangeClassification } from './types.js';
-import { ReviewGateStore } from './state.js';
 
 const ensembleClassification: ChangeClassification = {
   requiredReview: 'ensemble',
@@ -221,3 +221,125 @@ describe('ReviewGateStore', () => {
     expect(gate?.lastError).toContain('out-of-order principal verdict');
   });
 });
+
+describe('formatReviewGateReminder', () => {
+  beforeEach(() => resetAllReviewLoops());
+
+  test('ensemble gate reminder requires ensemble review and uses classification reason', () => {
+    const store = new ReviewGateStore();
+    const gate = store.recordComposerCompletion(
+      'parent-1',
+      'task-1',
+      ensembleClassification,
+    );
+    const reminder = formatReviewGateReminder(gate);
+
+    expectCommonReminderFields(reminder, 'task-1');
+    expect(reminder).toContain('@ensemble review is required');
+    expect(reminder).toContain('Reason: non-trivial change set');
+  });
+
+  test('principal gate reminder requires principal final review', () => {
+    const store = new ReviewGateStore();
+    const gate = store.recordComposerCompletion(
+      'parent-1',
+      'task-1',
+      principalClassification,
+    );
+    const reminder = formatReviewGateReminder(gate);
+
+    expectCommonReminderFields(reminder, 'task-1');
+    expect(reminder).toContain('@principal final review is required');
+  });
+
+  test('principal-escalation gate reminder requires principal escalation with wheels spinning', () => {
+    const store = new ReviewGateStore();
+    store.recordComposerCompletion(
+      'parent-1',
+      'task-1',
+      ensembleClassification,
+    );
+    store.recordEnsembleVerdict('parent-1', {
+      valid: true,
+      reviewedTaskId: 'task-1',
+      verdict: 'reject',
+      requiredNextAction: 'composer',
+      criticalIssueCount: 0,
+      issues: [],
+    });
+    store.recordComposerCompletion(
+      'parent-1',
+      'task-1',
+      ensembleClassification,
+    );
+    store.recordEnsembleVerdict('parent-1', {
+      valid: true,
+      reviewedTaskId: 'task-1',
+      verdict: 'reject',
+      requiredNextAction: 'composer',
+      criticalIssueCount: 0,
+      issues: [],
+    });
+    const gate = store.recordComposerCompletion(
+      'parent-1',
+      'task-1',
+      ensembleClassification,
+    );
+    const reminder = formatReviewGateReminder(gate);
+
+    expectCommonReminderFields(reminder, 'task-1');
+    expect(reminder).toContain('@principal escalation');
+    expect(reminder).toContain('wheelsSpinning: true');
+  });
+
+  test('composer gate reminder requires composer rework', () => {
+    const store = new ReviewGateStore();
+    store.recordComposerCompletion(
+      'parent-1',
+      'task-1',
+      ensembleClassification,
+    );
+    const gate = store.recordEnsembleVerdict('parent-1', {
+      valid: true,
+      reviewedTaskId: 'task-1',
+      verdict: 'reject',
+      requiredNextAction: 'composer',
+      criticalIssueCount: 0,
+      issues: [],
+    });
+    expect(gate).toBeDefined();
+    if (gate === undefined) throw new Error('Expected composer gate');
+    const reminder = formatReviewGateReminder(gate);
+
+    expectCommonReminderFields(reminder, 'task-1');
+    expect(reminder).toContain('@composer rework is required');
+  });
+
+  test('reminder uses lastError in reason line when present', () => {
+    const store = new ReviewGateStore();
+    store.recordComposerCompletion(
+      'parent-1',
+      'task-1',
+      ensembleClassification,
+    );
+    const gate = store.recordEnsembleVerdict('parent-1', {
+      valid: true,
+      reviewedTaskId: 'other-task',
+      verdict: 'approve',
+      requiredNextAction: 'principal',
+      criticalIssueCount: 0,
+      issues: [],
+    });
+    expect(gate).toBeDefined();
+    if (gate === undefined) throw new Error('Expected mismatch gate');
+    const reminder = formatReviewGateReminder(gate);
+
+    expectCommonReminderFields(reminder, 'task-1');
+    expect(reminder).toContain('Reason: reviewedTaskId mismatch');
+  });
+});
+
+function expectCommonReminderFields(reminder: string, taskId: string): void {
+  expect(reminder).toContain('SENTINEL: review-loop-enforcer-v1');
+  expect(reminder).toContain(`Review gate active for taskId: ${taskId}`);
+}
