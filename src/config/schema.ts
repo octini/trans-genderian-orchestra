@@ -3,21 +3,17 @@ import { AGENT_ALIASES, ALL_AGENT_NAMES } from './constants';
 import { CouncilConfigSchema } from './council-schema';
 
 const FALLBACK_AGENT_NAMES = [
-  'orchestrator',
-  'oracle',
-  'designer',
-  'explorer',
-  'librarian',
-  'fixer',
+  'conductor',
+  'principal',
+  'composer',
+  'scribe',
 ] as const;
 
 const MANUAL_AGENT_NAMES = [
-  'orchestrator',
-  'oracle',
-  'designer',
-  'explorer',
-  'librarian',
-  'fixer',
+  'conductor',
+  'principal',
+  'composer',
+  'scribe',
 ] as const;
 
 export const ProviderModelIdSchema = z
@@ -51,12 +47,10 @@ export const ManualAgentPlanSchema = z
 
 export const ManualPlanSchema = z
   .object({
-    orchestrator: ManualAgentPlanSchema,
-    oracle: ManualAgentPlanSchema,
-    designer: ManualAgentPlanSchema,
-    explorer: ManualAgentPlanSchema,
-    librarian: ManualAgentPlanSchema,
-    fixer: ManualAgentPlanSchema,
+    conductor: ManualAgentPlanSchema,
+    principal: ManualAgentPlanSchema,
+    composer: ManualAgentPlanSchema,
+    scribe: ManualAgentPlanSchema,
   })
   .strict();
 
@@ -68,12 +62,11 @@ const AgentModelChainSchema = z.array(z.string()).min(1);
 
 const FallbackChainsSchema = z
   .object({
-    orchestrator: AgentModelChainSchema.optional(),
-    oracle: AgentModelChainSchema.optional(),
-    designer: AgentModelChainSchema.optional(),
-    explorer: AgentModelChainSchema.optional(),
-    librarian: AgentModelChainSchema.optional(),
-    fixer: AgentModelChainSchema.optional(),
+    conductor: AgentModelChainSchema.optional(),
+    principal: AgentModelChainSchema.optional(),
+    composer: AgentModelChainSchema.optional(),
+    scribe: AgentModelChainSchema.optional(),
+    ensemble: AgentModelChainSchema.optional(),
   })
   .catchall(AgentModelChainSchema);
 
