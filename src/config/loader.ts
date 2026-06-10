@@ -2,6 +2,8 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { stripJsonComments } from '../cli/config-io';
 import { getConfigSearchDirs } from '../cli/paths';
+import type { AgentName } from './constants';
+import { resolveModelReferences } from './model-references';
 import { type PluginConfig, PluginConfigSchema } from './schema';
 
 /**
@@ -313,6 +315,23 @@ export function loadPluginConfig(
       });
       if (!options?.silent) {
         console.warn(`[trans-genderian-orchestra] ${message}`);
+      }
+    }
+  }
+
+  // Resolve model references (e.g., "ensemble" → conductor's model)
+  if (config.agents) {
+    const modelMap: Partial<Record<AgentName, string>> = {};
+    for (const [name, agentConfig] of Object.entries(config.agents)) {
+      if (agentConfig && typeof agentConfig.model === 'string') {
+        modelMap[name as AgentName] = agentConfig.model;
+      }
+    }
+    const resolved = resolveModelReferences(modelMap);
+    for (const [name, model] of Object.entries(resolved)) {
+      const agentConfig = config.agents?.[name];
+      if (agentConfig && model !== undefined) {
+        agentConfig.model = model;
       }
     }
   }
