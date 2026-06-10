@@ -11,11 +11,7 @@
     },
     "scoringEngineVersion": {
       "type": "string",
-      "enum": [
-        "v1",
-        "v2-shadow",
-        "v2"
-      ]
+      "enum": ["v1", "v2-shadow", "v2"]
     },
     "balanceProviderUsage": {
       "type": "boolean"
@@ -47,12 +43,7 @@
               "pattern": "^[^/\\s]+\\/[^\\s]+$"
             }
           },
-          "required": [
-            "primary",
-            "fallback1",
-            "fallback2",
-            "fallback3"
-          ]
+          "required": ["primary", "fallback1", "fallback2", "fallback3"]
         },
         "principal": {
           "type": "object",
@@ -74,12 +65,7 @@
               "pattern": "^[^/\\s]+\\/[^\\s]+$"
             }
           },
-          "required": [
-            "primary",
-            "fallback1",
-            "fallback2",
-            "fallback3"
-          ]
+          "required": ["primary", "fallback1", "fallback2", "fallback3"]
         },
         "composer": {
           "type": "object",
@@ -101,12 +87,7 @@
               "pattern": "^[^/\\s]+\\/[^\\s]+$"
             }
           },
-          "required": [
-            "primary",
-            "fallback1",
-            "fallback2",
-            "fallback3"
-          ]
+          "required": ["primary", "fallback1", "fallback2", "fallback3"]
         },
         "scribe": {
           "type": "object",
@@ -128,20 +109,10 @@
               "pattern": "^[^/\\s]+\\/[^\\s]+$"
             }
           },
-          "required": [
-            "primary",
-            "fallback1",
-            "fallback2",
-            "fallback3"
-          ]
+          "required": ["primary", "fallback1", "fallback2", "fallback3"]
         }
       },
-      "required": [
-        "conductor",
-        "principal",
-        "composer",
-        "scribe"
-      ],
+      "required": ["conductor", "principal", "composer", "scribe"],
       "additionalProperties": false
     },
     "presets": {
@@ -180,9 +151,7 @@
                             "type": "string"
                           }
                         },
-                        "required": [
-                          "id"
-                        ]
+                        "required": ["id"]
                       }
                     ]
                   }
@@ -264,9 +233,7 @@
                           "type": "string"
                         }
                       },
-                      "required": [
-                        "id"
-                      ]
+                      "required": ["id"]
                     }
                   ]
                 }
@@ -335,12 +302,7 @@
         "type": {
           "default": "none",
           "type": "string",
-          "enum": [
-            "auto",
-            "tmux",
-            "zellij",
-            "none"
-          ]
+          "enum": ["auto", "tmux", "zellij", "none"]
         },
         "layout": {
           "default": "main-vertical",
@@ -393,10 +355,7 @@
         "provider": {
           "default": "exa",
           "type": "string",
-          "enum": [
-            "exa",
-            "tavily"
-          ]
+          "enum": ["exa", "tavily"]
         }
       }
     },
@@ -554,10 +513,7 @@
           "default": "parallel",
           "description": "Execution mode for councillors. \"serial\" runs them one at a time (required for single-model systems). \"parallel\" runs them concurrently (default, faster for multi-model systems).",
           "type": "string",
-          "enum": [
-            "parallel",
-            "serial"
-          ]
+          "enum": ["parallel", "serial"]
         },
         "councillor_retries": {
           "default": 3,
@@ -576,9 +532,7 @@
           "description": "DEPRECATED - ignored. No separate master session."
         }
       },
-      "required": [
-        "presets"
-      ]
+      "required": ["presets"]
     }
   },
   "title": "trans-genderian-orchestra",

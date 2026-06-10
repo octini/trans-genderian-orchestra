@@ -151,7 +151,11 @@ describe('auto-update-checker/cache', () => {
         `./cache?test=${importCounter++}`
       );
 
-      const result = preparePackageUpdate('1.0.1', 'trans-genderian-orchestra', null);
+      const result = preparePackageUpdate(
+        '1.0.1',
+        'trans-genderian-orchestra',
+        null,
+      );
 
       expect(result?.endsWith('/.cache/opencode')).toBe(true);
       expect(writeSpy).not.toHaveBeenCalled();

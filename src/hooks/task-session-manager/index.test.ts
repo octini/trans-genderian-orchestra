@@ -116,7 +116,10 @@ describe('task-session-manager hook', () => {
     await hook['tool.execute.before'](
       { tool: 'task', sessionID: 'parent-1', callID: 'call-2' },
       {
-        args: { subagent_type: 'principal', description: 'review scheduler plan' },
+        args: {
+          subagent_type: 'principal',
+          description: 'review scheduler plan',
+        },
       },
     );
     await hook['tool.execute.after'](
@@ -1106,7 +1109,9 @@ describe('task-session-manager hook', () => {
     );
     expect(failed.args.task_id).toBeUndefined();
 
-    const completed = { args: { subagent_type: 'principal', task_id: 'pri-1' } };
+    const completed = {
+      args: { subagent_type: 'principal', task_id: 'pri-1' },
+    };
     await hook['tool.execute.before'](
       { tool: 'task', sessionID: 'parent-1', callID: 'call-3' },
       completed,
@@ -1191,7 +1196,9 @@ describe('task-session-manager hook', () => {
     board.updateStatus({ taskID: 'child-1', state: 'completed' });
     board.markReconciled('child-1');
 
-    const wrongAgent = { args: { subagent_type: 'principal', task_id: 'scr-1' } };
+    const wrongAgent = {
+      args: { subagent_type: 'principal', task_id: 'scr-1' },
+    };
     await hook['tool.execute.before'](
       { tool: 'task', sessionID: 'parent-1', callID: 'agent' },
       wrongAgent,
@@ -1578,7 +1585,12 @@ describe('task-session-manager hook', () => {
     const { hook } = createHook({ backgroundJobBoard: board });
     await hook['tool.execute.before'](
       { tool: 'task', sessionID: 'parent-1', callID: 'call-1' },
-      { args: { subagent_type: 'principal', description: 'architecture review' } },
+      {
+        args: {
+          subagent_type: 'principal',
+          description: 'architecture review',
+        },
+      },
     );
     board.registerLaunch({
       taskID: 'child-1',

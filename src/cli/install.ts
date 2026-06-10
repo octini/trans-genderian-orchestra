@@ -310,7 +310,11 @@ async function runInstall(config: InstallConfig): Promise<number> {
   printStep(step++, totalSteps, 'Configuring OpenCode background subagents...');
   const backgroundSubagents = await configureBackgroundSubagents(config);
 
-  printStep(step++, totalSteps, 'Writing trans-genderian-orchestra configuration...');
+  printStep(
+    step++,
+    totalSteps,
+    'Writing trans-genderian-orchestra configuration...',
+  );
   if (config.dryRun) {
     const liteConfig = generateLiteConfig(config);
     printInfo('Dry run mode - configuration that would be written:');

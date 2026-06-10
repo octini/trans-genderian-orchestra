@@ -18,7 +18,8 @@ describe('delegate-task-retry hook', () => {
   test('appends guidance for task agent allowlist errors', async () => {
     const hook = createDelegateTaskRetryHook({} as never);
     const output = {
-      output: "Agent 'principal' is not allowed. Allowed agents: scribe, composer",
+      output:
+        "Agent 'principal' is not allowed. Allowed agents: scribe, composer",
     };
 
     await hook['tool.execute.after']({ tool: 'task' }, output);

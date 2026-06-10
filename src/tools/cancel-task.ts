@@ -44,9 +44,7 @@ Use only for obsolete, wrong, conflicting, or user-requested cancellation. Accep
         throw new Error('cancel_task can only be used by conductor');
       }
       if (!options.shouldManageSession(parentSessionID)) {
-        throw new Error(
-          'cancel_task can only be used in conductor sessions',
-        );
+        throw new Error('cancel_task can only be used in conductor sessions');
       }
 
       const requested = args.task_id.trim();

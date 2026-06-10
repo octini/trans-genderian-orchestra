@@ -66,7 +66,7 @@ function createTestCouncilConfig(overrides?: {
     timeout: overrides?.timeout,
   });
 
-  return { council: councilConfig } as any;
+  return { ensemble: councilConfig } as any;
 }
 
 describe('CouncilManager', () => {
@@ -187,7 +187,7 @@ describe('CouncilManager', () => {
         },
       });
       const config: PluginConfig = {
-        council: {
+        ensemble: {
           presets: {
             default: {
               councillor1: { model: 'openai/gpt-5.4-mini' },
@@ -231,7 +231,7 @@ describe('CouncilManager', () => {
         },
       });
       const config: PluginConfig = {
-        council: {
+        ensemble: {
           presets: {
             default: {
               alpha: { model: 'openai/gpt-5.4-mini' },
@@ -280,7 +280,7 @@ describe('CouncilManager', () => {
         },
       });
       const config: PluginConfig = {
-        council: {
+        ensemble: {
           presets: {
             default: {
               timeout: { model: 'openai/gpt-5.4-mini' },
@@ -324,7 +324,7 @@ describe('CouncilManager', () => {
         },
       });
       const config: PluginConfig = {
-        council: {
+        ensemble: {
           presets: {
             default: {
               alpha: { model: 'openai/gpt-5.4-mini', variant: 'low' },
@@ -359,7 +359,7 @@ describe('CouncilManager', () => {
         },
       });
       const config: PluginConfig = {
-        council: {
+        ensemble: {
           presets: {
             default: {
               alpha: { model: 'openai/gpt-5.4-mini' },
@@ -379,7 +379,7 @@ describe('CouncilManager', () => {
     test('handles councillor with invalid model format', async () => {
       const ctx = createMockContext();
       const config: PluginConfig = {
-        council: {
+        ensemble: {
           presets: {
             default: {
               badmodel: { model: 'invalid-model-no-slash' },
@@ -419,7 +419,7 @@ describe('CouncilManager', () => {
         },
       });
       const config: PluginConfig = {
-        council: {
+        ensemble: {
           presets: {
             default: {
               alpha: { model: 'openai/gpt-5.4-mini' },
@@ -589,7 +589,7 @@ describe('CouncilManager', () => {
         },
       });
       const config: PluginConfig = {
-        council: {
+        ensemble: {
           presets: {
             default: {
               alpha: { model: 'openai/gpt-5.4-mini' },
@@ -622,7 +622,7 @@ describe('CouncilManager', () => {
         },
       });
       const config: PluginConfig = {
-        council: {
+        ensemble: {
           presets: {
             default: {
               alpha: {
@@ -670,7 +670,7 @@ describe('CouncilManager', () => {
         },
       });
       const config: PluginConfig = {
-        council: {
+        ensemble: {
           presets: {
             default: {
               alpha: { model: 'openai/gpt-5.4-mini' },
@@ -742,7 +742,7 @@ describe('CouncilManager', () => {
       });
 
       const config: PluginConfig = {
-        council: {
+        ensemble: {
           councillor_retries: 1,
           presets: {
             default: {
@@ -790,7 +790,7 @@ describe('CouncilManager', () => {
       });
 
       const config: PluginConfig = {
-        council: {
+        ensemble: {
           councillor_retries: 2,
           presets: {
             default: {
@@ -821,7 +821,7 @@ describe('CouncilManager', () => {
       });
 
       const config: PluginConfig = {
-        council: {
+        ensemble: {
           councillor_retries: 1,
           presets: {
             default: {
@@ -863,7 +863,7 @@ describe('CouncilManager', () => {
       }));
 
       const config: PluginConfig = {
-        council: {
+        ensemble: {
           councillor_retries: 1,
           presets: {
             default: {

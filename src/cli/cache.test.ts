@@ -424,7 +424,10 @@ describe('warmOpenCodePluginCache', () => {
     mkdirSync(join(packageRoot, 'dist', 'cli'), { recursive: true });
     writeFileSync(
       join(packageRoot, 'package.json'),
-      JSON.stringify({ name: 'trans-genderian-orchestra', version: '2.0.0-beta.13' }),
+      JSON.stringify({
+        name: 'trans-genderian-orchestra',
+        version: '2.0.0-beta.13',
+      }),
     );
     process.argv[1] = join(packageRoot, 'dist', 'cli', 'index.js');
 
@@ -529,7 +532,10 @@ describe('warmOpenCodePluginCache', () => {
     mkdirSync(join(packageRoot, 'dist', 'cli'), { recursive: true });
     writeFileSync(
       join(packageRoot, 'package.json'),
-      JSON.stringify({ name: 'trans-genderian-orchestra', version: '2.0.0-beta.13' }),
+      JSON.stringify({
+        name: 'trans-genderian-orchestra',
+        version: '2.0.0-beta.13',
+      }),
     );
     process.argv[1] = join(packageRoot, 'dist', 'cli', 'index.js');
 
@@ -583,7 +589,11 @@ function mkdirTemp(): string {
 function writeCachedPluginPackage(cacheDir?: string): void {
   if (!cacheDir) return;
 
-  const pluginRoot = join(cacheDir, 'node_modules', 'trans-genderian-orchestra');
+  const pluginRoot = join(
+    cacheDir,
+    'node_modules',
+    'trans-genderian-orchestra',
+  );
   mkdirSync(pluginRoot, { recursive: true });
   writeFileSync(
     join(pluginRoot, 'package.json'),

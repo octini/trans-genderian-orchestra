@@ -212,7 +212,10 @@ describe('createPresetManager', () => {
       fs.mkdirSync(configDir, { recursive: true });
       process.env.OPENCODE_CONFIG_DIR = configDir;
 
-      const configPath = path.join(configDir, 'trans-genderian-orchestra.jsonc');
+      const configPath = path.join(
+        configDir,
+        'trans-genderian-orchestra.jsonc',
+      );
       fs.writeFileSync(
         configPath,
         `{

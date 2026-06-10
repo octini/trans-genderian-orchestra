@@ -25,8 +25,7 @@ export const DELEGATE_TASK_ERROR_PATTERNS: DelegateTaskErrorPattern[] = [
   {
     pattern: 'Must provide either category or subagent_type',
     errorType: 'missing_category_or_agent',
-    fixHint:
-      'Add either category="unspecified-low" or subagent_type="scribe".',
+    fixHint: 'Add either category="unspecified-low" or subagent_type="scribe".',
   },
   {
     pattern: 'Unknown category',

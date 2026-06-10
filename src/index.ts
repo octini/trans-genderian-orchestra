@@ -14,7 +14,7 @@ import {
   getPreviousRuntimePreset,
   setActiveRuntimePreset,
 } from './config/runtime-preset';
-import { CouncilManager } from './ensemble';
+import { CouncilManager } from './council';
 import {
   createApplyPatchHook,
   createAutoUpdateCheckerHook,

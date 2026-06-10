@@ -98,7 +98,9 @@ describe('paths', () => {
 
   test('getLiteConfig() respects OPENCODE_CONFIG_DIR', () => {
     process.env.OPENCODE_CONFIG_DIR = '/custom/directory';
-    expect(getLiteConfig()).toBe('/custom/directory/trans-genderian-orchestra.json');
+    expect(getLiteConfig()).toBe(
+      '/custom/directory/trans-genderian-orchestra.json',
+    );
   });
 
   describe('getExistingConfigPath()', () => {

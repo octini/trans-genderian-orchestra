@@ -50,8 +50,8 @@ export class CouncilManager {
     this.client = ctx.client;
     this.directory = ctx.directory;
     this.config = config;
-    this.deprecatedFields = config?.council?._deprecated;
-    this.legacyMasterModel = config?.council?._legacyMasterModel;
+    this.deprecatedFields = config?.ensemble?._deprecated;
+    this.legacyMasterModel = config?.ensemble?._legacyMasterModel;
     this.depthTracker = depthTracker;
     this.tmuxEnabled = tmuxEnabled;
   }
@@ -96,7 +96,7 @@ export class CouncilManager {
       }
     }
 
-    const councilConfig = this.config?.council;
+    const councilConfig = this.config?.ensemble;
     if (!councilConfig) {
       log('[council-manager] Council configuration not found');
       return {

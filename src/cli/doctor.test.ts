@@ -195,7 +195,10 @@ describe('runDoctorCheck', () => {
     const projectDir = path.join(tempDir, 'project');
     const configDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(configDir, { recursive: true });
-    fs.writeFileSync(path.join(configDir, 'trans-genderian-orchestra.json'), '');
+    fs.writeFileSync(
+      path.join(configDir, 'trans-genderian-orchestra.json'),
+      '',
+    );
 
     const result = runDoctorCheck(projectDir);
 

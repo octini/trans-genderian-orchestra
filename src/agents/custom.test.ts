@@ -33,8 +33,7 @@ describe('custom-agent creation', () => {
         'test-auditor': {
           model: 'openai/gpt-5.4-mini',
           prompt: 'You are a custom subagent for auditing.',
-          conductorPrompt:
-            '@test-auditor\n- Role: Compliance audit specialist',
+          conductorPrompt: '@test-auditor\n- Role: Compliance audit specialist',
         },
       },
     };

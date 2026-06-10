@@ -3,7 +3,6 @@ import type { PluginConfig } from '../config';
 import {
   AgentOverrideConfigSchema,
   CouncilConfigSchema,
-  DEFAULT_DISABLED_AGENTS,
   DEFAULT_MODELS,
   PluginConfigSchema,
   SUBAGENT_NAMES,
@@ -385,7 +384,6 @@ describe('createAgents', () => {
   test('does not create ensemble when ensemble is not configured', () => {
     const agents = createAgents();
     const names = agents.map((a) => a.name);
-    const conductor = agents.find((a) => a.name === 'conductor');
 
     expect(names).not.toContain('ensemble');
     // Note: conductor prompt references @ensemble as a delegation target
