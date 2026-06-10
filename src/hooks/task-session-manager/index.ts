@@ -1,6 +1,6 @@
 import path from 'node:path';
 import type { PluginInput } from '@opencode-ai/plugin';
-import type { AgentName } from '../../config';
+import { ALL_AGENT_NAMES, type AgentName } from '../../config';
 import {
   BackgroundJobBoard,
   type BackgroundJobRecord,
@@ -28,14 +28,7 @@ interface PendingTaskCall {
   resumedTaskId?: string;
 }
 
-const AGENT_NAME_SET = new Set<AgentName>([
-  'conductor',
-  'scribe',
-  'principal',
-  'composer',
-  'ensemble',
-  'councillor',
-]);
+const AGENT_NAME_SET = new Set<AgentName>(ALL_AGENT_NAMES);
 
 const MAX_PENDING_TASK_CALLS = 100;
 
@@ -669,7 +662,7 @@ export function createTaskSessionManagerHook(
     ): Promise<void> => {
       for (const [messageIndex, message] of output.messages.entries()) {
         if (message.info.role !== 'user') continue;
-        if (message.info.agent && message.info.agent !== 'orchestrator') {
+        if (message.info.agent && message.info.agent !== 'conductor') {
           continue;
         }
         if (
@@ -687,7 +680,7 @@ export function createTaskSessionManagerHook(
       for (let i = output.messages.length - 1; i >= 0; i -= 1) {
         const message = output.messages[i];
         if (message.info.role !== 'user') continue;
-        if (message.info.agent && message.info.agent !== 'orchestrator') return;
+        if (message.info.agent && message.info.agent !== 'conductor') return;
         if (
           !message.info.sessionID ||
           !options.shouldManageSession(message.info.sessionID)
