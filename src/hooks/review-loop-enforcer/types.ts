@@ -26,3 +26,21 @@ export interface ChangeClassification {
   reason: string;
   riskPaths: string[];
 }
+
+export type EnsembleVerdict = 'approve' | 'reject';
+export type PrincipalVerdict = 'pass' | 'fail';
+
+export type ParsedEnsembleVerdict =
+  | {
+      valid: true;
+      reviewedTaskId: string;
+      verdict: EnsembleVerdict;
+      requiredNextAction: 'principal' | 'composer';
+      criticalIssueCount: number;
+      issues: unknown[];
+    }
+  | { valid: false; reason: string };
+
+export type ParsedPrincipalMetadata =
+  | { valid: true; reviewedTaskId: string; verdict: PrincipalVerdict }
+  | { valid: false; reason: string };
