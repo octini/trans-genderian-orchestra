@@ -9,10 +9,13 @@ import {
   type TuiSnapshot,
 } from './tui-state';
 
-const PLUGIN_NAME = 'oh-my-opencode-slim';
+const PLUGIN_NAME = 'trans-genderian-orchestra';
 const CONFIG_WARNING_COLOR = 'orange';
 const FALLBACK_SIDEBAR_AGENTS = SUBAGENT_NAMES.filter(
-  (agent) => agent !== 'councillor' && !DEFAULT_DISABLED_AGENTS.includes(agent),
+  (agent) =>
+    agent !== 'councillor' &&
+    agent !== 'ensemble' &&
+    !DEFAULT_DISABLED_AGENTS.includes(agent),
 );
 const BORDER = { type: 'single' };
 
@@ -132,7 +135,7 @@ function renderSidebar(
         [
           box(
             { paddingLeft: 1, paddingRight: 1, backgroundColor: theme.accent },
-            [text({ fg: theme.background }, ['OMO-Slim'])],
+            [text({ fg: theme.background }, ['TGO'])],
           ),
           text({ fg: theme.textMuted }, [`v${version}`]),
         ],
