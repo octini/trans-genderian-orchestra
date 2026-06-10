@@ -44,8 +44,9 @@ const SYMBOLS = {
   star: `${YELLOW}★${RESET}`,
 };
 
-const GITHUB_REPO = 'alvinunreal/trans-genderian-orchestra';
-const GITHUB_URL = `https://github.com/${GITHUB_REPO}`;
+export const GITHUB_REPO = 'octini/trans-genderian-orchestra';
+export const GITHUB_URL = `https://github.com/${GITHUB_REPO}`;
+export const DOCS_URL = `${GITHUB_URL}/blob/master/docs/README.md`;
 
 function printHeader(isUpdate: boolean): void {
   console.log();
@@ -415,10 +416,7 @@ async function runInstall(config: InstallConfig): Promise<number> {
   console.log(`${modelsInfo}`);
   const altProviders = 'For the full configuration reference, see:';
   console.log(altProviders);
-  const docsUrl =
-    'https://github.com/alvinunreal/trans-genderian-orchestra/' +
-    'blob/master/docs/README.md';
-  console.log(`  ${BLUE}${docsUrl}${RESET}`);
+  console.log(`  ${BLUE}${DOCS_URL}${RESET}`);
   console.log();
 
   await askToStarRepo(config);

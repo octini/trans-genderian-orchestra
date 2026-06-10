@@ -293,7 +293,7 @@ export function createAgents(config?: PluginConfig): AgentDefinition[] {
 
   // 2b. Backward compat: if ensemble has no preset override and still uses the
   // hardcoded default model, fall back to the deprecated ensemble.master.model.
-  // See https://github.com/alvinunreal/trans-genderian-orchestra/issues/369
+  // See https://github.com/octini/trans-genderian-orchestra/issues/369
   const legacyMasterModel = config?.ensemble?._legacyMasterModel;
   if (legacyMasterModel) {
     const ensembleAgent = builtInSubAgents.find((a) => a.name === 'ensemble');

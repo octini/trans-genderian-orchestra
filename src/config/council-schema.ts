@@ -169,7 +169,7 @@ export const CouncilConfigSchema = z
 
     // Backward compat: extract master.model so the ensemble agent can use it
     // as a fallback when no explicit ensemble entry exists in the active preset.
-    // See https://github.com/alvinunreal/trans-genderian-orchestra/issues/369
+    // See https://github.com/octini/trans-genderian-orchestra/issues/369
     const legacyMasterModel: string | undefined =
       typeof data.master === 'object' &&
       data.master !== null &&
