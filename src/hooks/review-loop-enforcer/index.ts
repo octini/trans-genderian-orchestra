@@ -29,6 +29,7 @@ interface TextPart {
   type: string;
   text?: string;
   synthetic?: unknown;
+  reviewLoopEnforcerInjected?: boolean;
   [key: string]: unknown;
 }
 
@@ -42,7 +43,7 @@ const REVIEW_AGENTS = new Set<ReviewAgent>([
   'ensemble',
   'principal',
 ]);
-const SENTINEL = 'SENTINEL: review-loop-enforcer-v1';
+const SAFE_TASK_ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
 
 export function createReviewLoopEnforcerHook(
   ctx: PluginInput,
@@ -75,7 +76,8 @@ export function createReviewLoopEnforcerHook(
     if (!metadata) return fallback;
     try {
       const parsed = JSON.parse(metadata) as { taskId?: unknown };
-      return typeof parsed.taskId === 'string' && parsed.taskId.trim()
+      return typeof parsed.taskId === 'string' &&
+        SAFE_TASK_ID_PATTERN.test(parsed.taskId.trim())
         ? parsed.taskId.trim()
         : fallback;
     } catch {
@@ -217,13 +219,14 @@ export function createReviewLoopEnforcerHook(
         const textPart = message.parts.find(
           (part) => part.type === 'text' && typeof part.text === 'string',
         );
-        if (!textPart || textPart.text?.includes(SENTINEL)) return;
+        if (!textPart || textPart.reviewLoopEnforcerInjected === true) return;
 
         textPart.text = [
           textPart.text ?? '',
           '',
           formatReviewGateReminder(gate),
         ].join('\n');
+        textPart.reviewLoopEnforcerInjected = true;
         return;
       }
     },
