@@ -58,7 +58,7 @@ export function createPhaseReminderHook() {
 
       const lastUserMessage = messages[lastUserMessageIndex];
       const agent = lastUserMessage.info.agent;
-      if (agent && agent !== 'orchestrator') {
+      if (agent && agent !== 'conductor') {
         return;
       }
 
