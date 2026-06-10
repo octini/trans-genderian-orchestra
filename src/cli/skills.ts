@@ -19,6 +19,27 @@ export interface PermissionOnlySkill {
  */
 export const PERMISSION_ONLY_SKILLS: PermissionOnlySkill[] = [
   {
+    name: 'tdd',
+    allowedAgents: ['composer'],
+    description: 'Test-driven development workflow for implementation tasks',
+  },
+  {
+    name: 'test-driven-development',
+    allowedAgents: ['composer'],
+    description: 'Test-driven development workflow for implementation tasks',
+  },
+  {
+    name: 'verification-before-completion',
+    allowedAgents: ['composer'],
+    description:
+      'Verification checklist before marking implementation complete',
+  },
+  {
+    name: 'receiving-code-review',
+    allowedAgents: ['composer'],
+    description: 'Workflow for addressing code review feedback',
+  },
+  {
     name: 'requesting-code-review',
     allowedAgents: ['principal'],
     description:
