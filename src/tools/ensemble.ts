@@ -60,7 +60,7 @@ Returns the councillor responses with a summary footer.`,
 
       // Guard: Only the council agent can invoke council sessions.
       // If agent is missing from context, allow through (backward compatible).
-      const allowedAgents = ['council'];
+      const allowedAgents = ['ensemble'];
       const callingAgent = (toolContext as { agent?: string }).agent;
       if (callingAgent && !allowedAgents.includes(callingAgent)) {
         throw new Error(

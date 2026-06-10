@@ -164,13 +164,9 @@ function writeUniqueFile(
 export function processImageAttachments(args: {
   messages: MessageWithParts[];
   workDir: string;
-  disabledAgents: Set<string>;
   log: (msg: string) => void;
 }): void {
-  const { messages, workDir, disabledAgents, log } = args;
-
-  const observerEnabled = !disabledAgents.has('observer');
-  if (!observerEnabled) return;
+  const { messages, workDir, log } = args;
 
   const messagesWithImages: Array<{
     msg: MessageWithParts;
@@ -253,7 +249,7 @@ export function processImageAttachments(args: {
       .concat([
         {
           type: 'text',
-          text: `[Image attachment detected.${pathsText} Your model may not support image input. Delegate to @observer with the file path(s) above so it can read the file with its read tool.]`,
+          text: `[Image attachment detected.${pathsText} Your model may not support image input. Use the file path(s) above to read the file with a read tool.]`,
         },
       ]);
   }

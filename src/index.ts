@@ -1022,15 +1022,13 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
         }
       }
 
-      // Strip image parts from conductor messages when @observer is
-      // available. When the conductor's model doesn't support image
-      // input, the API call fails before the LLM can respond. We replace
-      // image bytes with a text nudge so the conductor delegates to
-      // @observer instead.
+      // Strip image parts from conductor messages. When the conductor's
+      // model doesn't support image input, the API call fails before the
+      // LLM can respond. We replace image bytes with a text nudge so the
+      // conductor can use the saved file path(s) with a read tool.
       processImageAttachments({
         messages: typedOutput.messages,
         workDir: ctx.directory,
-        disabledAgents,
         log,
       });
 

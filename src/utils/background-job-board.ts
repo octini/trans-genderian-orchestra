@@ -65,13 +65,11 @@ const TERMINAL_STATES = new Set<BackgroundJobState>([
 ]);
 
 const AGENT_PREFIX: Record<string, string> = {
-  council: 'cou',
-  designer: 'des',
-  explorer: 'exp',
-  fixer: 'fix',
-  librarian: 'lib',
-  observer: 'obs',
-  oracle: 'ora',
+  ensemble: 'ens',
+  composer: 'com',
+  scribe: 'scr',
+  principal: 'pri',
+  conductor: 'con',
 };
 
 export class BackgroundJobBoard {
