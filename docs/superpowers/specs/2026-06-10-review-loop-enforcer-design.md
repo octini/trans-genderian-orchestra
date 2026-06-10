@@ -26,7 +26,7 @@ The enforcer should preserve the Conductor-led workflow. It should remind, gate,
 ## Non-Goals
 
 - Do not automatically invoke `@ensemble`, `@principal`, or `@composer` without Conductor.
-- Do not block trivial documentation/configuration tweaks from quick principal-only review.
+- Do not block trivial documentation changes or small safe configuration tweaks that satisfy the under-10-lines/no-risk-path rule from quick principal-only review.
 - Do not redesign the ensemble/council system.
 - Do not replace prompt-level guidance; runtime enforcement complements it.
 - Do not add broad artifact lifecycle machinery or revive TGO v2 orchestration complexity.
@@ -40,7 +40,7 @@ Add a focused hook implementation under `src/hooks/review-loop-enforcer/` and re
 - `src/index.ts` — include the hook in plugin initialization so it runs during normal TGO sessions.
 - `src/workflow/review-loop-counter.ts` — wire existing counter behavior into the enforcer rather than duplicating loop state.
 - Verdict parser/schema — validate predictable `@ensemble` JSON metadata before advancing the gate.
-- Prompt updates — small additions for Composer, Ensemble, and Principal to emit/consume predictable review metadata.
+- Prompt updates — only the minimal metadata additions needed for Composer, Ensemble, and Principal to correlate review results.
 
 At runtime, the enforcer observes agent-completion and next-step events, derives the required review action, and blocks forward progress until the required action is satisfied.
 
@@ -49,8 +49,9 @@ At runtime, the enforcer observes agent-completion and next-step events, derives
 Skip `@ensemble` only when the completed Composer work is clearly low risk:
 
 1. Markdown-only documentation changes.
-2. Simple configuration tweaks.
-3. Fewer than 10 changed lines, as long as the change does **not** touch agent, review, or plugin logic.
+2. Fewer than 10 changed lines, as long as the change does **not** touch any risk path.
+
+There is no standalone "simple configuration tweak" category. Configuration changes skip `@ensemble` only when they fit the under-10-lines rule and avoid all risk paths.
 
 All other completed Composer work requires `@ensemble` before `@principal`.
 
@@ -92,6 +93,13 @@ Parser rules:
 
 Principal metadata should confirm the final review gate has been completed for the same Composer task or for the direct principal-only skip path.
 
+Prompt-update scope is intentionally narrow:
+
+- Composer adds a task-id field to its summary/output metadata.
+- Ensemble emits the existing JSON verdict block with added `reviewedTaskId`.
+- Principal confirms `reviewedTaskId` in its result block.
+- No other prompt edits.
+
 ## Failure Handling
 
 - If the hook cannot classify changes, require `@ensemble`.
@@ -125,8 +133,8 @@ Additional useful assertions:
 1. Add `src/hooks/review-loop-enforcer/` with a small state machine around Composer task completion, required next action, and review satisfaction.
 2. Register the hook in `src/hooks/index.ts` and `src/index.ts`.
 3. Wire `src/workflow/review-loop-counter.ts` into the hook for cycle tracking and three-cycle escalation.
-4. Add a narrow change classifier for markdown-only, simple-config, small-safe, and high-risk plugin/agent/review logic changes.
+4. Add a narrow change classifier for markdown-only, under-10-lines/no-risk-path, and high-risk plugin/agent/review logic changes.
 5. Add the ensemble verdict parser/schema and correlation checks.
-6. Update Composer, Ensemble, and Principal prompts only enough to produce predictable task/review metadata.
+6. Update Composer, Ensemble, and Principal prompts only for the task-id, `reviewedTaskId`, and principal confirmation metadata described above.
 7. Add the required tests before broadening behavior.
 8. Keep the implementation small and local; this is a follow-up enforcement layer, not a rebuild of the workflow system.
