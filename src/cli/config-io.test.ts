@@ -279,6 +279,122 @@ describe('config-io', () => {
     expect(saved.plugin).toEqual(['other', 'trans-genderian-orchestra']);
   });
 
+  test('addPluginToOpenCodeConfig removes legacy package entries while adding current plugin', async () => {
+    const configPath = join(tmpDir, 'opencode', 'opencode.json');
+    paths.ensureConfigDir();
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        plugin: [
+          'other',
+          'oh-my-opencode-slim',
+          'oh-my-opencode-slim@1.1.2',
+          'omo-slim@0.9.0',
+          ['oh-my-opencode-slim@1.0.0', { enabled: true }],
+          ['omo-slim', { enabled: true }],
+          'user-slim-helper',
+          'file:///tmp/not-oh-my-opencode-slim-adjacent',
+        ],
+      }),
+    );
+    process.argv[1] = '';
+
+    const result = await addPluginToOpenCodeConfig();
+    expect(result.success).toBe(true);
+
+    const saved = JSON.parse(readFileSync(configPath, 'utf-8'));
+    expect(saved.plugin).toEqual([
+      'other',
+      'user-slim-helper',
+      'file:///tmp/not-oh-my-opencode-slim-adjacent',
+      'trans-genderian-orchestra',
+    ]);
+  });
+
+  test('addPluginToOpenCodeConfig removes legacy file entries only when path segment is exact', async () => {
+    const configPath = join(tmpDir, 'opencode', 'opencode.json');
+    paths.ensureConfigDir();
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        plugin: [
+          'file:///plugins/oh-my-opencode-slim',
+          'file:///plugins/omo-slim',
+          'file:///plugins/oh-my-opencode-slim-adjacent',
+          '/plugins/omo-slim-helper',
+          'other',
+        ],
+      }),
+    );
+    process.argv[1] = '';
+
+    const result = await addPluginToOpenCodeConfig();
+    expect(result.success).toBe(true);
+
+    const saved = JSON.parse(readFileSync(configPath, 'utf-8'));
+    expect(saved.plugin).toEqual([
+      'file:///plugins/oh-my-opencode-slim-adjacent',
+      '/plugins/omo-slim-helper',
+      'other',
+      'trans-genderian-orchestra',
+    ]);
+  });
+
+  test('addPluginToOpenCodeConfig keeps one current entry when legacy entries are present', async () => {
+    const configPath = join(tmpDir, 'opencode', 'opencode.json');
+    paths.ensureConfigDir();
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        plugin: [
+          'other',
+          'trans-genderian-orchestra',
+          'oh-my-opencode-slim',
+          'user-slim-helper',
+        ],
+      }),
+    );
+    process.argv[1] = '';
+
+    const result = await addPluginToOpenCodeConfig();
+    expect(result.success).toBe(true);
+
+    const saved = JSON.parse(readFileSync(configPath, 'utf-8'));
+    expect(saved.plugin).toEqual([
+      'other',
+      'user-slim-helper',
+      'trans-genderian-orchestra',
+    ]);
+  });
+
+  test('addPluginToOpenCodeConfig preserves scoped packages that contain legacy names', async () => {
+    const configPath = join(tmpDir, 'opencode', 'opencode.json');
+    paths.ensureConfigDir();
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        plugin: [
+          '@acme/omo-slim',
+          '@acme/oh-my-opencode-slim@1.0.0',
+          ['@acme/omo-slim', { enabled: true }],
+          'oh-my-opencode-slim',
+        ],
+      }),
+    );
+    process.argv[1] = '';
+
+    const result = await addPluginToOpenCodeConfig();
+    expect(result.success).toBe(true);
+
+    const saved = JSON.parse(readFileSync(configPath, 'utf-8'));
+    expect(saved.plugin).toEqual([
+      '@acme/omo-slim',
+      '@acme/oh-my-opencode-slim@1.0.0',
+      ['@acme/omo-slim', { enabled: true }],
+      'trans-genderian-orchestra',
+    ]);
+  });
+
   test('addPluginToOpenCodeTuiConfig adds plugin to tui.json and removes duplicates', async () => {
     const tuiPath = join(tmpDir, 'opencode', 'tui.json');
     paths.ensureConfigDir();
@@ -333,6 +449,93 @@ describe('config-io', () => {
 
     const saved = JSON.parse(readFileSync(tuiPath, 'utf-8'));
     expect(saved.plugin).toEqual(['other', 'trans-genderian-orchestra']);
+  });
+
+  test('addPluginToOpenCodeTuiConfig removes legacy sidebar entries while adding current plugin', async () => {
+    const tuiPath = join(tmpDir, 'opencode', 'tui.json');
+    paths.ensureConfigDir();
+    writeFileSync(
+      tuiPath,
+      JSON.stringify({
+        plugin: [
+          'other',
+          'oh-my-opencode-slim',
+          'oh-my-opencode-slim@1.1.2',
+          'omo-slim@0.9.0',
+          ['oh-my-opencode-slim', { enabled: true }],
+          ['omo-slim@0.9.0', { enabled: true }],
+          'user-slim-helper',
+          'file:///tmp/not-oh-my-opencode-slim-adjacent',
+        ],
+      }),
+    );
+    process.argv[1] = '';
+
+    const result = await addPluginToOpenCodeTuiConfig();
+    expect(result.success).toBe(true);
+
+    const saved = JSON.parse(readFileSync(tuiPath, 'utf-8'));
+    expect(saved.plugin).toEqual([
+      'other',
+      'user-slim-helper',
+      'file:///tmp/not-oh-my-opencode-slim-adjacent',
+      'trans-genderian-orchestra',
+    ]);
+  });
+
+  test('addPluginToOpenCodeTuiConfig keeps one current entry when legacy entries are present', async () => {
+    const tuiPath = join(tmpDir, 'opencode', 'tui.json');
+    paths.ensureConfigDir();
+    writeFileSync(
+      tuiPath,
+      JSON.stringify({
+        plugin: [
+          'other',
+          'trans-genderian-orchestra',
+          'oh-my-opencode-slim',
+          'user-slim-helper',
+        ],
+      }),
+    );
+    process.argv[1] = '';
+
+    const result = await addPluginToOpenCodeTuiConfig();
+    expect(result.success).toBe(true);
+
+    const saved = JSON.parse(readFileSync(tuiPath, 'utf-8'));
+    expect(saved.plugin).toEqual([
+      'other',
+      'user-slim-helper',
+      'trans-genderian-orchestra',
+    ]);
+  });
+
+  test('addPluginToOpenCodeTuiConfig preserves scoped packages that contain legacy names', async () => {
+    const tuiPath = join(tmpDir, 'opencode', 'tui.json');
+    paths.ensureConfigDir();
+    writeFileSync(
+      tuiPath,
+      JSON.stringify({
+        plugin: [
+          '@acme/omo-slim',
+          '@acme/oh-my-opencode-slim@1.0.0',
+          ['@acme/oh-my-opencode-slim@1.0.0', { enabled: true }],
+          'omo-slim@0.9.0',
+        ],
+      }),
+    );
+    process.argv[1] = '';
+
+    const result = await addPluginToOpenCodeTuiConfig();
+    expect(result.success).toBe(true);
+
+    const saved = JSON.parse(readFileSync(tuiPath, 'utf-8'));
+    expect(saved.plugin).toEqual([
+      '@acme/omo-slim',
+      '@acme/oh-my-opencode-slim@1.0.0',
+      ['@acme/oh-my-opencode-slim@1.0.0', { enabled: true }],
+      'trans-genderian-orchestra',
+    ]);
   });
 
   test('addPluginToOpenCodeTuiConfig honors OPENCODE_TUI_CONFIG', async () => {

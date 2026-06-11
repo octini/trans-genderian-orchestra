@@ -27,6 +27,7 @@ import type {
 } from './types';
 
 const PACKAGE_NAME = 'trans-genderian-orchestra';
+const LEGACY_PACKAGE_NAMES = ['oh-my-opencode-slim', 'omo-slim'] as const;
 const DEFAULT_OPENCODE_AGENTS_TO_DISABLE = [
   'build',
   'explore',
@@ -113,12 +114,57 @@ function isPackageManagerInstall(path: string): boolean {
   return normalizedPath.includes(`/node_modules/${PACKAGE_NAME}`);
 }
 
+function isPackageSpec(entry: string, packageName: string): boolean {
+  return entry === packageName || entry.startsWith(`${packageName}@`);
+}
+
+function isFileOrPathLikePluginEntry(entry: string): boolean {
+  if (entry.startsWith('@')) {
+    return false;
+  }
+
+  return (
+    entry.startsWith('file://') ||
+    entry.startsWith('/') ||
+    entry.startsWith('./') ||
+    entry.startsWith('../') ||
+    entry.startsWith('~') ||
+    entry.includes('/')
+  );
+}
+
+function pathSegments(entry: string): string[] {
+  const withoutFileScheme = entry.startsWith('file://')
+    ? entry.slice('file://'.length)
+    : entry;
+  return normalizePathForMatch(withoutFileScheme)
+    .split('/')
+    .filter((segment) => segment.length > 0);
+}
+
+function isLegacyPluginEntry(entry: string): boolean {
+  return LEGACY_PACKAGE_NAMES.some((packageName) => {
+    if (isPackageSpec(entry, packageName)) {
+      return true;
+    }
+
+    if (!isFileOrPathLikePluginEntry(entry)) {
+      return false;
+    }
+
+    return pathSegments(entry).some((segment) =>
+      isPackageSpec(segment, packageName),
+    );
+  });
+}
+
 function isPluginEntry(entry: string): boolean {
   return (
     entry === PACKAGE_NAME ||
     entry.startsWith(`${PACKAGE_NAME}@`) ||
     (entry.startsWith('file://') && entry.includes(PACKAGE_NAME)) ||
-    isLocalPackageRootEntry(entry)
+    isLocalPackageRootEntry(entry) ||
+    isLegacyPluginEntry(entry)
   );
 }
 
