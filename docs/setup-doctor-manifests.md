@@ -13,15 +13,15 @@
 
 Doctor reports setup state, v1/omo-slim detection, warnings, and repair suggestions without mutating config.
 
-## Bootstrap And Setup
+## Install And Setup
 
-Use explicit preset dimensions:
+Preview setup with the implemented installer:
 
 ```bash
-trans-genderian-orchestra bootstrap --tools default --models balanced --resilience balanced
+trans-genderian-orchestra install --dry-run --preset=github-copilot
 ```
 
-Setup should preview planned changes, preserve user-managed config, and separate tool/model/resilience dimensions.
+Setup should preview planned changes, preserve user-managed config, and keep generated preset choices explicit.
 
 ## Config Ownership
 

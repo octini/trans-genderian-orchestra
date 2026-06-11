@@ -79,7 +79,7 @@ function checkPackFiles(pkg: ReleasePackageJson): CheckResult {
 function checkApprovalBoundaries(): CheckResult {
   const release = readFileSync(join(ROOT, 'RELEASE.md'), 'utf8');
   const required =
-    'No git push, npm publish, latest tag, remote repository rewrite, or archived v1 deletion';
+    'No git push, npm publish, latest tag, or remote repository rewrite';
   return {
     id: 'approval_boundaries',
     ok: release.includes(required),

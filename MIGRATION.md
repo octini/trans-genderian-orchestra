@@ -1,12 +1,12 @@
-# Migrating From v1 / omo-slim To TGO v2
+# Migrating From TGO v2 / v1 / omo-slim To TGO v3
 
-## V1/omo-slim detection
+## Prior-version / omo-slim detection
 
-TGO v2 doctor and migration preview detect old `oh-my-opencode-slim`, `omo-slim`, non-namespaced v1 agents, and non-namespaced v1 MCP entries.
+TGO v3 doctor and migration preview detect old TGO, `oh-my-opencode-slim`, `omo-slim`, non-namespaced legacy agents, and non-namespaced legacy MCP entries.
 
 ## Replacement rule
 
-After explicit approval, v2 replaces v1 rather than running side-by-side. The migration preview removes active v1-era entries and adds TGO v2-managed entries while preserving user-owned providers, plugins, MCPs, agents, and custom config.
+After explicit approval, v3 replaces prior TGO/omo-slim managed entries rather than running side-by-side. The migration preview removes active legacy entries and adds TGO v3-managed entries while preserving user-owned providers, plugins, MCPs, agents, and custom config.
 
 ## Rollback
 
@@ -18,4 +18,4 @@ Uninstall removes only TGO-managed entries recorded in the manifest. It does not
 
 ## Release boundary
 
-No automatic push, PR, latest publish, root cutover, or worktree cleanup happens without explicit approval.
+No automatic push, PR, npm publish, dist-tag movement, remote repository rewrite, or worktree cleanup happens without explicit approval.

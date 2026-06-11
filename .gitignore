@@ -1,8 +1,16 @@
-
 # Beads / Dolt files (added by bd init)
+.beads/
 .dolt/
 *.db
 .beads-credential-key
+
+# Local OpenCode / agent artifacts
+.opencode/
+user_uploads/
+fetched_files_analysis.md
+archive/
+designs/
+docs/superpowers/
 
 # macOS / editor noise
 .DS_Store

@@ -1,1 +1,0 @@
-export { createPathGatingHook } from './hook';

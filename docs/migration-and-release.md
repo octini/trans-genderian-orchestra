@@ -1,26 +1,26 @@
 # Migration And Release
 
-## V1 And omo-slim Detection
+## Prior-version And omo-slim Detection
 
-Doctor detects existing v1/omo-slim configuration and reports replacement guidance without mutating it.
+Doctor detects existing TGO v2, v1, and omo-slim configuration and reports replacement guidance without mutating it.
 
 ## Replacement Rule
 
-TGO v2 replaces v1 rather than running side by side. The migration path should preserve user-owned config and use backups before writes.
+TGO v3 replaces prior TGO/omo-slim managed entries rather than running side by side. The migration path should preserve user-owned config and use backups before writes.
 
 ## Rollback And Uninstall
 
 Rollback relies on manifest-linked backups. Uninstall removes only TGO-managed entries and does not uninstall shared CLIs.
 
-## Root Cutover
+## Root Package State
 
-The active package lives at the repository root. Archived v1 material is retained as reference material, not active install guidance.
+The active package lives at the repository root. Internal planning artifacts and archived legacy source are not active public install guidance.
 
 ## npm Beta State
 
-- `2.0.0-beta.6` is the current public beta package.
-- `trans-genderian-orchestra@beta` is the recommended selector.
-- npm `latest` still points to `2.0.0-beta.0` until a non-prerelease version is published.
+- `3.0.0-beta.1` is the current repository package version.
+- `trans-genderian-orchestra@beta` is the recommended selector after npm `beta` is verified to match the intended repository version.
+- Verify npm `beta` before public release claims; do not rely on `latest` until a stable release intentionally moves it.
 
 ## Release Gates
 
@@ -31,7 +31,7 @@ Release-readiness validation should include tests, typecheck, lint/check, build/
 The reusable public beta smoke command is:
 
 ```bash
-bun run verify:public-beta-opencode
+bun run scripts/verify-public-beta-opencode.ts
 ```
 
 It verifies the published beta through OpenCode in a disposable environment and should be run only when external access is acceptable.
@@ -44,7 +44,6 @@ Before applying setup to a real profile, restart a real OpenCode session and run
 /tgo:doctor --json
 ```
 
-## Spec Coverage
+## Approval Boundary
 
-- Spec 00: root package architecture and replacement goals.
-- Spec 07: implementation phases, validation gates, root cutover, beta release, and manual OpenCode gate.
+No git push, npm publish, dist-tag movement, remote repository rewrite, or destructive cleanup happens without explicit approval.

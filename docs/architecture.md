@@ -6,7 +6,7 @@ TGO v3 is an OpenCode workflow plugin that coordinates specialist agents, a stru
 
 ## Beta Scope
 
-- Current public package: `3.0.0-beta.1`.
+- Current repository package version: `3.0.0-beta.1`.
 - Foundation: oh-my-opencode-slim v2-beta.15 with restructured agent roster.
 - The package lives at the repository root.
 
@@ -29,7 +29,7 @@ TGO v3 is an OpenCode workflow plugin that coordinates specialist agents, a stru
 
 ## Package Layout
 
-The active package is the repository root. Archived v1 material remains reference material only and is not active package guidance.
+The active package is the repository root. Internal planning artifacts and archived legacy source are not active package guidance.
 
 ## Namespacing
 

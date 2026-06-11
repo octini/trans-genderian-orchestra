@@ -46,7 +46,7 @@
     "build:cli": "bun build src/cli/index.ts --outdir dist/cli --target node --format esm --external @ast-grep/napi --external @opencode-ai/plugin --external @opencode-ai/plugin/* --external @opencode-ai/sdk --external @opencode-ai/sdk/* --external jsdom --external zod",
     "build": "bun run clean:dist && bun run build:plugin && bun run build:cli && tsc --emitDeclarationOnly",
     "typecheck": "tsc --noEmit",
-    "test": "bun test --path-ignore-patterns archive",
+    "test": "bun test",
     "lint": "biome lint .",
     "format": "biome format . --write",
     "check:ci": "biome check .",

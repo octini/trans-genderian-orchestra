@@ -10,7 +10,7 @@ Generated default model assignments:
 
 ## Ensemble Model Auto-Population
 
-By default, the ensemble agent model is a model reference to the active preset's conductor model. Generated council configuration sets `default_preset` to `github-copilot`, runs councillors in `parallel`, uses a `180000` ms timeout, and provides three differentiated councillor seats for both generated presets.
+By default, the ensemble agent model is a model reference to the active preset's conductor model. Generated ensemble/councillor configuration sets `default_preset` to `github-copilot`, runs councillors in `parallel`, uses a `180000` ms timeout, and provides three differentiated councillor seats for both generated presets.
 
 Users can override with explicit model strings. The reference syntax `"ensemble": "conductor"` resolves to the conductor's assigned model.
 
@@ -21,7 +21,7 @@ Councillor seats are internal ensemble participants with differentiated review f
 - Second: Edge Cases & Security
 - Third: UX & Performance
 
-Generated `opencode-go` council defaults use `opencode-go/mimo-v2.5` (`high`) for first, `opencode-go/deepseek-v4-flash` (`max`) for second, and `opencode-go/kimi-k2.6` with its default variant for third.
+Generated `opencode-go` councillor defaults use `opencode-go/mimo-v2.5` (`high`) for first, `opencode-go/deepseek-v4-flash` (`max`) for second, and `opencode-go/kimi-k2.6` with its default variant for third.
 
 They should not ask the user questions or write files; they provide independent read-only analysis for synthesis.
 

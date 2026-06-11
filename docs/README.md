@@ -1,6 +1,8 @@
-# TGO v2 Documentation
+# TGO v3 Documentation
 
-This hub collects the current public beta documentation for `trans-genderian-orchestra` v2. The root README is the front door; these pages are the deeper references.
+This hub collects the current public beta documentation for `trans-genderian-orchestra` v3. The root README is the front door; these pages are the deeper references.
+
+Current repository package version: `3.0.0-beta.1`.
 
 Current setup uses a minimal `~/.config/opencode/opencode.jsonc` plus a TGO-owned peer catalog at `~/.config/opencode/trans-genderian-orchestra.jsonc`. Fresh generated configs write `github-copilot` as the active default and include exactly the `github-copilot` and `opencode-go` primary presets.
 
@@ -10,7 +12,7 @@ Current setup uses a minimal `~/.config/opencode/opencode.jsonc` plus a TGO-owne
 - [Agents And Workflows](./agents-and-workflows.md)
 - [Setup, Doctor, And Manifests](./setup-doctor-manifests.md)
 - [Tools, Skills, And MCPs](./tools-skills-mcps.md)
-- [Models, Resilience, And Council](./models-resilience-council.md)
+- [Models, Resilience, And Ensemble](./models-resilience-ensemble.md)
 - [Migration And Release](./migration-and-release.md)
 
 ## Operational Guides
@@ -21,21 +23,20 @@ Current setup uses a minimal `~/.config/opencode/opencode.jsonc` plus a TGO-owne
 ## Validation Commands
 
 ```bash
-bun test src/release/docs.test.ts src/release/release-readiness.test.ts src/release/repository-layout.test.ts
+bun test src/index.test.ts src/cli/providers.test.ts src/cli/config-io.test.ts
 bun run typecheck
 bun run check:ci
+bun run build
 bun run verify:release-readiness
 ```
 
-`bun run verify:public-beta-opencode` is available for public beta smoke testing, but it depends on a usable OpenCode/network/model environment.
+The optional public beta smoke lives at `scripts/verify-public-beta-opencode.ts`; run it only when the npm registry, OpenCode CLI, and model access are available and the published beta should match the local package version.
 
-## Spec Coverage Map
+## Topic Coverage
 
-- Spec 00: umbrella architecture and workflow philosophy.
-- Spec 01: deterministic setup foundation.
-- Spec 02: agent roster and permissions.
-- Spec 03: workflow contracts and artifacts.
-- Spec 04: scheduler, worktrees, and integration flow.
-- Spec 05: tools, skills, MCPs, and integrations.
-- Spec 06: models, resilience, and council derivation.
-- Spec 07: implementation phases and validation gates.
+- Architecture goals, non-goals, and workflow philosophy.
+- Deterministic setup foundation, manifests, backups, doctor, config merge, and secret safety.
+- Active v3 agent roster and review-loop permissions.
+- Workflow contracts, scheduler/worktree planning, and integration flow.
+- Tool presets, skills, MCP planning, preservation rules, and CLI detection.
+- Models, resilience, ensemble, and councillor derivation.

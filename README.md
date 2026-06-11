@@ -1,20 +1,20 @@
-# trans-genderian-orchestra v2
+# trans-genderian-orchestra v3
 
-> TGO v2 is an OpenCode dispatcher plugin that turns ad-hoc AI coding sessions into a review-oriented engineering workflow.
+> TGO v3 is an OpenCode workflow plugin that turns ad-hoc AI coding sessions into a review-oriented engineering workflow.
 
-`trans-genderian-orchestra` currently lives at the repository root and is published as `2.0.0-beta.6` on the npm `beta` dist-tag.
+`trans-genderian-orchestra` lives at the repository root. The current repository package version is `3.0.0-beta.1`.
 
 ## What It Is
 
-TGO v2 routes work through specialist agents, deterministic setup commands, durable context artifacts, and reviewer gates. The goal is to make OpenCode behave less like one improvising assistant and more like a small engineering team with a technical lead, researcher, builder, reviewer, and escalation council.
+TGO v3 routes work through specialist agents, deterministic setup commands, structured handoffs, and reviewer gates. The goal is to make OpenCode behave less like one improvising assistant and more like a small engineering team with a conductor, scribe, composer, principal reviewer, ensemble panel, and councillor seats.
 
-This beta is usable for setup validation and documentation-led testing, but it is still a public beta. Prefer explicit beta commands until a non-prerelease version moves npm `latest` away from the original `2.0.0-beta.0` publish.
+This beta is usable for setup validation and documentation-led testing, but it is still a public beta. Prefer local repository commands until the npm `beta` dist-tag is verified to match the repository package version.
 
 ## Philosophy
 
-- Technical-lead orchestration: the orchestrator owns phase control, routing, confirmation, delegation, and synthesis instead of silently implementing arbitrary changes.
-- Specialist lanes: researcher, builder, reviewer, council, and councillor roles have separate responsibilities and permission expectations.
-- Approval gates: behavior-changing work should pass through approved plans, scoped implementation, and reviewer verification.
+- Conductor-led orchestration: the conductor owns phase control, routing, confirmation, delegation, and synthesis instead of silently implementing arbitrary changes.
+- Specialist lanes: scribe, composer, principal, ensemble, and councillor roles have separate responsibilities and permission expectations.
+- Approval gates: behavior-changing work should pass through scoped implementation, ensemble review, and principal verification.
 - Retrieval-led reasoning: agents should inspect project files, docs, history, and external references before relying on memory.
 - SDD-style artifacts: specs, plans, evidence, reviews, handoffs, and state files preserve intent across compaction and handoff.
 - Deterministic config: setup, bootstrap, doctor, and uninstall flows are previewable, manifest-backed, backup-aware, and reversible.
@@ -22,13 +22,14 @@ This beta is usable for setup validation and documentation-led testing, but it i
 
 ## Quick Start
 
-Install the current public beta explicitly:
+For local validation, install dependencies and build from the repository root:
 
 ```bash
-npm install trans-genderian-orchestra@beta
+bun install
+bun run build
 ```
 
-Install the beta into OpenCode:
+To install a published beta into OpenCode, first verify the npm `beta` dist-tag matches the intended release, then use:
 
 ```bash
 opencode plugin trans-genderian-orchestra@beta --global --force
@@ -42,7 +43,7 @@ Run doctor before applying setup or bootstrap changes:
 /tgo:doctor --json
 ```
 
-The published slash command resolves the CLI through:
+The published slash command should resolve the CLI through:
 
 ```bash
 npx --yes trans-genderian-orchestra@beta doctor --json
@@ -52,33 +53,33 @@ It intentionally does not run `bd doctor`; Beads diagnostics are separate from T
 
 ## Bootstrap Preview
 
-Preview or apply setup with explicit preset dimensions:
+Preview or apply setup with the implemented installer:
 
 ```bash
-trans-genderian-orchestra bootstrap --tools default --models balanced --resilience balanced
+trans-genderian-orchestra install --dry-run --preset=github-copilot
 ```
 
-The bootstrap path plans required OpenCode entries, tools, model presets, and resilience settings while preserving user-owned config. It keeps `~/.config/opencode/opencode.jsonc` minimal for plugin/default-agent/MCP entries and writes TGO-owned agent/model catalog data to `~/.config/opencode/trans-genderian-orchestra.jsonc`.
+The setup path plans required OpenCode entries and model preset choices while preserving user-owned config. It keeps `~/.config/opencode/opencode.jsonc` minimal for plugin/default-agent/MCP entries and writes TGO-owned agent/model catalog data to `~/.config/opencode/trans-genderian-orchestra.jsonc`.
 
 ## Beta Status
 
-- Package version: `2.0.0-beta.6`.
-- npm `beta` dist-tag: `2.0.0-beta.6`.
-- npm `latest` dist-tag: still points at `2.0.0-beta.0`.
-- Recommended install selector: `trans-genderian-orchestra@beta`.
-- Phase 7 release hardening: deterministic v1/omo-slim detection, rollback helpers, safe uninstall, doctor warnings, release gates, and migration documentation.
+- Repository package version: `3.0.0-beta.1`.
+- Published-beta selector after dist-tag verification: `trans-genderian-orchestra@beta`.
+- The package lives at the repository root.
+- V3 replaces the previous TGO v2 role model with conductor, scribe, composer, principal, ensemble, and councillor roles.
+- Release hardening: deterministic prior-version/omo-slim detection, rollback helpers, safe uninstall, doctor warnings, release gates, and migration documentation.
 - Remaining manual gate: restart a real OpenCode session and run `/tgo:doctor --json` interactively before applying real profile setup.
 
 ## Feature Map
 
-- Agent roster and permissions: orchestrator, researcher, builder, reviewer, council, and councillor roles with path/permission boundaries.
+- Agent roster and permissions: conductor, scribe, composer, principal, ensemble, and councillor roles with path/permission boundaries.
 - Command surface: `/tgo:doctor`, `/tgo:setup`, `/tgo:init`, `/tgo:uninstall`, `/tgo:work`, `/tgo:models`, plus compatibility aliases where implemented.
 - Setup lifecycle: deterministic bootstrap, setup preview, doctor inspection, manifest-backed changes, backups, rollback helpers, and safe uninstall.
-- Migration lifecycle: v1/omo-slim detection, replacement planning, root package cutover, beta release gates, and explicit latest-tag caveat.
+- Migration lifecycle: prior TGO/omo-slim detection, replacement planning, root package release gates, and explicit publish/tag approval boundaries.
 - Tooling: `bare-bones`, `default`, and `all-bells` tool presets; skills and MCP planning; user-managed provider/plugin/MCP preservation.
-- Model and resilience planning: generated `github-copilot` and `opencode-go` primary presets, with `github-copilot` active by default; model-switch planning; provider fallback classification; circuit breaker state; semantic retry boundaries; and council derivation.
-- Workflow primitives: delegation envelope, specialist result contract, reviewer gate, scheduler/worktree planning, integration/reconciliation primitives, and auto-continue/resume concepts.
-- Validation harnesses: release-readiness tests and the reusable `verify:public-beta-opencode` smoke script.
+- Model and resilience planning: generated `github-copilot` and `opencode-go` primary presets, with `github-copilot` active by default; model-switch planning; provider fallback classification; circuit breaker state; semantic retry boundaries; and ensemble/councillor derivation.
+- Workflow primitives: delegation envelope, specialist result contract, ensemble review, principal gate, scheduler/worktree planning, and integration/reconciliation primitives.
+- Validation harnesses: release-readiness verifier, targeted tests, type checking, and build checks.
 
 ## Documentation
 
@@ -86,7 +87,7 @@ The bootstrap path plans required OpenCode entries, tools, model presets, and re
 - [Agents And Workflows](./docs/agents-and-workflows.md)
 - [Setup, Doctor, And Manifests](./docs/setup-doctor-manifests.md)
 - [Tools, Skills, And MCPs](./docs/tools-skills-mcps.md)
-- [Models, Resilience, And Council](./docs/models-resilience-council.md)
+- [Models, Resilience, And Ensemble](./docs/models-resilience-ensemble.md)
 - [Migration And Release](./docs/migration-and-release.md)
 - [Docs Hub](./docs/README.md)
 - [Operational Migration Guide](./MIGRATION.md)
@@ -105,24 +106,17 @@ The bootstrap path plans required OpenCode entries, tools, model presets, and re
 
 ## Validation
 
-Focused documentation validation:
+Targeted sanity validation:
 
 ```bash
-bun test src/release/docs.test.ts src/release/release-readiness.test.ts src/release/repository-layout.test.ts
+bun test src/index.test.ts src/cli/providers.test.ts src/cli/config-io.test.ts
 ```
 
-Full local release-readiness validation for this docs-only change:
+Local release-readiness validation:
 
 ```bash
 bun run typecheck
 bun run check:ci
+bun run build
 bun run verify:release-readiness
 ```
-
-The public beta OpenCode smoke exists as:
-
-```bash
-bun run verify:public-beta-opencode
-```
-
-Run it only when network/OpenCode/model access is acceptable for the current validation session.

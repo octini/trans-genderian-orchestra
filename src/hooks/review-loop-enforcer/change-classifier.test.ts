@@ -20,6 +20,14 @@ describe('review-loop change classifier', () => {
     expect(result.reason).toContain('markdown-only docs');
   });
 
+  test('does not treat removed internal context files as public docs', () => {
+    const result = classifyChanges(
+      changeSet([{ path: 'PROJECT_STATE.md', added: 20, deleted: 2 }]),
+    );
+    expect(result.requiredReview).toBe('ensemble');
+    expect(result.skipEnsemble).toBe(false);
+  });
+
   test('classifies under 10 changed lines outside risk paths as principal-only', () => {
     const result = classifyChanges(
       changeSet([{ path: 'src/helpers/string.ts', added: 4, deleted: 5 }]),

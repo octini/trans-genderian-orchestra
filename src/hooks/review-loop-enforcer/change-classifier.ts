@@ -8,8 +8,6 @@ const DOC_MARKDOWN_ROOT_FILES = new Set([
   'MIGRATION.md',
   'RELEASE.md',
   'CHANGELOG.md',
-  'CONTEXT.md',
-  'PROJECT_STATE.md',
 ]);
 
 const RISK_PATH_PREFIXES = [

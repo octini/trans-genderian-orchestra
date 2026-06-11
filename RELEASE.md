@@ -1,35 +1,35 @@
-# TGO v2 Beta Release Readiness
+# TGO v3 Beta Release Readiness
 
 ## Public beta install
 
-Install the current public beta explicitly with the `beta` dist-tag:
+After publishing or moving the `beta` dist-tag, verify it points at the intended repository package version:
 
 ```bash
-npm install trans-genderian-orchestra@beta
+npm view trans-genderian-orchestra@beta version --json
 ```
 
-Install the beta into a disposable OpenCode profile or an explicitly approved real profile with:
+Install the verified beta into a disposable OpenCode profile or an explicitly approved real profile with:
 
 ```bash
 opencode plugin trans-genderian-orchestra@beta --global --force
 ```
 
-The `beta` dist-tag currently points to `2.0.0-beta.6`. npm still points `latest` at the original `2.0.0-beta.0` because it was the first published version. Prefer `@beta` in public examples, automation, and validation until a future non-prerelease publish moves `latest`.
+The repository package version is `3.0.0-beta.1`. Before making release claims, verify the npm `beta` dist-tag points at the intended package version. Prefer `@beta` in public beta examples and automation after that verification until a stable release intentionally moves `latest`.
 
-The published beta plugin has been verified in a real OpenCode command path: `/tgo:doctor --json` executes `npx --yes trans-genderian-orchestra@beta doctor --json`, avoids `bd doctor`, and returns TGO doctor JSON without stderr.
+The published beta smoke should verify that `/tgo:doctor --json` executes `npx --yes trans-genderian-orchestra@beta doctor --json`, avoids `bd doctor`, and returns TGO doctor JSON without stderr.
 
 ## Local verification gate
 
 Run these from repository root:
 
 ```bash
-bun test --path-ignore-patterns archive
+bun test
 bun run typecheck
 bun run check:ci
 bun run build
 ```
 
-Expected: all commands exit 0. `bun test --path-ignore-patterns archive` should report 0 failures.
+Expected: all commands exit 0. `bun test` should report 0 failures.
 
 ## Package preview gate
 
@@ -48,7 +48,7 @@ Install or link the built package into a disposable OpenCode profile only. Do no
 Automated public beta smoke:
 
 ```bash
-bun run verify:public-beta-opencode
+bun run scripts/verify-public-beta-opencode.ts
 ```
 
 Expected: installs `trans-genderian-orchestra@beta` into a disposable `HOME`, runs `/tgo:doctor --json` through OpenCode, confirms the actual command uses `npx --yes trans-genderian-orchestra@beta doctor --json`, confirms `bd doctor` is not run, confirms TGO doctor JSON is returned, and confirms the disposable config is unchanged.
@@ -59,8 +59,8 @@ Manual prompt inside the disposable profile:
 /tgo:doctor --json
 ```
 
-Expected: with old omo-slim entries present, doctor reports v1 migration availability and planned v2 replacement without writing config.
+Expected: with old TGO/omo-slim entries present, doctor reports migration availability and planned TGO replacement without writing config.
 
 ## Approval gates
 
-No git push, npm publish, latest tag, remote repository rewrite, or archived v1 deletion happens without explicit approval.
+No git push, npm publish, latest tag, or remote repository rewrite happens without explicit approval.
