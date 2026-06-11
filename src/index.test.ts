@@ -50,3 +50,19 @@ describe('plugin support URLs', () => {
     expect(schema.$id).not.toContain('alvinunreal/trans-genderian-orchestra');
   });
 });
+
+describe('package metadata', () => {
+  test('publishes a TUI entrypoint for the OpenCode sidebar loader', () => {
+    const packageJson = JSON.parse(readFileSync('package.json', 'utf8')) as {
+      exports?: Record<string, { import?: string; types?: string }>;
+      scripts?: Record<string, string>;
+    };
+
+    expect(packageJson.exports?.['./tui']).toEqual({
+      import: './dist/tui.js',
+      types: './dist/tui.d.ts',
+    });
+    expect(packageJson.scripts?.['build:tui']).toContain('src/tui.ts');
+    expect(packageJson.scripts?.build).toContain('build:tui');
+  });
+});
