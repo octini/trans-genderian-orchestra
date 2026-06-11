@@ -6,7 +6,7 @@
  * of the user's actual turn.
  */
 import { PHASE_REMINDER_TEXT } from '../../config/constants';
-import { SLIM_INTERNAL_INITIATOR_MARKER } from '../../utils';
+import { TGO_INTERNAL_INITIATOR_MARKER } from '../../utils';
 
 export const PHASE_REMINDER = `<internal_reminder>${PHASE_REMINDER_TEXT}</internal_reminder>`;
 
@@ -71,7 +71,7 @@ export function createPhaseReminderHook() {
       }
 
       const originalText = lastUserMessage.parts[textPartIndex].text ?? '';
-      if (originalText.includes(SLIM_INTERNAL_INITIATOR_MARKER)) {
+      if (originalText.includes(TGO_INTERNAL_INITIATOR_MARKER)) {
         return;
       }
       // Prevent duplicate injection: check if any existing part already contains

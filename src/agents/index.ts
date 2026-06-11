@@ -1,4 +1,5 @@
 import type { AgentConfig as SDKAgentConfig } from '@opencode-ai/sdk/v2';
+
 import { getSkillPermissionsForAgent } from '../cli/skills';
 import {
   type AgentOverrideConfig,
@@ -13,17 +14,16 @@ import {
   SUBAGENT_NAMES,
 } from '../config';
 import { getAgentMcpList } from '../config/agent-mcps';
-
-import { createEnsembleAgent } from './ensemble';
-import { createCouncillorAgent } from './councillor';
 import { createComposerAgent } from './composer';
-import { createPrincipalAgent } from './principal';
-import { createScribeAgent } from './scribe';
 import {
   type AgentDefinition,
   createConductorAgent,
   resolvePrompt,
 } from './conductor';
+import { createCouncillorAgent } from './councillor';
+import { createEnsembleAgent } from './ensemble';
+import { createPrincipalAgent } from './principal';
+import { createScribeAgent } from './scribe';
 
 export type { AgentDefinition } from './conductor';
 
@@ -263,9 +263,7 @@ export function createAgents(config?: PluginConfig): AgentDefinition[] {
   const protoCustomAgents = customAgentNames.flatMap((name) => {
     const override = getAgentOverride(config, name);
     if (!hasCustomAgentModel(override)) {
-      console.warn(
-        `[oh-my-opencode] Custom agent '${name}' skipped: 'model' is required`,
-      );
+      console.warn(`[TGO] Custom agent '${name}' skipped: 'model' is required`);
       return [];
     }
 

@@ -510,7 +510,7 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
               entry.variant = chosen.variant;
             }
           } else {
-            // Agent exists in slim but not in opencodeConfig.agent —
+            // Agent exists in TGO config but not in opencodeConfig.agent —
             // create entry
             (configAgent as Record<string, unknown>)[agentName] = {
               model: chosen.id,

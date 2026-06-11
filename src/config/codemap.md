@@ -26,7 +26,7 @@ resolution, and helper APIs used by agents, council, and runtime subsystems.
    - `XDG_CONFIG_HOME/opencode`
    - `~/.config/opencode`
 2. Locate project config at
-   `<directory>/.opencode/oh-my-opencode-slim.(jsonc|json)`.
+   `<directory>/.opencode/trans-genderian-orchestra.(jsonc|json)`.
 3. Validate with schema. Invalid/malformed files are warned and ignored by
    returning `null` for that file.
 4. Merge user+project configs where project takes precedence:
@@ -35,7 +35,7 @@ resolution, and helper APIs used by agents, council, and runtime subsystems.
    top-level arrays/values are overridden.
 5. If `tmux` is enabled and no explicit `multiplexer` is configured,
    migrate to `multiplexer` (`tmux` compatibility path).
-6. Apply env override `OH_MY_OPENCODE_SLIM_PRESET` over config file preset.
+6. Apply env override `TGO_PRESET` or `TRANS_GENDERIAN_ORCHESTRA_PRESET` over config file preset.
 7. If preset exists, merge preset agents into `agents` so explicit root agents
    still win (`deepMerge(preset, config.agents)`).
 8. Return merged config object.
@@ -44,7 +44,7 @@ resolution, and helper APIs used by agents, council, and runtime subsystems.
 
 `loadAgentPrompt(agentName, preset?)`:
 
-- Searches config directories for `oh-my-opencode-slim/` prompt roots.
+- Searches config directories for `trans-genderian-orchestra/` prompt roots.
 - Supports optional preset subdirectory lookup when `preset` is alphanumeric/
   hyphen/underscore-safe.
 - For each agent:

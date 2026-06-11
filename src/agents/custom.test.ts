@@ -70,7 +70,7 @@ describe('custom-agent creation', () => {
         agentDefs.find((agent) => agent.name === 'janitor'),
       ).toBeUndefined();
       expect(warnSpy).toHaveBeenCalledWith(
-        "[oh-my-opencode] Custom agent 'janitor' skipped: 'model' is required",
+        "[TGO] Custom agent 'janitor' skipped: 'model' is required",
       );
     } finally {
       warnSpy.mockRestore();

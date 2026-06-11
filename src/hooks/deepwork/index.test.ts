@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { SLIM_INTERNAL_INITIATOR_MARKER } from '../../utils';
+import { TGO_INTERNAL_INITIATOR_MARKER } from '../../utils';
 import { createDeepworkCommandHook } from './index';
 
 describe('deepwork command hook', () => {
@@ -39,7 +39,7 @@ describe('deepwork command hook', () => {
 
     expect(output.parts).toHaveLength(1);
     expect(output.parts[0].text).toContain('What task should deepwork manage?');
-    expect(output.parts[0].text).toContain(SLIM_INTERNAL_INITIATOR_MARKER);
+    expect(output.parts[0].text).toContain(TGO_INTERNAL_INITIATOR_MARKER);
   });
 
   test('expands arguments into a deepwork activation prompt', async () => {
@@ -61,7 +61,7 @@ describe('deepwork command hook', () => {
     expect(output.parts[0].text).toContain('@principal');
     expect(output.parts[0].text).toContain('simplify/readability');
     expect(output.parts[0].text).toContain('refactor scheduler state');
-    expect(output.parts[0].text).not.toContain(SLIM_INTERNAL_INITIATOR_MARKER);
+    expect(output.parts[0].text).not.toContain(TGO_INTERNAL_INITIATOR_MARKER);
   });
 
   test('ignores other commands', async () => {

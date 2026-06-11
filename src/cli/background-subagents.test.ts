@@ -111,7 +111,7 @@ describe('background subagents writing', () => {
   });
 
   test('writes managed block without duplicates', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'omoo-bg-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'tgoo-bg-'));
     const target = join(tempDir, '.bashrc');
     writeFileSync(target, 'existing=true\n');
 
@@ -161,7 +161,7 @@ describe('configureBackgroundSubagents', () => {
   });
 
   test('does not prompt for ask mode when noninteractive', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'omoo-bg-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'tgoo-bg-'));
     delete process.env.OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS;
     const target = join(tempDir, '.bashrc');
     const log = spyOn(console, 'log').mockImplementation(() => undefined);
@@ -206,7 +206,7 @@ describe('configureBackgroundSubagents', () => {
   });
 
   test('returns no configured target when writing shell config fails', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'omoo-bg-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'tgoo-bg-'));
     delete process.env.OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS;
     const blockingFile = join(tempDir, 'not-a-directory');
     writeFileSync(blockingFile, 'already a file');

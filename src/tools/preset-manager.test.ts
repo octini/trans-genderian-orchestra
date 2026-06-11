@@ -44,7 +44,7 @@ let tempDir: string;
 beforeEach(() => {
   previousXdgDataHome = process.env.XDG_DATA_HOME;
   previousOpenCodeConfigDir = process.env.OPENCODE_CONFIG_DIR;
-  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'omos-preset-manager-'));
+  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tgo-preset-manager-'));
   process.env.XDG_DATA_HOME = tempDir;
   delete process.env.OPENCODE_CONFIG_DIR;
   setActiveRuntimePreset(null);

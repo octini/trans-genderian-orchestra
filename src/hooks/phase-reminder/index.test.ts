@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { SLIM_INTERNAL_INITIATOR_MARKER } from '../../utils';
+import { TGO_INTERNAL_INITIATOR_MARKER } from '../../utils';
 import { createPhaseReminderHook, PHASE_REMINDER } from './index';
 
 describe('createPhaseReminderHook', () => {
@@ -41,7 +41,7 @@ describe('createPhaseReminderHook', () => {
 
   test('does not mutate internal notification turns', async () => {
     const hook = createPhaseReminderHook();
-    const text = `[Background task "x" completed]\n${SLIM_INTERNAL_INITIATOR_MARKER}`;
+    const text = `[Background task "x" completed]\n${TGO_INTERNAL_INITIATOR_MARKER}`;
     const output = {
       messages: [
         {

@@ -1,6 +1,7 @@
 import path from 'node:path';
 import type { PluginInput } from '@opencode-ai/plugin';
-import { ALL_AGENT_NAMES, type AgentName } from '../../config';
+
+import { type AgentName, ALL_AGENT_NAMES } from '../../config';
 import {
   BackgroundJobBoard,
   type BackgroundJobRecord,
@@ -9,7 +10,7 @@ import {
   parseTaskIdFromTaskOutput,
   parseTaskLaunchOutput,
   parseTaskStatusOutput,
-  SLIM_INTERNAL_INITIATOR_MARKER,
+  TGO_INTERNAL_INITIATOR_MARKER,
 } from '../../utils';
 import { log } from '../../utils/logger';
 
@@ -697,7 +698,7 @@ export function createTaskSessionManagerHook(
           (part) => part.type === 'text' && typeof part.text === 'string',
         );
         if (!textPart) return;
-        if (textPart.text?.includes(SLIM_INTERNAL_INITIATOR_MARKER)) return;
+        if (textPart.text?.includes(TGO_INTERNAL_INITIATOR_MARKER)) return;
         if (textPart.text?.includes(BACKGROUND_JOB_BOARD_SENTINEL)) return;
 
         rememberInjectedTerminalJobs(message.info.sessionID);
