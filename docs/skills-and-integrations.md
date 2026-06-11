@@ -124,6 +124,7 @@ Optional `multiplexer` config supports `auto`, `tmux`, `zellij`, or `none`. Mult
 TGO's philosophy is retrieval-led reasoning:
 
 - use code search and file reads before asserting how a codebase works;
+- after file reads/writes, a lightweight post-file-tool nudge can remind Conductor sessions to use retrieved evidence, route non-trivial context gathering through Scribe, and delegate implementation rather than turning inspection into direct work;
 - use Context7 for library docs when available;
 - use grep.app for examples across public repositories;
 - use websearch/webfetch for current or external documentation;

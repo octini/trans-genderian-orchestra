@@ -55,9 +55,9 @@ Composer implementation → Ensemble review → Composer rework if needed → Pr
 Details:
 
 1. Composer returns a structured summary, changed files, validation evidence, and a stable `taskId`.
-2. Ensemble reviews the Composer output, original task, and changed files.
+2. Ensemble reviews the Composer output, original task, changed files, and evidence trail.
 3. If Ensemble rejects, Conductor sends specific findings back to Composer for rework.
-4. If Ensemble approves, Principal performs final verification.
+4. If Ensemble approves, Principal reads the modified files/diffs and validation evidence before final verification.
 5. If Principal fails the work, Composer reworks and the loop repeats as needed.
 6. After three Composer↔Ensemble cycles, Conductor escalates to Principal with a “wheels spinning” signal.
 
@@ -78,7 +78,7 @@ Generated councillor seats use these focus areas:
 | `second` | Edge cases and security. |
 | `third` | UX and performance. |
 
-Ensemble uses majority consensus with critical-issue override. Any critical issue should reject the work even if most seats otherwise approve.
+Ensemble uses majority consensus with critical-issue override. Any critical issue should reject the work even if most seats otherwise approve. Ensemble and Councillors also apply an evidence-compliance posture: flag or reject ungrounded implementation when cited files, tests, or docs do not support the result.
 
 ## Example Task Lifecycle
 

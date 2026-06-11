@@ -91,6 +91,11 @@ TGO's prompts and tools push agents to inspect before asserting:
 - Built-in MCPs provide web search, library-doc lookup, and grep.app search when configured.
 - AST-grep tools support structural code search and previewed replacement.
 - File-operation rules prefer dedicated read/search/edit tools over ad-hoc shell reads.
+- Conductor routing now explicitly sends unfamiliar, behavior-changing, or docs/API-dependent context gathering through Scribe before implementation, while preserving tiny-task fast paths.
+- Composer's prompt reinforces Spec/Test/Inspect discipline: read relevant contracts, types, specs, and tests before behavior changes, then inspect validation failures before guessing.
+- Principal's final gate is retrieval-led: it should read actual modified files, diffs, and validation evidence before verdict.
+- Ensemble and Councillors check evidence compliance and flag ungrounded implementation when cited files, tests, or docs do not support the work.
+- The post-file-tool nudge adds a lightweight reminder after file reads/writes to avoid turning inspection directly into implementation; it is a workflow nudge, not a hard security boundary.
 
 This is a practical reliability pattern: claims should be grounded in source files, docs, command output, or explicit user decisions.
 
