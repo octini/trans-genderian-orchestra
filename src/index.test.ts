@@ -2,7 +2,32 @@
 
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
-import { TGO_ISSUES_URL } from './index';
+import { TGO_ISSUES_URL } from './constants';
+import * as pluginEntry from './index';
+
+function isOpenCodeLoaderExport(value: unknown): boolean {
+  if (typeof value === 'function') {
+    return true;
+  }
+
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    'server' in value &&
+    typeof (value as { server?: unknown }).server === 'function'
+  );
+}
+
+describe('plugin entrypoint exports', () => {
+  test('only exposes OpenCode loader-compatible exports', () => {
+    const invalidExports = Object.entries(pluginEntry)
+      .filter(([, value]) => !isOpenCodeLoaderExport(value))
+      .map(([name]) => name);
+
+    expect(Object.keys(pluginEntry)).toContain('default');
+    expect(invalidExports).toEqual([]);
+  });
+});
 
 describe('plugin support URLs', () => {
   test('points user-facing TGO issue messages at the current repository', () => {

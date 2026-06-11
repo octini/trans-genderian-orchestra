@@ -475,11 +475,12 @@ describe('config-io', () => {
       'opencode-go',
     ]);
     expect(saved.presets['opencode-go'].conductor.model).toBe(
-      'opencode-go/kimi-k2.6',
+      'opencode-go/mimo-v2.5-pro',
     );
+    expect(saved.presets['opencode-go'].conductor.variant).toBe('high');
     expect(saved.presets['opencode-go'].ensemble.model).toBe('conductor');
     expect(saved.ensemble.presets['opencode-go'].third).toEqual({
-      model: 'opencode-go/qwen3.7-plus',
+      model: 'opencode-go/kimi-k2.6',
       prompt: 'Focus: UX & Performance',
     });
   });

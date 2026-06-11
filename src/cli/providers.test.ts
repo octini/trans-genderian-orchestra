@@ -77,8 +77,8 @@ describe('providers', () => {
     ]);
     const agents = (config.presets as any)['opencode-go'];
     expect(agents).toBeDefined();
-    expect(agents.conductor.model).toBe('opencode-go/kimi-k2.6');
-    expect(agents.conductor.variant).toBeUndefined();
+    expect(agents.conductor.model).toBe('opencode-go/mimo-v2.5-pro');
+    expect(agents.conductor.variant).toBe('high');
     expect(agents.scribe.model).toBe('opencode-go/mimo-v2.5');
     expect(agents.scribe.variant).toBe('high');
     expect(agents.composer.model).toBe('opencode-go/mimo-v2.5');
@@ -132,7 +132,7 @@ describe('providers', () => {
       prompt: 'Focus: Edge Cases & Security',
     });
     expect(ensemble.presets['opencode-go'].third).toEqual({
-      model: 'opencode-go/qwen3.7-plus',
+      model: 'opencode-go/kimi-k2.6',
       prompt: 'Focus: UX & Performance',
     });
   });

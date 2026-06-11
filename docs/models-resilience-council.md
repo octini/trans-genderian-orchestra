@@ -6,7 +6,7 @@ TGO uses omo-slim's procedural, config-driven model preset generator. Fresh gene
 
 Generated default model assignments:
 - `github-copilot`: conductor/composer use `github-copilot/gpt-5.5` (`xhigh`), scribe uses `github-copilot/gemini-3.5-flash` (`high`), principal uses `github-copilot/claude-opus-4.7` (`max`), and ensemble references `conductor`.
-- `opencode-go`: conductor uses `opencode-go/kimi-k2.6`, scribe/composer use `opencode-go/mimo-v2.5` (`high`), principal uses `opencode-go/mimo-v2.5-pro` (`high`), and ensemble references `conductor`.
+- `opencode-go`: conductor uses `opencode-go/mimo-v2.5-pro` (`high`), scribe/composer use `opencode-go/mimo-v2.5` (`high`), principal uses `opencode-go/mimo-v2.5-pro` (`high`), and ensemble references `conductor`.
 
 ## Ensemble Model Auto-Population
 
@@ -20,6 +20,8 @@ Councillor seats are internal ensemble participants with differentiated review f
 - First: Correctness & Architecture
 - Second: Edge Cases & Security
 - Third: UX & Performance
+
+Generated `opencode-go` council defaults use `opencode-go/mimo-v2.5` (`high`) for first, `opencode-go/deepseek-v4-flash` (`max`) for second, and `opencode-go/kimi-k2.6` with its default variant for third.
 
 They should not ask the user questions or write files; they provide independent read-only analysis for synthesis.
 

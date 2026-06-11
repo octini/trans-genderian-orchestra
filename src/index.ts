@@ -1,4 +1,5 @@
 import type { Plugin } from '@opencode-ai/plugin';
+
 import { createAgents, getAgentConfigs, getDisabledAgents } from './agents';
 import { buildConductorPrompt } from './agents/conductor';
 import {
@@ -14,6 +15,7 @@ import {
   getPreviousRuntimePreset,
   setActiveRuntimePreset,
 } from './config/runtime-preset';
+import { TGO_ISSUES_URL } from './constants';
 import { CouncilManager } from './council';
 import {
   createApplyPatchHook,
@@ -54,9 +56,6 @@ import {
 import { initLogger, log } from './utils/logger';
 import { SubagentDepthTracker } from './utils/subagent-depth';
 import { collapseSystemInPlace } from './utils/system-collapse';
-
-export const TGO_ISSUES_URL =
-  'github.com/octini/trans-genderian-orchestra/issues';
 
 /**
  * Best-effort log to opencode's app logger.

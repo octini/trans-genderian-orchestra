@@ -44,7 +44,7 @@ export const MODEL_MAPPINGS = {
     composer: { model: 'zai-coding-plan/glm-5', variant: 'medium' },
   },
   'opencode-go': {
-    conductor: { model: 'opencode-go/kimi-k2.6' },
+    conductor: { model: 'opencode-go/mimo-v2.5-pro', variant: 'high' },
     scribe: { model: 'opencode-go/mimo-v2.5', variant: 'high' },
     composer: { model: 'opencode-go/mimo-v2.5', variant: 'high' },
     principal: { model: 'opencode-go/mimo-v2.5-pro', variant: 'high' },
@@ -86,7 +86,7 @@ const GENERATED_COUNCIL_CONFIG = {
         prompt: 'Focus: Edge Cases & Security',
       },
       third: {
-        model: 'opencode-go/qwen3.7-plus',
+        model: 'opencode-go/kimi-k2.6',
         prompt: 'Focus: UX & Performance',
       },
     },
