@@ -50,7 +50,7 @@ This creates:
 - `.slim/codemap.json` - File and folder hashes for change detection
 - Empty `codemap.md` files in all relevant subdirectories
 
-4. **Delegate codemap writing to Fixer agents** - Spawn one fixer per folder to read code and create or update its specific `codemap.md` file.
+4. **Delegate codemap writing to Composer agents** - Spawn one Composer lane per folder to read code and create or update its specific `codemap.md` file.
 
 ### Step 3: Detect Changes (If state already exists)
 
@@ -67,7 +67,7 @@ node ~/.config/opencode/skills/codemap/scripts/codemap.mjs changes \
    - Modified files
    - Affected folders
 
-3. **Only update affected codemaps** - Spawn one fixer per affected folder to update its `codemap.md`.
+3. **Only update affected codemaps** - Spawn one Composer lane per affected folder to update its `codemap.md`.
 4. **Run update** to save new state:
 
 ```bash
@@ -77,7 +77,7 @@ node ~/.config/opencode/skills/codemap/scripts/codemap.mjs update \
 
 ### Step 4: Finalize Repository Atlas (Root Codemap)
 
-Once all specific directories are mapped, the Orchestrator must create or update the root `codemap.md`. This file serves as the **Master Entry Point** for any agent or human entering the repository.
+Once all specific directories are mapped, the Conductor must create or update the root `codemap.md`. This file serves as the **Master Entry Point** for any agent or human entering the repository.
 
 1.  **Map Root Assets**: Document the root-level files (e.g., `package.json`, `index.ts`, `plugin.json`) and the project's overall purpose.
 2.  **Aggregate Sub-Maps**: Create a "Repository Directory Map" section. For every folder that has a `codemap.md`, extract its **Responsibility** summary and include it in a table or list in the root map.
@@ -108,10 +108,10 @@ This is idempotent — repeated codemap runs will detect the existing section an
 
 ## Codemap Content
 
-Fixers are responsible for writing `codemap.md` files during this workflow. Use precise technical terminology to document the implementation:
+Composer lanes are responsible for writing `codemap.md` files during this workflow. Use precise technical terminology to document the implementation:
 
 - **Responsibility** - Define the specific role of this directory using standard software engineering terms (e.g., "Service Layer", "Data Access Object", "Middleware").
-- **Design Patterns** - Identify and name specific patterns used (e.g., "Observer", "Singleton", "Factory", "Strategy"). Detail the abstractions and interfaces.
+- **Design Patterns** - Identify and name specific patterns used (e.g., "Publisher/Subscriber", "Singleton", "Factory", "Strategy"). Detail the abstractions and interfaces.
 - **Data & Control Flow** - Explicitly trace how data enters and leaves the module. Mention specific function call sequences and state transitions.
 - **Integration Points** - List dependencies and consumer modules. Use technical names for hooks, events, or API endpoints.
 
@@ -125,8 +125,8 @@ Defines agent personalities and manages their configuration lifecycle.
 
 ## Design
 Each agent is a prompt + permission set. Config system uses:
-- Default prompts (orchestrator.ts, explorer.ts, etc.)
-- User overrides from ~/.config/opencode/oh-my-opencode-slim.json
+- Default prompts (conductor.ts, scribe.ts, etc.)
+- User overrides from ~/.config/opencode/trans-genderian-orchestra.json[c]
 - Permission wildcards for skill/MCP access control
 
 ## Flow
@@ -144,20 +144,20 @@ Each agent is a prompt + permission set. Config system uses:
 Example **Root Codemap (Atlas)**:
 
 ```markdown
-# Repository Atlas: oh-my-opencode-slim
+# Repository Atlas: trans-genderian-orchestra
 
 ## Project Responsibility
-A high-performance, low-latency agent orchestration plugin for OpenCode, focusing on specialized sub-agent delegation and multiplexer-assisted child sessions.
+An agent orchestration plugin for OpenCode, focusing on specialist delegation, model presets, review loops, and optional multiplexer-assisted child sessions.
 
 ## System Entry Points
 - `src/index.ts`: Plugin initialization and OpenCode integration.
 - `package.json`: Dependency manifest and build scripts.
-- `oh-my-opencode-slim.json`: User configuration schema.
+- `trans-genderian-orchestra.json[c]`: User configuration schema.
 
 ## Directory Map (Aggregated)
 | Directory | Responsibility Summary | Detailed Map |
 |-----------|------------------------|--------------|
-| `src/agents/` | Defines agent personalities (Orchestrator, Explorer) and manages model routing. | [View Map](src/agents/codemap.md) |
-| `src/features/` | Core logic for tmux integration and session state. | [View Map](src/features/codemap.md) |
+| `src/agents/` | Defines agent personalities (Conductor, Scribe, Composer, Principal, Ensemble) and manages model routing. | [View Map](src/agents/codemap.md) |
+| `src/multiplexer/` | Core logic for tmux/zellij integration and session state. | [View Map](src/multiplexer/codemap.md) |
 | `src/config/` | Implements the configuration loading pipeline and environment variable injection. | [View Map](src/config/codemap.md) |
 ```

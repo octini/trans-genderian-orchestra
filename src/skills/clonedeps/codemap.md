@@ -3,16 +3,16 @@
 ## Responsibility
 
 Workflow-only bundled OpenCode skill for local dependency source mirroring. It
-instructs the orchestrator to use `@librarian` for dependency discovery and
+instructs the Conductor to use `@scribe` for dependency discovery and
 source URL/ref resolution, then perform approved git/filesystem operations
 directly.
 
 ## Design
 
 - `SKILL.md` is the prompt contract loaded by OpenCode and assigned only to the
-  orchestrator.
+  Conductor.
 - No helper script is bundled. The skill avoids brittle cross-ecosystem parsing
-  and keeps repo-specific judgment in librarian/orchestrator.
+  and keeps repo-specific judgment in Scribe/Conductor.
 - State is trackable project metadata stored in `.slim/clonedeps.json`; clone
   contents live under `.slim/clonedeps/repos/<safe-dependency-name>/` and are
   ignored by git.
@@ -22,20 +22,20 @@ directly.
 
 ## Flow
 
-1. Orchestrator checks `.slim/clonedeps.json` first and reuses existing clones
+1. Conductor checks `.slim/clonedeps.json` first and reuses existing clones
    when they satisfy the current task.
-2. Orchestrator asks librarian for a small source-resolution plan across the
+2. Conductor asks Scribe for a small source-resolution plan across the
    repository's actual languages/ecosystems.
-3. Orchestrator verifies refs where possible and asks the user to approve.
-4. Orchestrator clones/fetches each approved source repo once into
+3. Conductor verifies refs where possible and asks the user to approve.
+4. Conductor clones/fetches each approved source repo once into
    `.slim/clonedeps/repos/<safe-repo-name>/`.
-5. Orchestrator writes `.slim/clonedeps.json` with paths, refs, and reasons.
-6. Orchestrator updates `.gitignore`, `.ignore`, and root `AGENTS.md`; the
+5. Conductor writes `.slim/clonedeps.json` with paths, refs, and reasons.
+6. Conductor updates `.gitignore`, `.ignore`, and root `AGENTS.md`; the
    AGENTS section lists each read-only clone path directly with a one-sentence
    purpose.
 
 ## Integration
 
-- Registered in `src/cli/custom-skills.ts` with orchestrator-only permission.
+- Registered in `src/cli/custom-skills.ts` with Conductor-only permission.
 - Included in release verification via `scripts/verify-release-artifact.ts`.
 - Documented in `docs/skills.md` and included in `src/skills/codemap.md`.

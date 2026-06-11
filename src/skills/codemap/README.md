@@ -4,11 +4,11 @@ Repository understanding and hierarchical codemap generation.
 
 ## Overview
 
-Codemap helps orchestrators map and understand codebases by:
+Codemap helps Conductors map and understand codebases by:
 
 1. Selecting relevant code/config files using LLM judgment
 2. Creating `.slim/codemap.json` for change tracking
-3. Generating empty `codemap.md` templates for fixers to fill in
+3. Generating empty `codemap.md` templates for Composer lanes to fill in
 
 Legacy `.slim/cartography.json` state is migrated to `.slim/codemap.json` automatically.
 
@@ -48,7 +48,7 @@ node codemap.mjs update --root /repo
 
 ### codemap.md (per folder)
 
-Empty templates created in each folder for fixers to fill with:
+Empty templates created in each folder for Composer lanes to fill with:
 - Responsibility
 - Design patterns
 - Data/control flow
@@ -56,4 +56,4 @@ Empty templates created in each folder for fixers to fill with:
 
 ## Installation
 
-Installed automatically via oh-my-opencode-slim installer when custom skills are enabled.
+Installed automatically by the trans-genderian-orchestra installer when bundled skills are enabled.

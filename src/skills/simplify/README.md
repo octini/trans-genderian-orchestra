@@ -4,7 +4,7 @@ Behavior-preserving code simplification and readability-focused refactoring.
 
 ## Overview
 
-This bundled skill helps the `oracle` agent review and simplify code without
+This bundled skill helps `principal` and `composer` review and simplify code without
 changing behavior. It focuses on readability, maintainability, and reducing
 unnecessary complexity.
 
@@ -15,5 +15,5 @@ Adapted from Addy Osmani's
 
 ## Installation
 
-Bundled with `oh-my-opencode-slim` and installed automatically when bundled
+Bundled with `trans-genderian-orchestra` and installed automatically when bundled
 skills are enabled via the installer.

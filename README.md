@@ -1,122 +1,158 @@
-# trans-genderian-orchestra v3
+# trans-genderian-orchestra
 
-> TGO v3 is an OpenCode workflow plugin that turns ad-hoc AI coding sessions into a review-oriented engineering workflow.
+> TGO is an OpenCode workflow plugin that turns one ad-hoc AI coding assistant into an orchestrated engineering team.
 
-`trans-genderian-orchestra` lives at the repository root. The current repository package version is `3.0.0-beta.1`.
+`trans-genderian-orchestra` lives at the repository root. The repository package currently reports version `3.0.0-beta.1`; verify the npm `beta` dist-tag before assuming a published package matches this checkout.
 
-## What It Is
+## What TGO Does
 
-TGO v3 routes work through specialist agents, deterministic setup commands, structured handoffs, and reviewer gates. The goal is to make OpenCode behave less like one improvising assistant and more like a small engineering team with a conductor, scribe, composer, principal reviewer, ensemble panel, and councillor seats.
+TGO adds a structured agent roster, setup CLI, model presets, review gates, and workflow helpers to OpenCode. Instead of asking one assistant to plan, research, write, review, and summarize everything, TGO routes work through specialized agents with clear responsibilities:
 
-This beta is usable for setup validation and documentation-led testing, but it is still a public beta. Prefer local repository commands until the npm `beta` dist-tag is verified to match the repository package version.
+| Role | What it does | Write access |
+|---|---|---|
+| Conductor | User-facing technical lead: clarifies intent, plans, delegates, coordinates, and reports outcomes. | No |
+| Scribe | Research specialist: explores code, reads docs, compares sources, and reports evidence. | No |
+| Composer | Implementation specialist: edits files, writes tests, builds UI, fixes bugs, and validates changes. | Yes |
+| Principal | Strategic advisor and final verification gate for architecture, risk, and acceptance criteria. | No |
+| Ensemble | Multi-model consensus and review panel for hard decisions or Composer review. | No |
+| Councillor | Hidden internal Ensemble seat with one review perspective. | No |
 
-## Philosophy
+The goal is practical: preserve user intent, retrieve facts before reasoning, keep implementation scoped, and avoid claiming work is complete until review and validation have happened.
 
-- Conductor-led orchestration: the conductor owns phase control, routing, confirmation, delegation, and synthesis instead of silently implementing arbitrary changes.
-- Specialist lanes: scribe, composer, principal, ensemble, and councillor roles have separate responsibilities and permission expectations.
-- Approval gates: behavior-changing work should pass through scoped implementation, ensemble review, and principal verification.
-- Retrieval-led reasoning: agents should inspect project files, docs, history, and external references before relying on memory.
-- SDD-style artifacts: specs, plans, evidence, reviews, handoffs, and state files preserve intent across compaction and handoff.
-- Deterministic config: setup, bootstrap, doctor, and uninstall flows are previewable, manifest-backed, backup-aware, and reversible.
-- Automation before manual testing: release-readiness checks and public beta smoke scripts run before relying on a real OpenCode UI session.
+## Who It Is For
+
+TGO is useful if you want OpenCode to behave more like a small engineering team than a single chatbot. It is especially helpful for:
+
+- multi-file features or bug fixes that need research before editing;
+- risky changes where independent review matters;
+- users who want explicit setup, configuration, and model choices;
+- projects that benefit from spec-like states, handoffs, and verification gates;
+- long-running OpenCode sessions where context and delegation discipline matter.
+
+For quick one-off edits, TGO still works, but its real value appears when tasks need planning, implementation, review, and final verification.
 
 ## Quick Start
 
-For local validation, install dependencies and build from the repository root:
+Prerequisites: OpenCode, Bun, and at least one OpenCode provider you can authenticate.
+
+Install or update TGO through the bundled CLI:
 
 ```bash
-bun install
-bun run build
+bunx trans-genderian-orchestra install
 ```
 
-To install a published beta into OpenCode, first verify the npm `beta` dist-tag matches the intended release, then use:
+Useful installer variants:
 
 ```bash
-opencode plugin trans-genderian-orchestra@beta --global --force
+bunx trans-genderian-orchestra install --dry-run
+bunx trans-genderian-orchestra install --preset=opencode-go
+bunx trans-genderian-orchestra install --no-tui --skills=yes
 ```
 
-Restart OpenCode after plugin installation. OpenCode does not hot-reload config-time plugin changes reliably enough for this beta validation flow.
+Check the generated TGO config with the read-only doctor:
 
-Run doctor before applying setup or bootstrap changes:
+```bash
+bunx trans-genderian-orchestra doctor
+bunx trans-genderian-orchestra doctor --json
+```
+
+After installation, authenticate and refresh OpenCode models as needed:
+
+```bash
+opencode auth login
+opencode models --refresh
+```
+
+Restart OpenCode after installing or changing plugin, agent, prompt, model, skill, MCP, or shell environment settings.
+
+## What The Installer Changes
+
+The installer is intentionally conservative. In current source it:
+
+1. checks for OpenCode;
+2. adds the TGO plugin entry to OpenCode config;
+3. adds the optional TUI version badge config;
+4. warms OpenCode's plugin cache when running from a package-manager install;
+5. disables OpenCode's default `build`, `explore`, `general`, and `plan` agents;
+6. enables OpenCode LSP integration when not already set;
+7. optionally configures `OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true`;
+8. writes `~/.config/opencode/trans-genderian-orchestra.json` by default, or an existing `.jsonc` file if one is already present;
+9. installs bundled skills unless `--skills=no` is used.
+
+Existing OpenCode configuration is merged rather than replaced wholesale. File writes create adjacent `.bak` backups for files that already existed.
+
+## A Typical Task Walkthrough
+
+You can speak normally to the Conductor:
 
 ```text
-/tgo:doctor --json
+Add a provider configuration guide and make sure the model preset docs match the source.
 ```
 
-The published slash command should resolve the CLI through:
+A healthy TGO flow looks like this:
+
+1. **Conductor** clarifies scope and acceptance criteria.
+2. **Scribe** reads source, docs, and external references if needed.
+3. **Composer** makes the scoped file changes and runs relevant validation.
+4. **Ensemble** reviews non-trivial implementation work with multiple perspectives.
+5. **Composer** reworks any actionable findings.
+6. **Principal** performs the final verification gate.
+7. **Conductor** reports what changed, what passed, and what caveats remain.
+
+Markdown-only docs changes may skip Ensemble and go directly to Principal review, depending on the review gate classification.
+
+## Verified Slash Commands
+
+The current plugin source registers these OpenCode slash commands when the plugin is loaded:
+
+| Command | Purpose |
+|---|---|
+| `/preset` | List configured presets. |
+| `/preset <name>` | Save a runtime preset selection; restart or reload OpenCode to apply agent config safely. |
+| `/interview <idea>` | Start a localhost interview UI and live markdown spec for clarifying a product idea. |
+| `/deepwork <task>` | Start the bundled deepwork workflow for complex multi-phase coding tasks. |
+
+The setup and diagnostic commands are CLI commands, not `/tgo:*` slash commands:
 
 ```bash
-npx --yes trans-genderian-orchestra@beta doctor --json
+bunx trans-genderian-orchestra install
+bunx trans-genderian-orchestra doctor --json
 ```
 
-It intentionally does not run `bd doctor`; Beads diagnostics are separate from TGO doctor output.
+## Documentation Map
 
-## Bootstrap Preview
+Start with the docs hub, or jump directly to a topic:
 
-Preview or apply setup with the implemented installer:
-
-```bash
-trans-genderian-orchestra install --dry-run --preset=github-copilot
-```
-
-The setup path plans required OpenCode entries and model preset choices while preserving user-owned config. It keeps `~/.config/opencode/opencode.jsonc` minimal for plugin/default-agent/MCP entries and writes TGO-owned agent/model catalog data to `~/.config/opencode/trans-genderian-orchestra.jsonc`.
-
-## Beta Status
-
-- Repository package version: `3.0.0-beta.1`.
-- Published-beta selector after dist-tag verification: `trans-genderian-orchestra@beta`.
-- The package lives at the repository root.
-- V3 replaces the previous TGO v2 role model with conductor, scribe, composer, principal, ensemble, and councillor roles.
-- Release hardening: deterministic prior-version/omo-slim detection, rollback helpers, safe uninstall, doctor warnings, release gates, and migration documentation.
-- Remaining manual gate: restart a real OpenCode session and run `/tgo:doctor --json` interactively before applying real profile setup.
-
-## Feature Map
-
-- Agent roster and permissions: conductor, scribe, composer, principal, ensemble, and councillor roles with path/permission boundaries.
-- Command surface: `/tgo:doctor`, `/tgo:setup`, `/tgo:init`, `/tgo:uninstall`, `/tgo:work`, `/tgo:models`, plus compatibility aliases where implemented.
-- Setup lifecycle: deterministic bootstrap, setup preview, doctor inspection, manifest-backed changes, backups, rollback helpers, and safe uninstall.
-- Migration lifecycle: prior TGO/omo-slim detection, replacement planning, root package release gates, and explicit publish/tag approval boundaries.
-- Tooling: `bare-bones`, `default`, and `all-bells` tool presets; skills and MCP planning; user-managed provider/plugin/MCP preservation.
-- Model and resilience planning: generated `github-copilot` and `opencode-go` primary presets, with `github-copilot` active by default; model-switch planning; provider fallback classification; circuit breaker state; semantic retry boundaries; and ensemble/councillor derivation.
-- Workflow primitives: delegation envelope, specialist result contract, ensemble review, principal gate, scheduler/worktree planning, and integration/reconciliation primitives.
-- Validation harnesses: release-readiness verifier, targeted tests, type checking, and build checks.
-
-## Documentation
-
+- [Documentation hub](./docs/README.md)
+- [Installation and CLI](./docs/installation-and-cli.md)
+- [Configuration reference](./docs/configuration-reference.md)
+- [Provider configurations](./docs/provider-configurations.md)
+- [Agents and workflows](./docs/agents-and-workflows.md)
+- [Model presets and Ensemble](./docs/model-presets-and-ensemble.md)
 - [Architecture](./docs/architecture.md)
-- [Agents And Workflows](./docs/agents-and-workflows.md)
-- [Setup, Doctor, And Manifests](./docs/setup-doctor-manifests.md)
-- [Tools, Skills, And MCPs](./docs/tools-skills-mcps.md)
-- [Models, Resilience, And Ensemble](./docs/models-resilience-ensemble.md)
-- [Migration And Release](./docs/migration-and-release.md)
-- [Docs Hub](./docs/README.md)
-- [Operational Migration Guide](./MIGRATION.md)
-- [Operational Release Guide](./RELEASE.md)
+- [Skills and integrations](./docs/skills-and-integrations.md)
+- [Migration guide](./MIGRATION.md)
+- [Release checklist](./RELEASE.md)
 
-## Safety Boundaries
+## Beta And npm Caveat
 
-- Doctor is read-only.
-- Setup and bootstrap should preview planned actions before writing.
-- Writes are manifest-linked and backup-aware.
-- Generated TGO agent/model catalog data lives in `~/.config/opencode/trans-genderian-orchestra.jsonc`; OpenCode still needs minimal load-bearing entries in `opencode.jsonc` because it has no config include field.
-- Uninstall removes only TGO-managed entries recorded in the manifest.
-- Shared CLIs such as `bd`, `ctx7`, `gh`, and `uvx` are not uninstalled by TGO.
-- Secret-like values are warned about, redacted, or rejected on TGO-managed surfaces.
-- TGO does not push, open PRs, merge, publish, delete worktrees, or remove user tools without explicit approval.
-
-## Validation
-
-Targeted sanity validation:
+This repository is ahead of, or may differ from, what is published on npm. Before recommending or testing a published beta, verify the dist-tag:
 
 ```bash
-bun test src/index.test.ts src/cli/providers.test.ts src/cli/config-io.test.ts
+npm view trans-genderian-orchestra@beta version --json
 ```
 
-Local release-readiness validation:
+Use repository-local commands for validation when the npm beta does not match the checkout you are testing.
+
+## Validation For Contributors
+
+Common checks from the repository root:
 
 ```bash
-bun run typecheck
-bun run check:ci
-bun run build
 bun run verify:release-readiness
+bun run typecheck
+bun test src/index.test.ts src/cli/providers.test.ts src/cli/config-io.test.ts
+git diff --check
 ```
+
+The full `bun test` suite may be useful before release, but the dashboard tests can hit a known `EADDRINUSE` issue in some local environments.

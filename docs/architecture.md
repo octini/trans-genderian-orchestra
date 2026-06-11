@@ -1,66 +1,152 @@
-# TGO v3 Architecture
+# Architecture
 
-## Purpose
+TGO is an OpenCode plugin with a conservative setup CLI, runtime config hooks, specialist agents, MCP/tool registration, and review-loop enforcement. This page explains the public architecture without depending on private project history.
 
-TGO v3 is an OpenCode workflow plugin that coordinates specialist agents, a structured review loop, and deterministic setup. It is built on oh-my-opencode-slim v2-beta.15 as its foundation, with a restructured agent roster and a review panel workflow. It is designed to make OpenCode sessions more reliable without giving the plugin silent authority over user config or release actions.
+## Goals
 
-## Beta Scope
-
-- Current repository package version: `3.0.0-beta.1`.
-- Foundation: oh-my-opencode-slim v2-beta.15 with restructured agent roster.
-- The package lives at the repository root.
-
-## Core Goals
-
-- Preserve exact user intent across handoffs.
-- Retrieve/read before reasoning.
-- Use SDD-inspired phases as workflow states.
-- Keep setup deterministic, reversible, previewed, backed up, and secret-safe.
-- Preserve user-owned OpenCode config.
-- Require explicit approval for destructive or release actions.
+- Make OpenCode sessions more reliable by separating planning, research, implementation, review, and final verification.
+- Retrieve facts from files, docs, history, and external sources before relying on memory.
+- Preserve user intent across specialist handoffs.
+- Keep user-owned OpenCode config, providers, plugins, MCPs, and skills safe by default.
+- Make setup inspectable through real CLI commands and backups.
+- Require explicit approval for destructive, publishing, remote, or broad config actions.
 
 ## Non-Goals
 
-- TGO is not a general-purpose package manager.
-- TGO does not silently remove or overwrite user-managed tools, skills, plugins, MCPs, providers, or config.
-- TGO does not start work from startup hooks, timers, compaction hooks, polling, or ready issues without a conversation-triggered action.
-- TGO does not bypass the review loop for implementation work.
-- TGO does not store raw API keys, PATs, tokens, or passwords in config or generated output.
+- TGO is not a general package manager for every local tool.
+- TGO does not silently uninstall user plugins, providers, MCPs, skills, or CLIs.
+- TGO does not create provider credentials or bypass provider limits.
+- TGO does not start implementation work from timers, startup hooks, or background polling without user intent.
+- TGO does not guarantee a published npm beta matches this repository unless the dist-tag is verified.
 
-## Package Layout
+## Runtime Plugin Shape
 
-The active package is the repository root. Internal planning artifacts and archived legacy source are not active package guidance.
+The plugin exports an OpenCode plugin from `src/index.ts`. At startup it:
 
-## Namespacing
+1. loads TGO config from user and project config files;
+2. resolves the active preset and agent model overrides;
+3. creates agent definitions for Conductor, Scribe, Composer, Principal, Ensemble, and Councillor;
+4. registers built-in tools such as `webfetch`, `ast_grep_search`, `ast_grep_replace`, `cancel_task`, and `council_session` when configured;
+5. registers built-in MCPs: `websearch`, `context7`, and `grep_app` unless disabled;
+6. initializes hooks for presets, interview, deepwork, background tasks, review gates, model fallback, auto-update checks, prompt injection, and safety nudges;
+7. runs a registration health check and logs warnings if registrations look suspiciously low.
 
-TGO-managed commands use the `tgo:` namespace where practical. Compatibility aliases exist only where implemented by the plugin command config.
+## Config Hook Responsibilities
 
-## Global And Project Scope
+OpenCode calls the plugin `config` hook with the active OpenCode config. TGO uses that hook to:
 
-Global setup handles OpenCode-level plugin/config installation. Project initialization handles Beads, guidance, validation, and local artifact scaffolding. Both flows should preview changes and preserve user-owned config.
+- set `default_agent` to `conductor` only if the user has not set a default and `setDefaultAgent` is not `false`;
+- merge TGO agent configs into OpenCode agents while preserving user-supplied OpenCode agent fields;
+- resolve model arrays and fallback chains to startup models;
+- apply runtime `/preset` selections at safe lifecycle boundaries;
+- merge built-in MCP config into OpenCode MCP config;
+- create per-agent MCP permission rules;
+- register `/interview`, `/deepwork`, and `/preset` commands.
 
-Bootstrap keeps required OpenCode entries minimal in `~/.config/opencode/opencode.jsonc` and writes generated TGO agent/model catalog data to `~/.config/opencode/trans-genderian-orchestra.jsonc`. The peer catalog is TGO-owned state, not an OpenCode schema include.
+This model keeps OpenCode config load-bearing while allowing TGO to provide generated role and model data.
 
-## Retained omo-slim Ideas
+## Config Ownership Model
 
-- Dispatcher-oriented workflows.
-- Specialist roles.
-- Permission concepts.
-- Ensemble-style consensus.
-- Rich public documentation style.
+| Surface | Ownership rule |
+|---|---|
+| `opencode.json[c]` | User-owned. TGO installer makes small merge edits for plugin registration, default-agent disabling, and LSP defaults. |
+| `trans-genderian-orchestra.json[c]` | TGO plugin config. Generated by installer but intentionally user-editable. |
+| Project `.opencode/trans-genderian-orchestra.json[c]` | Project override. Deep-merged over user config. |
+| Prompt override markdown files | User-owned local behavior tuning. |
+| Provider credentials | OpenCode/provider-owned, not TGO-owned. |
+| External CLIs | User/system-owned. TGO may detect or call some tools but does not uninstall them. |
 
-## Explicit V3 Changes
+Fresh installs write `trans-genderian-orchestra.json` by default. If an existing `.jsonc` file is already present, the installer writes to that existing path. The runtime loader prefers JSONC over JSON.
 
-- V3 replaces the previous TGO v2 plugin entirely.
-- The agent roster is restructured: conductor, scribe, composer, principal, ensemble, councillor.
-- Scribe absorbs explorer + librarian (codebase exploration + external research).
-- Composer absorbs designer + fixer (implementation + UI/UX).
-- Principal absorbs oracle + reviewer (strategic advice + verification).
-- Ensemble replaces council as the multi-model consensus engine and review panel.
-- A structured review loop is added: composer → ensemble → principal → max 3 cycles.
-- The conductor is a pure technical lead/coordinator that delegates all implementation work.
+## Agent Architecture
 
-## Spec Coverage
+The active roster is intentionally small:
 
-- Spec 00: architecture goals, non-goals, artifact model, and workflow philosophy.
-- Spec 07: implementation phase order, validation gates, and beta release hardening.
+- **Conductor** coordinates and delegates.
+- **Scribe** researches and reports evidence.
+- **Composer** implements and validates.
+- **Principal** advises and verifies.
+- **Ensemble** synthesizes multi-model perspectives.
+- **Councillor** provides hidden read-only Ensemble seats.
+
+Legacy role names are accepted as config aliases in some places for compatibility, but public docs and new config should use the current names.
+
+## Review Gates
+
+The review-loop enforcement hook tracks Composer, Ensemble, and Principal task completions. It classifies changed files from git state:
+
+- markdown-only docs changes under `docs/` or root docs (`README.md`, `MIGRATION.md`, `RELEASE.md`, `CHANGELOG.md`) require Principal review;
+- risk paths such as agent factories, hooks, config loading, tools, review orchestration, multiplexers, shared utilities, and the root plugin entrypoint require Ensemble review first;
+- non-trivial or unknown changes require Ensemble review;
+- small non-risk changes can require Principal only.
+
+The gate expects Composer output with a stable `taskId`, Ensemble output with matching `reviewedTaskId`, and Principal output with matching `reviewedTaskId`. Principal pass clears the gate.
+
+## Retrieval-Led Reasoning
+
+TGO's prompts and tools push agents to inspect before asserting:
+
+- Scribe handles read-oriented exploration.
+- `webfetch` retrieves docs pages with extraction and optional secondary-model prompting.
+- Built-in MCPs provide web search, library-doc lookup, and grep.app search when configured.
+- AST-grep tools support structural code search and previewed replacement.
+- File-operation rules prefer dedicated read/search/edit tools over ad-hoc shell reads.
+
+This is a practical reliability pattern: claims should be grounded in source files, docs, command output, or explicit user decisions.
+
+## SDD-Like Workflow States
+
+TGO borrows spec-driven development ideas without requiring a heavyweight ceremony for every task:
+
+| State | What happens |
+|---|---|
+| Intent capture | Conductor restates goal and acceptance criteria when needed. |
+| Discovery | Scribe gathers code/docs evidence before implementation. |
+| Plan | Conductor or Composer scopes files, risks, tests, and review path. |
+| Implementation | Composer makes bounded edits. |
+| Validation | Composer runs relevant tests, typechecks, linters, or docs scans. |
+| Review | Ensemble and/or Principal verify against the original goal. |
+| Report | Conductor summarizes changed files, validation, and caveats. |
+
+The `/interview` command can create a live markdown spec for product ideas. The `/deepwork` command activates a heavier phased workflow for complex coding tasks.
+
+## Background Work And Multiplexing
+
+TGO supports OpenCode background subagent workflows when the required OpenCode environment flag is enabled. The installer can help persist:
+
+```bash
+OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true
+```
+
+The runtime tracks background task launches, status, terminal completions, context files, and reusable sessions. Optional multiplexer config (`tmux`/`zellij`) can provide separate panes when available, but TGO still works without a multiplexer.
+
+## Auto-Update Boundary
+
+TGO includes a background update checker for package installs. It skips local development checkouts, respects pinned versions, and can be disabled with:
+
+```jsonc
+{
+  "autoUpdate": false
+}
+```
+
+When an update is installed, OpenCode must restart before the new plugin code is active.
+
+## Public Command Boundary
+
+Current CLI commands:
+
+```bash
+bunx trans-genderian-orchestra install
+bunx trans-genderian-orchestra doctor --json
+```
+
+Current plugin slash commands:
+
+```text
+/preset [name]
+/interview <idea>
+/deepwork <task>
+```
+
+No `/tgo:*` command surface is implemented in current source.

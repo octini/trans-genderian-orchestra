@@ -3,7 +3,7 @@
 ## Responsibility
 
 - Provide a command-style skill package that standardizes repository mapping workflows for unfamiliar codebases.
-- Define the task contract used by Orchestrator/fixer agents via `SKILL.md` and operational guidance via `README.md`.
+- Define the task contract used by Conductor/Composer lanes via `SKILL.md` and operational guidance via `README.md`.
 - Generate and evolve change-aware codemap state artifacts (`.slim/codemap.json`) and scaffold placeholders (`codemap.md`).
 
 ## Design

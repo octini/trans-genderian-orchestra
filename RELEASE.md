@@ -1,66 +1,110 @@
-# TGO v3 Beta Release Readiness
+# TGO Release Checklist
 
-## Public beta install
+This checklist is for maintainers preparing a `trans-genderian-orchestra` release. Version references here are operational; public product copy should use TGO or `trans-genderian-orchestra` rather than branding the product by version.
 
-After publishing or moving the `beta` dist-tag, verify it points at the intended repository package version:
+## Preflight
 
-```bash
-npm view trans-genderian-orchestra@beta version --json
-```
+- Confirm `package.json` has the intended version.
+- Confirm repository metadata points at `octini/trans-genderian-orchestra` without a `repository.directory` subfolder.
+- Confirm public docs mention only implemented commands.
+- Confirm the npm `beta` or `latest` tag plan is explicit and approved.
+- Confirm no local scratch artifacts are included in the package.
 
-Install the verified beta into a disposable OpenCode profile or an explicitly approved real profile with:
+## Local Verification Gate
 
-```bash
-opencode plugin trans-genderian-orchestra@beta --global --force
-```
-
-The repository package version is `3.0.0-beta.1`. Before making release claims, verify the npm `beta` dist-tag points at the intended package version. Prefer `@beta` in public beta examples and automation after that verification until a stable release intentionally moves `latest`.
-
-The published beta smoke should verify that `/tgo:doctor --json` executes `npx --yes trans-genderian-orchestra@beta doctor --json`, avoids `bd doctor`, and returns TGO doctor JSON without stderr.
-
-## Local verification gate
-
-Run these from repository root:
+Run from the repository root:
 
 ```bash
-bun test
+bun run verify:release-readiness
 bun run typecheck
-bun run check:ci
-bun run build
+bun test src/index.test.ts src/cli/providers.test.ts src/cli/config-io.test.ts
+git diff --check
 ```
 
-Expected: all commands exit 0. `bun test` should report 0 failures.
+Optional but useful before a release:
 
-## Package preview gate
+```bash
+bun run build
+bun run check:ci
+bun test
+```
 
-Run from repository root:
+Known caveats: full `bun test` can hit a dashboard `EADDRINUSE` issue in some local environments, and `bun run check:ci` may report pre-existing import-order issues. Do not hide failures; report them with context.
+
+## Package Preview Gate
 
 ```bash
 npm pack --dry-run --json
 ```
 
-Expected: output includes `dist`, `README.md`, `MIGRATION.md`, `RELEASE.md`, and `package.json` in the tarball file list.
+Expected package contents include at least:
 
-## Disposable OpenCode validation gate
+- `dist/`
+- `src/skills/`
+- `trans-genderian-orchestra.schema.json`
+- `README.md`
+- `MIGRATION.md`
+- `RELEASE.md`
+- `LICENSE`
+- `package.json`
 
-Install or link the built package into a disposable OpenCode profile only. Do not mutate the real user profile for beta validation unless that profile has been explicitly approved for dogfooding.
+## Published Beta Verification
 
-Automated public beta smoke:
+After publishing or moving the `beta` dist-tag, verify it points at the intended version:
+
+```bash
+npm view trans-genderian-orchestra@beta version --json
+```
+
+Do not claim a published beta matches the repository until this check confirms it.
+
+## Disposable OpenCode Smoke
+
+Use a disposable OpenCode profile for public beta smoke testing. Do not mutate a real user profile unless explicitly approved.
+
+Automated smoke script:
 
 ```bash
 bun run scripts/verify-public-beta-opencode.ts
 ```
 
-Expected: installs `trans-genderian-orchestra@beta` into a disposable `HOME`, runs `/tgo:doctor --json` through OpenCode, confirms the actual command uses `npx --yes trans-genderian-orchestra@beta doctor --json`, confirms `bd doctor` is not run, confirms TGO doctor JSON is returned, and confirms the disposable config is unchanged.
+Expected behavior: the script installs `trans-genderian-orchestra@beta` into a disposable `HOME`, runs the configured OpenCode command path for doctor, confirms TGO doctor JSON is returned, and confirms the disposable config is not unexpectedly mutated.
 
-Manual prompt inside the disposable profile:
+## Manual Smoke
 
-```text
-/tgo:doctor --json
+In a disposable profile:
+
+```bash
+bunx trans-genderian-orchestra install --dry-run
+bunx trans-genderian-orchestra doctor --json
 ```
 
-Expected: with old TGO/omo-slim entries present, doctor reports migration availability and planned TGO replacement without writing config.
+Then, if applying install to the disposable profile:
 
-## Approval gates
+```bash
+bunx trans-genderian-orchestra install
+opencode auth login
+opencode models --refresh
+opencode
+```
+
+Inside OpenCode, verify the implemented slash commands only:
+
+```text
+/preset
+/interview Test a small product idea
+/deepwork Test a complex task placeholder
+```
+
+Avoid documenting or testing `/tgo:*` commands unless source implements them.
+
+## Approval Boundaries
 
 No git push, npm publish, latest tag, or remote repository rewrite happens without explicit approval.
+
+Also require explicit approval for:
+
+- moving npm dist-tags;
+- deleting release branches or worktrees;
+- changing package ownership or repository settings;
+- mutating a real OpenCode profile during release validation.
