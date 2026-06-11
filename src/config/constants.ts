@@ -92,6 +92,8 @@ export const DEFAULT_MAX_SUBAGENT_DEPTH = 3;
 // Workflow reminders
 export const PHASE_REMINDER_TEXT = `!IMPORTANT! Scheduler workflow: plan lanes/dependencies → dispatch background specialists → track task IDs → wait for hook-driven completion → reconcile terminal results → verify. Do not poll running jobs, consume running-job output, or advance dependent work. !END!`;
 
+export const POST_FILE_TOOL_NUDGE_TEXT = `Read first, reason second: use retrieved evidence before deciding next steps. If this revealed unfamiliar, behavior-changing, or docs/API-dependent context, route gathering through @scribe; delegate implementation to @composer. Do not turn file inspection into direct implementation.`;
+
 export const WRITABLE_FILE_OPERATIONS_RULES = `**File Operations Rules**:
 - Prefer dedicated file tools for normal code work: glob/grep/ast_grep_search for discovery, read for file contents, and edit/write/apply_patch for targeted source changes.
 - Use bash for execution and automation: git, package managers, tests, builds, scripts, diagnostics, and shell-native filesystem operations.

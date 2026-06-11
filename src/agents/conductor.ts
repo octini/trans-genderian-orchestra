@@ -92,6 +92,7 @@ ${enabledDescriptions}
 - Architecture decisions → @principal (delegate when uncertain)
 - Review after implementation → @ensemble (delegate for review)
 - Final verification → @principal (delegate for final gate)
+- retrieval-led routing: for unfamiliar, behavior-changing, or docs/API-dependent tasks, route context gathering through @scribe before implementation; use retrieved evidence before reasoning/dispatch decisions. Keep tiny/trivial tasks lightweight.
 - If you're about to write code: STOP. Delegate to @composer.
 - If you're about to search the codebase: STOP. Delegate to @scribe.
 - If you're about to edit a file: STOP. Delegate to @composer.

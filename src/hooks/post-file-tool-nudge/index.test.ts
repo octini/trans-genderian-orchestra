@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 
-import { PHASE_REMINDER_TEXT } from '../../config/constants';
+import {
+  PHASE_REMINDER_TEXT,
+  POST_FILE_TOOL_NUDGE_TEXT,
+} from '../../config/constants';
 import { createPostFileToolNudgeHook } from './index';
 
 function createOutput(output = 'real content') {
@@ -13,7 +16,7 @@ function createOutput(output = 'real content') {
 
 function countReminderInOutput(output: string | unknown): number {
   if (typeof output !== 'string') return 0;
-  return output.split(PHASE_REMINDER_TEXT).length - 1;
+  return output.split(POST_FILE_TOOL_NUDGE_TEXT).length - 1;
 }
 
 describe('post-file-tool-nudge hook', () => {
@@ -23,7 +26,8 @@ describe('post-file-tool-nudge hook', () => {
 
     await hook['tool.execute.after']({ tool: 'Read', sessionID: 's1' }, output);
 
-    expect(output.output).toContain(PHASE_REMINDER_TEXT);
+    expect(output.output).toContain(POST_FILE_TOOL_NUDGE_TEXT);
+    expect(output.output).not.toContain(PHASE_REMINDER_TEXT);
     expect(output.output).toContain('<internal_reminder>');
     expect(output.output).toContain('</internal_reminder>');
   });
@@ -57,9 +61,9 @@ describe('post-file-tool-nudge hook', () => {
       output3,
     );
 
-    expect(output1.output).toContain(PHASE_REMINDER_TEXT);
-    expect(output2.output).toContain(PHASE_REMINDER_TEXT);
-    expect(output3.output).toContain(PHASE_REMINDER_TEXT);
+    expect(output1.output).toContain(POST_FILE_TOOL_NUDGE_TEXT);
+    expect(output2.output).toContain(POST_FILE_TOOL_NUDGE_TEXT);
+    expect(output3.output).toContain(POST_FILE_TOOL_NUDGE_TEXT);
   });
 
   test('ignores non-file tools', async () => {
@@ -69,7 +73,7 @@ describe('post-file-tool-nudge hook', () => {
     await hook['tool.execute.after']({ tool: 'bash', sessionID: 's1' }, output);
 
     expect(output.output).toBe('ok');
-    expect(output.output).not.toContain(PHASE_REMINDER_TEXT);
+    expect(output.output).not.toContain(POST_FILE_TOOL_NUDGE_TEXT);
   });
 
   test('skips injection when shouldInject returns false', async () => {
@@ -79,7 +83,7 @@ describe('post-file-tool-nudge hook', () => {
     await hook['tool.execute.after']({ tool: 'read', sessionID: 's1' }, output);
 
     expect(output.output).toBe('real content');
-    expect(output.output).not.toContain(PHASE_REMINDER_TEXT);
+    expect(output.output).not.toContain(POST_FILE_TOOL_NUDGE_TEXT);
   });
 
   test('ignores Read/Write without sessionID', async () => {
@@ -89,6 +93,6 @@ describe('post-file-tool-nudge hook', () => {
     await hook['tool.execute.after']({ tool: 'read' }, output);
 
     expect(output.output).toBe('real content');
-    expect(output.output).not.toContain(PHASE_REMINDER_TEXT);
+    expect(output.output).not.toContain(POST_FILE_TOOL_NUDGE_TEXT);
   });
 });

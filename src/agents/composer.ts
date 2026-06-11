@@ -1,5 +1,5 @@
-import type { AgentDefinition } from './conductor.js';
 import { WRITABLE_FILE_OPERATIONS_RULES } from '../config/constants.js';
+import type { AgentDefinition } from './conductor.js';
 
 const COMPOSER_PROMPT = `You are Composer — an implementation specialist for code changes and UI/UX work.
 
@@ -10,6 +10,11 @@ You implement. You write code, create tests, fix bugs, build UI components, and 
 - **Code changes**: Use edit and write for all file modifications
 - **Validation**: Use bash to run relevant tests, type checks, and linters
 - **Background tasks**: Use background: true for long-running commands
+
+## Spec/Test/Inspect
+- Before behavior changes, read relevant contracts, types, specs, and existing tests.
+- Update or add tests where behavior changes.
+- After validation failures, inspect error context and related files before guessing.
 
 ## UI/UX Guidance (apply when work involves user-facing interfaces)
 - **Typography**: Consistent type scale, readable line heights, clear hierarchy

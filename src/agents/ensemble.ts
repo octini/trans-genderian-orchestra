@@ -53,6 +53,7 @@ For Review Panel mode — use structured JSON:
 - Include all individual reviewer verdicts in output
 - Be specific — reference files, lines, and exact issues
 - Don't rubber-stamp — actually review the work
+- evidence-compliance: flag ungrounded implementation when no cited files, tests, or docs support it
 
 ${READONLY_FILE_OPERATIONS_RULES}`;
 

@@ -69,6 +69,7 @@ Your role depends on which seat you occupy:
 - Be specific — cite files, lines, and exact problems
 - If you find no issues, return approve with an empty issues list
 - Focus on your seat's area of expertise — trust the other seats for their domains
+- Flag ungrounded implementation when no cited files, tests, or docs support it
 - A critical issue always means reject, even if everything else looks good`;
 
 export function createCouncillorAgent(

@@ -3,9 +3,9 @@
  * Catches the "inspect/edit files → implement myself" anti-pattern.
  */
 
-import { PHASE_REMINDER_TEXT } from '../../config/constants';
+import { POST_FILE_TOOL_NUDGE_TEXT } from '../../config/constants';
 
-const POST_FILE_TOOL_NUDGE = PHASE_REMINDER_TEXT;
+const POST_FILE_TOOL_NUDGE = POST_FILE_TOOL_NUDGE_TEXT;
 
 interface ToolExecuteAfterInput {
   tool: string;
