@@ -1,0 +1,52 @@
+# oh-my-pi — research notes
+
+Sources:
+- GitHub repo `can1357/oh-my-pi` (README.md, `docs/*.md`, `packages/*`, `crates/*`) — cloned and read locally
+- https://omp.sh (homepage /docs)
+- npm package `@oh-my-pi/pi-coding-agent`
+- Blog post "The Harness Problem" (blog.can.ac) referenced by README
+
+`oh-my-pi` (alias `omp`) is a terminal coding-agent harness and SDK, a fork of Mario Zechner's Pi (`badlogic/pi-mono`) by Can Bölük. ~21.6k stars, MIT, TypeScript runtime on Bun with ~80k lines of Rust native core (in-process grep/shell/AST/PTY). It is **not** a swarm/multi-agent framework per se — it is a single-agent "harness" with first-class subagent delegation, deterministic workflow extensions, reviewer models, and memory. The relevant "orchestration" surface lives in the `task` tool, the `orchestrate`/`workflowz` prompt contracts, the Swarm extension, and Vibe mode.
+
+## (a) Core orchestration primitive
+
+The core primitive is a **reactive agent tool-loop** (supervisor loop), not a graph. `packages/agent` exposes `Agent` / `agentLoop`: the model streams a turn, emits tool calls, the loop executes them, feeds results back, and repeats until the model yields (`prompt()`, `continue()`, plus `steer()`/`followUp()` for mid-turn injection). There is no DAG in the core; orchestration is **emergent, LLM-driven tool choice** inside a single conversation, where the main agent is de facto the supervisor and fans work out through the `task` tool.
+
+Deterministic orchestration exists as add-ons layered on top:
+
+- **Swarm extension** (`packages/swarm-extension`): defines agent workflows in YAML — pipelines, parallel fan-outs, sequential chains, or any DAG. The orchestrator builds a DAG from `waits_for`/`reports_to`, topologically sorts into **waves** (same wave runs in parallel, waves run in sequence), detects cycles, and spawns each agent as a full omp subagent via `runSubprocess`. Runs unattended via `omp-swarm` or in-session via `/swarm`.
+- **`orchestrate` magic keyword**: a prose word in the user prompt appends a hidden system notice that turns the main agent into an orchestrator for that turn — decompose, dispatch parallel `task` batches, verify each phase with gates, never yield early.
+- **`workflowz` magic keyword**: deterministic multi-subagent workflows driven from the persistent `eval` kernel's `agent()`, `parallel()`, `pipeline()`, `completion()` helpers.
+
+Control flow is **prompt/LLM-driven by default** (config governs models, roles, tool gating), with code/config-driven determinism available via Swarm YAML and `workflowz`. Sessions are append-only JSONL trees with a mutable leaf pointer (branch/fork/`/tree` navigation).
+
+## (b) Agent definition & delegation
+
+- **Definition**: an agent is a markdown file with YAML frontmatter — required `name`, `description`, `systemPrompt`; optional `tools`, `spawns`, prioritized `model` list, `thinkingLevel`, `output` (JSON schema), `blocking`, `autoloadSkills`, `readSummarize`, `prewalk`. Sources: project `.omp/agents/*.md`, user `~/.omp/agent/agents/*.md`, OMP extension packages, Claude marketplace plugins, and bundled definitions (first-wins dedup by exact name; bad files are skipped, not fatal).
+- **Bundled specialists**: `scout` (read-only research), `designer`, `reviewer`, `security-reviewer`, `librarian` (verbatim-read librarian), `task` (general worker), `sonic` (fast worker).
+- **Delegation**: via the `task` tool. The parent LLM explicitly picks the most specific agent per item and passes a batch of `tasks[]`, each with `name`, `agent`, self-contained `task` instructions, optional `outputSchema` (JSON Schema), `schemaMode` (permissive/strict), `isolated` (workspace isolation in APFS/reflink worktrees), and `effort`. Delegation is **explicit and LLM-decided** (the supervisor model chooses agent types), synchronous or async (background jobs that auto-deliver via `hub`). A spawn policy (`session.getSessionSpawns()`: `*` / deny / CSV allowlist), `task.maxRecursionDepth` (default 2), and a blocked-self-recursion guard constrain spawning.
+- **Agent culture**: subagents **start blank — no conversation history**, are told to hyperfocus, skip all linters/formatters/validation (the orchestrator verifies once at the end), and return "the minimum useful result." Reactive on demand; the only persistent agents are Vibe-mode workers.
+
+## (c) Context & shared-state passing
+
+- **Subagents are context-isolated**: they begin blank, never see the parent's conversation. State flows between agents through: (1) the self-contained task brief; (2) a shared workspace filesystem (Swarm uses signal files, structured output files, tracking files — "the orchestrator starts and stops agents; it does not pass data"); (3) `local://` URIs for large payloads instead of inline text; (4) **structured returns** — a schema-validated object via `outputSchema` that the parent reads directly (`agent://<id>/findings.0.path` pulls a field out of a subagent's output by path); (5) optional **IRC** between peers for live coordination; (6) `hub` tool to message live agents and wait on/cancel background jobs.
+- **Parent session context**: JSONL append-only tree with leaf pointer; compaction strategies — context-full LLM summarization, `snapcompact` (discarded history archived as dense model-aware bitmap PNG frames), `shake` (mechanical elision to `artifact://` refs), and `handoff` (new session + injected handoff doc). The advisor runs on its **own private context** that is independently promoted/compacted/re-primed.
+- **Long-term memory**: four backends (`off`, `local`, `hindsight`, `mnemopi`). `local` runs a background pipeline: per-session extraction, then consolidation into `MEMORY.md` + a compact `memory_summary.md` + generated `skills/` playbooks, injected at session start as a "Memory Guidance" block. Tools: `retain`/`recall`/`reflect`/`memory_edit`/`learn` (learn can promote a lesson into a managed skill). Project-scoped by default.
+
+## (d) Roster philosophy
+
+Many **named specialists** over one generalist, but not a huge fixed cast. The roster is a curated set of bundled markdown-defined agents (`scout`, `designer`, `reviewer`, `security-reviewer`, `librarian`, `task`, `sonic`) plus user-authored agents discovered from disk and extension packages — so it's a **fixed core + dynamic extension**, with **named, role-based identities** rather than anonymous numbered workers. Model routing is role-based: ten roles (`default`, `smol`, `slow`, `plan`, `commit`, `vision`, `designer`, `task`, `advisor`, `tiny`) map intents to cheap/deep/planning models; agents can carry a `model: "@review"` role alias resolved through `modelRoles`. Vibe mode adds two tiers (`fast`→`sonic`, `good`→`task`) with persistent keep-alive workers. A separate **advisor roster** (`WATCHDOG.yml`) declares named reviewer agents with their own model, tool grant, and specialization.
+
+## (e) Skills & tools shipped
+
+- **31 built-in tools**, all in one namespace: `read` (files/URLs/archives/SQLite/PDFs/internal `://` schemes), `write`, `edit` (hashline content-hash patches), `ast_edit`, `ast_grep`, `grep`, `glob`, `bash` (persistent shell, 46 in-process coreutils), `eval` (persistent Python + JS kernels that can re-enter other tools), `lsp`, `debug` (DAP), `security_scan`, `task`, `hub`, `todo`, `ask` (structured human-in-the-loop picker), `browser` (Puppeteer/relay), `computer` (desktop control), `web_search` (23 providers, site-aware extraction), `github`, `generate_image`, `inspect_image`, `tts`, and memory tools (`checkpoint`, `rewind`, `retain`, `recall`, `reflect`, `memory_edit`, `learn`, `manage_skill`).
+- **Skills**: file-backed `SKILL.md` capability packs discovered at startup, exposed as lightweight metadata in the system prompt + on-demand content via `skill://<name>` reads + optional `/skill:<name>` commands; discovered across `.omp`, extension packages, `.claude`, `.cursor`, `.codex`, `.agents`, `.github/skills`, Claude plugins, and `omp-managed` (auto-learned). Nested only one level (`*/SKILL.md`).
+- **MCP**: full server lifecycle, tool bridging into the model tool namespace, resources, prompts, JSON-RPC notifications bridged to session steers. But omp treats MCP as just one provider of tools, and ships most capability built-in instead.
+- **Extensibility**: TS extensions (tools + slash commands + events + renderers + custom provider registration), hooks, custom tools, plugins/marketplaces. Context files: AGENTS.md, RULES.md, and it natively reads 8 legacy config formats (Cursor MDC, Cline, Codex, Copilot, etc.). Approval mode gates destructive tools; `ask` provides structured user questions; `xd://resolve` renders "Accept" cards for staged AST edits.
+
+## (f) Steal-worthy bits
+
+1. **Magic keywords** (`orchestrate`, `ultrathink`, `workflowz`) — a bare prose word in the prompt injects a hidden, per-turn contract as a system notice, turning the agent into an orchestrator for that turn without any slash command or mode flag. Directly serves TGO's "no slash commands" and agentic-autonomy goals: capability is summoned by prose, opt-in per turn, discoverable in the TUI by gradient highlighting.
+2. **The `orchestrate` task-delegation contract** — decompose the full surface into `todo` phases, fan all disjoint edits out as one parallel `task` batch with self-contained Goal/Constraints/Contract briefs, verify with gates after every phase, respawn fix-up agents instead of absorbing their work, never yield mid-stream. This is the concrete, prompt-encoded recipe for agentic autonomy TGO wants its orchestrator to follow.
+3. **Structured subagent returns + markdown-frontmatter agent definitions** — agents are declarative markdown files (`name`, `description`, `systemPrompt`, `tools`, `spawns`, `model`, `output` schema), discovered/merged first-wins, and each delegation returns a schema-validated object (`agent://<id>/field`) instead of prose to parse. Perfect fit for TGO's named-roster goal: a roster is just a directory of markdown files with typed handoffs, and no parser for free-text findings.
+4. **Agent-curated, project-scoped memory** (`retain`/`recall`/`reflect`/`learn`, plus background consolidation into `MEMORY.md`, `memory_summary.md`, and auto-generated `skills/` playbooks) — memory is written by the agent mid-run and injected as a compact guidance block at session start. Supports autonomy across sessions without extra infra, and its "memory produces skill files" loop is a skills-over-MCPs instantiation: durable capability is markdown on disk, not a server.

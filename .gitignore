@@ -1,0 +1,17 @@
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key
+.beads/proxieddb/
+
+# Plugin node_modules
+plugin/node_modules/
+
+# macOS
+.DS_Store
+
+# Publish prep exclusions
+.beads/
+.agents/skills.bk/
+2026_08_06_pocock_video_transcript.txt

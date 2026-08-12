@@ -1,0 +1,35 @@
+{
+  "name": "trans-genderian-orchestra",
+  "version": "0.1.1",
+  "description": "TGO — a thin multi-agent orchestration plugin for OpenCode",
+  "license": "MIT",
+  "repository": "https://github.com/octini/trans-genderian-orchestra",
+  "homepage": "https://github.com/octini/trans-genderian-orchestra",
+  "bugs": {
+    "url": "https://github.com/octini/trans-genderian-orchestra/issues"
+  },
+  "type": "module",
+  "main": "src/plugin.ts",
+  "files": [
+    "src",
+    "assets",
+    "schema"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "validate": "bun run src/validate.ts",
+    "setup": "bun run src/install.ts",
+    "build": "bun run src/build.ts"
+  },
+  "dependencies": {
+    "@opencode-ai/plugin": "~1.18.13",
+    "zod": "^4.1.13"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "~5.9.3"
+  },
+  "engines": {
+    "bun": ">=1.0.0"
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "balanced": {
+    "bernstein": { "model": "opencode-go/deepseek-v4-pro", "variant": "max" },
+    "horowitz": { "model": "opencode-go/deepseek-v4-pro", "variant": "max" },
+    "nas": { "model": "opencode-go/mimo-v2.5", "variant": "default" },
+    "dylan": { "model": "opencode-go/deepseek-v4-flash", "variant": "high" },
+    "nirvana": { "model": "opencode-go/deepseek-v4-pro", "variant": "max" },
+    "band-members": { "model": "opencode-go/deepseek-v4-flash", "variant": "high" }
+  },
+  "cheap": {
+    "bernstein": { "model": "opencode/deepseek-v4-flash-free", "variant": "max" },
+    "horowitz": { "model": "opencode/deepseek-v4-flash-free", "variant": "high" },
+    "nas": { "model": "opencode/mimo-v2.5-free", "variant": "default" },
+    "dylan": { "model": "opencode/deepseek-v4-flash-free", "variant": "high" },
+    "nirvana": { "model": "opencode/deepseek-v4-flash-free", "variant": "max" },
+    "band-members": { "model": "opencode/deepseek-v4-flash-free", "variant": "high" }
+  },
+  "frontier": {
+    "bernstein": { "model": "opencode-go/kimi-k3", "variant": "max" },
+    "horowitz": { "model": "opencode-go/kimi-k3", "variant": "max" },
+    "nas": { "model": "opencode-go/deepseek-v4-flash", "variant": "high" },
+    "dylan": { "model": "opencode-go/deepseek-v4-flash", "variant": "max" },
+    "nirvana": { "model": "opencode-go/kimi-k3", "variant": "max" },
+    "band-members": { "model": "opencode-go/deepseek-v4-flash", "variant": "high" }
+  }
+}

@@ -1,0 +1,135 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://opencode.ai/trans-genderian-orchestra.config.schema.json",
+  "title": "TGO plugin config",
+  "description": "Options for the trans-genderian-orchestra plugin. Presets are data (tolerate model-name drift); the schema validates structure, not model names.",
+  "type": "object",
+  "properties": {
+    "preset": {
+      "description": "Active seat→model preset.",
+      "enum": ["balanced", "cheap", "frontier"],
+      "default": "balanced"
+    },
+    "register": {
+      "description": "Writing register for Dylan's output.",
+      "enum": ["concise", "natural"],
+      "default": "concise"
+    },
+    "agentDir": {
+      "description": "Directory holding seat prompt .md files (defaults to the opencode global agent dir).",
+      "type": "string"
+    },
+    "board": {
+      "description": "Background Job Board (hook #1) settings.",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "description": "Master switch for the per-turn board injection.",
+          "type": "boolean",
+          "default": true
+        },
+        "refreshMs": {
+          "description": "Minimum interval between bd re-renders per session.",
+          "type": "integer",
+          "minimum": 1,
+          "default": 5000
+        }
+      },
+      "additionalProperties": false
+    },
+    "concision": {
+      "description": "Always-on concision transform (hook #4) settings.",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "description": "Universal off-switch for the per-turn house-style injection.",
+          "type": "boolean",
+          "default": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "setup": {
+      "description": "Per-repo setup auto-trigger (session.created) settings.",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "description": "Master switch for the per-repo setup auto-trigger.",
+          "type": "boolean",
+          "default": true
+        },
+        "autoInstallBeads": {
+          "description": "Whether a missing bd CLI is auto-installed or reported.",
+          "type": "boolean",
+          "default": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "watchdog": {
+      "description": "Abort delegated subagent sessions that exceed a wall-clock cap or sit silent past an idle cap, then notify the parent to re-dispatch (guards against empty handoffs and hung delegations).",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "description": "Master switch for the delegation watchdog.",
+          "type": "boolean",
+          "default": true
+        },
+        "wallClockMs": {
+          "description": "Max total busy time for a delegated session before it is aborted.",
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "default": 1200000
+        },
+        "idleMs": {
+          "description": "Max silent (no tool/message activity) time while a delegation is busy before it is aborted.",
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "default": 300000
+        },
+        "checkMs": {
+          "description": "How often the watchdog scans tracked sessions.",
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "default": 10000
+        }
+      },
+      "additionalProperties": false
+    },
+    "presets": {
+      "description": "Partial override of the built-in seat→model map. Missing presets fall back to built-ins. Model IDs are free-form strings.",
+      "type": "object",
+      "properties": {
+        "balanced": { "$ref": "#/definitions/seatPreset" },
+        "cheap": { "$ref": "#/definitions/seatPreset" },
+        "frontier": { "$ref": "#/definitions/seatPreset" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "seatPreset": {
+      "type": "object",
+      "properties": {
+        "bernstein": { "$ref": "#/definitions/modelRef" },
+        "horowitz": { "$ref": "#/definitions/modelRef" },
+        "nas": { "$ref": "#/definitions/modelRef" },
+        "dylan": { "$ref": "#/definitions/modelRef" },
+        "nirvana": { "$ref": "#/definitions/modelRef" },
+        "band-members": { "$ref": "#/definitions/modelRef" }
+      },
+      "required": ["bernstein", "horowitz", "nas", "dylan", "nirvana", "band-members"],
+      "additionalProperties": false
+    },
+    "modelRef": {
+      "type": "object",
+      "properties": {
+        "model": { "type": "string", "minLength": 1 },
+        "variant": { "type": "string" }
+      },
+      "required": ["model"],
+      "additionalProperties": false
+    }
+  }
+}
