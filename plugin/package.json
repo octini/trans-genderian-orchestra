@@ -1,6 +1,6 @@
 {
   "name": "trans-genderian-orchestra",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "TGO — a thin multi-agent orchestration plugin for OpenCode",
   "license": "MIT",
   "repository": "https://github.com/octini/trans-genderian-orchestra",

@@ -2,6 +2,10 @@
 
 All notable changes to TGO, in reverse chronological order. Versions track `plugin/package.json`.
 
+## 0.1.2 — 2026-08-12
+
+Docs-only release: the npm package page now carries the full documentation suite (README rewrite, docs/ pages, LICENSE, CHANGELOG). No code changes.
+
 ## 0.1.1 — 2026-08-12
 
 - **Fixed:** the magic-context background historian now defaults to the active preset's Dylan model — the volume seat — instead of inheriting a judgment seat's model. The historian stays on the cheap workhorse rather than the expensive seats, and the volume seat's model is the one that matches actual context usage. (`09141ee`, released by `b2fba44`)
