@@ -17,15 +17,15 @@ describe("magic-context configuration", () => {
   test("historianModelFromPreset picks the active preset's dylan model (volume seat — the cheap historian)", () => {
     const presets = {
       balanced: {
-        bernstein: { model: "opencode-go/deepseek-v4-pro" },
-        dylan: { model: "opencode-go/deepseek-v4-flash" },
+        bernstein: { model: "github-copilot/gpt-5.6-luna" },
+        dylan: { model: "github-copilot/gpt-5.6-luna" },
       },
       cheap: {
         bernstein: { model: "opencode/deepseek-v4-flash-free" },
         dylan: { model: "opencode/deepseek-v4-flash-free" },
       },
     };
-    expect(historianModelFromPreset(presets, "balanced")).toBe("opencode-go/deepseek-v4-flash");
+    expect(historianModelFromPreset(presets, "balanced")).toBe("github-copilot/gpt-5.6-luna");
     expect(historianModelFromPreset(presets, "cheap")).toBe("opencode/deepseek-v4-flash-free");
     expect(historianModelFromPreset(presets, "frontier")).toBeUndefined();
     expect(historianModelFromPreset(undefined, "balanced")).toBeUndefined();

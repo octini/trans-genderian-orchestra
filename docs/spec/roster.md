@@ -33,24 +33,23 @@ Standing rule (all seats): **effectiveness over theming.** Names are naming/UX d
 
 Per-role model routing via presets (see `docs/spec/features.md` §5): named seat→model/variant maps. Three built-ins: **balanced / cheap / frontier**. **Applied at plugin load** from the active preset (config hook), never mid-task — OpenCode 1.18.13's `task` tool takes no model parameter and a subagent without an explicit `model` inherits the parent's model, so per-seat models are fixed for the session.
 
-**Concrete presets (decided 2026-08-05, Go + free Zen models):**
+**Concrete presets (decided 2026-08-05, Go + free Zen models; balanced amended 2026-08-16, tgo-5a6):**
 
 | Seat | Balanced | Cheap | Frontier |
 |---|---|---|---|
-| Bernstein | `opencode-go/deepseek-v4-pro` (effort max) | `opencode/deepseek-v4-flash-free` (effort max) | `opencode-go/kimi-k3` (max) |
-| Horowitz | `opencode-go/deepseek-v4-pro` (effort max) | `opencode/deepseek-v4-flash-free` (effort high) | `opencode-go/kimi-k3` (max) |
-| Nas | `opencode-go/mimo-v2.5` (vision; default) | `opencode/mimo-v2.5-free` (vision; default) | `opencode-go/deepseek-v4-flash` (effort high) |
-| Dylan | `opencode-go/deepseek-v4-flash` (effort high) | `opencode/deepseek-v4-flash-free` (effort high) | `opencode-go/deepseek-v4-flash` (effort max) |
-| Nirvana synth | `opencode-go/deepseek-v4-pro` (effort max) | `opencode/deepseek-v4-flash-free` (effort max) | `opencode-go/kimi-k3` (max) |
-| Band members | `opencode-go/deepseek-v4-flash` (effort high) | `opencode/deepseek-v4-flash-free` (effort high) | `opencode-go/deepseek-v4-flash` (effort high) |
+| Bernstein | `github-copilot/gpt-5.6-luna` (max) | `opencode/deepseek-v4-flash-free` (effort max) | `opencode-go/kimi-k3` (max) |
+| Horowitz | `github-copilot/gpt-5.6-luna` (max) | `opencode/deepseek-v4-flash-free` (effort high) | `opencode-go/kimi-k3` (max) |
+| Nas | `github-copilot/gpt-5.6-luna` (medium) | `opencode/mimo-v2.5-free` (vision; default) | `opencode-go/deepseek-v4-flash` (effort high) |
+| Dylan | `github-copilot/gpt-5.6-luna` (high) | `opencode/deepseek-v4-flash-free` (effort high) | `opencode-go/deepseek-v4-flash` (effort max) |
+| Nirvana synth | `github-copilot/gpt-5.6-luna` (max) | `opencode/deepseek-v4-flash-free` (effort max) | `opencode-go/kimi-k3` (max) |
+| Band members | `github-copilot/gpt-5.6-luna` (high) | `opencode/deepseek-v4-flash-free` (effort high) | `opencode-go/deepseek-v4-flash` (effort high) |
 
 **Rationale:**
-- **DS4 Flash as the workhorse** (verified 2026-08-05): new 2026-07-31 release, 1M context / 384k output, reasoning-effort low/high/max, $0.14/$0.28 — the un-updated DS4 Pro was dropped in favor of it.
-- **DS4 Pro on the judgment seats** (amended 2026-08-12): the updated V4 Pro (0813) is a large capability step over Flash at ~3.1x the per-token price ($0.435/$0.87 on Go, $15/mo usage pool). Bernstein (planning) and Horowitz (review) are the highest-leverage seats in the roster — a better planner means fewer bad delegations, and a better reviewer catches bugs before they merge. The synth keeps the "strongest model in the active preset" invariant, so Nirvana follows the judgment seats to Pro. Nas/Dylan/band members stay on Flash: research and implementation are volume-dominated (Flash burns $60/mo of usage pool vs Pro's $15), and the eyes don't need frontier cost.
-- **Nas = MiMo V2.5 = the eyes** (balanced/cheap): vision (`text+image+audio+video`), 1M context (Go) / 200k (free), same price as Flash. Bernstein delegates vision tasks to Nas on demand — the slim Observer pattern, with **Nas read-only** (confirmed: slim's Observer is read-only, no write access needed). **Implemented (2026-08-11, tgo-dqa):** Bernstein's prompt carries the vision rule both ways — anything needing sight goes to Nas when his model lacks vision; when his model HAS vision (frontier Kimi K3), he reads images himself and only delegates vision work that's research/recon. Nas's prompt identifies him as "the eyes" so he accepts sight tasks in the structured report format.
+- **Balanced = GitHub Copilot GPT-5.6 Luna on every seat** (decided 2026-08-16, tgo-5a6): all six balanced entries route to `github-copilot/gpt-5.6-luna`; the preset differentiates by reasoning variant only — max on the judgment seats (Bernstein/Horowitz/Nirvana), medium on Nas (read-only research), high on Dylan (writing) and band members (tool-less reasoning). Luna supports none/low/medium/high/xhigh/max variants.
+- **Nas = the eyes** (cheap: MiMo V2.5 with vision; balanced: same role on Luna): Bernstein delegates vision tasks to Nas on demand — the slim Observer pattern, with **Nas read-only** (confirmed: slim's Observer is read-only, no write access needed). **Implemented (2026-08-11, tgo-dqa):** Bernstein's prompt carries the vision rule both ways — anything needing sight goes to Nas when his model lacks vision; when his model HAS vision (frontier Kimi K3), he reads images himself and only delegates vision work that's research/recon. Nas's prompt identifies him as "the eyes" so he accepts sight tasks in the structured report format.
 - **Frontier = Kimi K3** for the judgment seats: 1M context, vision, reasoning max (its only option). Nas/Dylan stay DS4 Flash (research/execution never need frontier cost).
-- **No provider diversity** in balanced/cheap (user accepts for now); cross-vendor review remains an option in the "works well with" page.
-- Reasoning-effort variants: max on judgment seats (Bernstein/Horowitz/Nirvana), high on Dylan (writing) and band members (tool-less reasoning).
+- **Provider split across presets:** balanced runs GitHub Copilot; cheap stays OpenCode free-tier. Cross-vendor review remains an option in the "works well with" page.
+- Reasoning-effort variants: max on judgment seats (Bernstein/Horowitz/Nirvana), medium on Nas (research), high on Dylan (writing) and band members (tool-less reasoning).
 - Models move fast; these are the plan-as-of-today. The JSON schema + build step should tolerate model-name drift (presets are data, not code).
 
 ## 5. Bernstein's mandate (including architectural-review amendments)

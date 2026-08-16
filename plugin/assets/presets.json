@@ -1,11 +1,11 @@
 {
   "balanced": {
-    "bernstein": { "model": "opencode-go/deepseek-v4-pro", "variant": "max" },
-    "horowitz": { "model": "opencode-go/deepseek-v4-pro", "variant": "max" },
-    "nas": { "model": "opencode-go/mimo-v2.5", "variant": "default" },
-    "dylan": { "model": "opencode-go/deepseek-v4-flash", "variant": "high" },
-    "nirvana": { "model": "opencode-go/deepseek-v4-pro", "variant": "max" },
-    "band-members": { "model": "opencode-go/deepseek-v4-flash", "variant": "high" }
+    "bernstein": { "model": "github-copilot/gpt-5.6-luna", "variant": "max" },
+    "horowitz": { "model": "github-copilot/gpt-5.6-luna", "variant": "max" },
+    "nas": { "model": "github-copilot/gpt-5.6-luna", "variant": "medium" },
+    "dylan": { "model": "github-copilot/gpt-5.6-luna", "variant": "high" },
+    "nirvana": { "model": "github-copilot/gpt-5.6-luna", "variant": "max" },
+    "band-members": { "model": "github-copilot/gpt-5.6-luna", "variant": "high" }
   },
   "cheap": {
     "bernstein": { "model": "opencode/deepseek-v4-flash-free", "variant": "max" },

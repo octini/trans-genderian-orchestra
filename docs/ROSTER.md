@@ -31,18 +31,17 @@ Seat→model maps are called **presets**: named data files, not code, so model-n
 
 | Seat | Balanced | Cheap | Frontier |
 |---|---|---|---|
-| Bernstein | `opencode-go/deepseek-v4-pro` (effort max) | `opencode/deepseek-v4-flash-free` (effort max) | `opencode-go/kimi-k3` (max) |
-| Horowitz | `opencode-go/deepseek-v4-pro` (effort max) | `opencode/deepseek-v4-flash-free` (effort high) | `opencode-go/kimi-k3` (max) |
-| Nas | `opencode-go/mimo-v2.5` (vision; default) | `opencode/mimo-v2.5-free` (vision; default) | `opencode-go/deepseek-v4-flash` (effort high) |
-| Dylan | `opencode-go/deepseek-v4-flash` (effort high) | `opencode/deepseek-v4-flash-free` (effort high) | `opencode-go/deepseek-v4-flash` (effort max) |
-| Nirvana synth | `opencode-go/deepseek-v4-pro` (effort max) | `opencode/deepseek-v4-flash-free` (effort max) | `opencode-go/kimi-k3` (max) |
-| Band members | `opencode-go/deepseek-v4-flash` (effort high) | `opencode/deepseek-v4-flash-free` (effort high) | `opencode-go/deepseek-v4-flash` (effort high) |
+| Bernstein | `github-copilot/gpt-5.6-luna` (max) | `opencode/deepseek-v4-flash-free` (effort max) | `opencode-go/kimi-k3` (max) |
+| Horowitz | `github-copilot/gpt-5.6-luna` (max) | `opencode/deepseek-v4-flash-free` (effort high) | `opencode-go/kimi-k3` (max) |
+| Nas | `github-copilot/gpt-5.6-luna` (medium) | `opencode/mimo-v2.5-free` (vision; default) | `opencode-go/deepseek-v4-flash` (effort high) |
+| Dylan | `github-copilot/gpt-5.6-luna` (high) | `opencode/deepseek-v4-flash-free` (effort high) | `opencode-go/deepseek-v4-flash` (effort max) |
+| Nirvana synth | `github-copilot/gpt-5.6-luna` (max) | `opencode/deepseek-v4-flash-free` (effort max) | `opencode-go/kimi-k3` (max) |
+| Band members | `github-copilot/gpt-5.6-luna` (high) | `opencode/deepseek-v4-flash-free` (effort high) | `opencode-go/deepseek-v4-flash` (effort high) |
 
 The routing rationale, from the spec:
 
-- **DS4 Flash is the workhorse** — new 2026-07-31 release with 1M context / 384k output and reasoning-effort low/high/max at $0.14/$0.28. Nas, Dylan, and the band members stay on it: research and implementation are volume-dominated.
-- **DS4 Pro sits on the judgment seats** — the updated V4 Pro (0813) is a large capability step over Flash at ~3.1x the per-token price. Bernstein (planning) and Horowitz (review) are the highest-leverage seats: a better planner means fewer bad delegations, a better reviewer catches bugs before they merge. Nirvana's synthesizer keeps the "strongest model in the active preset" invariant.
-- **Nas is the eyes** — MiMo V2.5 has vision (`text+image+audio+video`) at the same price as Flash. Bernstein delegates vision tasks to Nas; when his own model has vision (frontier Kimi K3), he reads images himself and only delegates vision work that is research or recon.
+- **Balanced = GitHub Copilot GPT-5.6 Luna on every seat** — all six balanced entries route to `github-copilot/gpt-5.6-luna`; the preset differentiates by reasoning variant only: max on the judgment seats (Bernstein/Horowitz/Nirvana), medium on Nas (read-only research), high on Dylan (writing) and band members (tool-less reasoning). Luna supports none/low/medium/high/xhigh/max variants.
+- **Nas is the eyes** — the read-only researcher role is unchanged: Bernstein delegates vision tasks to Nas, and when his own model has vision (frontier Kimi K3), he reads images himself and only delegates vision work that is research or recon. Cheap keeps MiMo V2.5 (vision) for Nas.
 - **Frontier = Kimi K3** for the judgment seats — 1M context, vision, reasoning max.
 
 Switching presets at runtime is a prose nudge, not a config edit: say "go cheap" or "use frontier for this" and Bernstein sets the active preset, which takes effect at the next plugin load. Partial overrides are possible via the `presets` config option.
