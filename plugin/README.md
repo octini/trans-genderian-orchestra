@@ -2,7 +2,7 @@
 
 > Mirrored byte-for-byte in `plugin/README.md` (the npm readme) — edit one, copy to the other.
 
-[![npm version](https://img.shields.io/badge/npm-0.1.2-6a4c93)](https://www.npmjs.com/package/trans-genderian-orchestra)
+[![npm version](https://img.shields.io/badge/npm-0.1.3-6a4c93)](https://www.npmjs.com/package/trans-genderian-orchestra)
 [![License: MIT](https://img.shields.io/badge/license-MIT-6a4c93)](LICENSE)
 [![OpenCode 1.18.13](https://img.shields.io/badge/OpenCode-1.18.13-6a4c93)](https://opencode.ai)
 
@@ -28,7 +28,7 @@ The multi-agent literature is blunt about where orchestration fails, and TGO's s
 Add the plugin to your opencode config:
 
 ```json
-{ "plugin": ["trans-genderian-orchestra@0.1.2"] }
+{ "plugin": ["trans-genderian-orchestra@0.1.3"] }
 ```
 
 OpenCode installs the package and its dependencies. Restart opencode. Per-repo setup (the beads store plus the AGENTS fragment) runs by itself the first time you open a repo — zero user input, idempotent, no-clobber.

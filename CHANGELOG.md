@@ -2,6 +2,11 @@
 
 All notable changes to TGO, in reverse chronological order. Versions track `plugin/package.json`.
 
+## 0.1.3 — 2026-08-16
+
+- **Changed:** the balanced preset routes every seat through `github-copilot/gpt-5.6-luna` with role-specific reasoning variants.
+- **Changed:** the Magic Context Historian now uses `github-copilot/gpt-5.6-luna` at medium reasoning effort in the local user configuration.
+
 ## 0.1.2 — 2026-08-12
 
 Docs-only release: the npm package page now carries the full documentation suite (README rewrite, docs/ pages, LICENSE, CHANGELOG). No code changes.
