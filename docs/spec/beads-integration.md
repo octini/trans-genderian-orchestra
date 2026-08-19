@@ -28,6 +28,10 @@ The plugin does not perform these Bernstein-owned lifecycle writes. It validates
 
 ## 3. Where the thin board lives
 
+### Renderer-only Beads snapshot
+
+Invoke the `tgo_beads_snapshot` OpenCode tool from a primary session for a one-shot terminal snapshot. It is not an interactive full-screen TUI. The implementation uses `loadBeadsTui(run)` and `renderBeadsTui(snapshot)` from `plugin/src/tui.ts`; reads use `bd list --status in_progress --json`, `bd list --status open --json`, `bd list --status pending --json`, `bd ready --json`, and `bd blocked --json`. The snapshot is read-only: these commands do not authorize issue creation, claim, closure, reopening, recovery, or any other lifecycle action.
+
 Part of TGO's own opencode-beads replacement — the plugin wiring owns:
 - **context injection** (beads-derived snapshot each turn; sentinel-tagged; strip-and-replace for cache safety — architecture hook #1), and
 - **Beads context reads** through the existing board renderer. Lifecycle writes are not implemented by the plugin.

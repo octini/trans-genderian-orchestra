@@ -1,4 +1,4 @@
-import type { Plugin, PluginInput } from "@opencode-ai/plugin";
+import { tool, type Plugin, type PluginInput } from "@opencode-ai/plugin";
 import { loadTgoConfig, validateAgentDir, BD_ENV, type TgoConfig } from "./config";
 import { BoardController, type BoardMessage } from "./board";
 import { ConcisionController } from "./concision";
@@ -13,12 +13,22 @@ import { DEPENDENCIES, installMissing, runShellCommand } from "./deps";
 import { applyPreset, readPresetNudge, resolveActivePreset } from "./presets";
 import { validateDelegationBoundary, validateDelegationPacket, verifyClaimObserved as verifyDelegationClaimObserved } from "./delegation";
 import { authorizeLifecycleSession, evaluateClosure, verifyClaimObserved } from "./lifecycle";
+import { loadBeadsTui, renderBeadsTui } from "./tui";
 export { validateDelegationBoundary, validateDelegationPacket, verifyClaimObserved as verifyDelegationClaimObserved } from "./delegation";
 export type { DelegationPacket, DelegationValidation } from "./delegation";
 export { evaluateClosure, authorizeLifecycleSession, verifyClaimObserved } from "./lifecycle";
 export type { ClosureGate, LifecycleMetadata } from "./lifecycle";
 import * as path from "node:path";
 import * as os from "node:os";
+
+export function isPrimarySessionData(data: unknown): boolean {
+  return Boolean(
+    data &&
+      typeof data === "object" &&
+      Object.prototype.hasOwnProperty.call(data, "parentID") &&
+      (data as { parentID?: unknown }).parentID === null
+  );
+}
 
 export const TgoPlugin: Plugin = async (
   { client, $, project, directory, worktree }: PluginInput,
@@ -157,6 +167,22 @@ export const TgoPlugin: Plugin = async (
   };
 
   return {
+    tool: {
+      tgo_beads_snapshot: tool({
+        description: "Render a read-only Beads work snapshot for the primary session.",
+        args: {},
+        async execute(_args, context) {
+          if (config.board?.enabled === false) {
+            return "Beads snapshot disabled by configuration.";
+          }
+          const session = await client.session.get({ path: { id: context.sessionID } });
+          if (!isPrimarySessionData(session.data)) {
+            return "Beads snapshot is available only from a primary session.";
+          }
+          return renderBeadsTui(await loadBeadsTui(runBd));
+        },
+      }),
+    },
     event: async ({ event }) => {
       if (event.type === "message.part.updated") {
         // Streaming heartbeat: parts update continuously while a message is

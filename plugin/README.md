@@ -2,7 +2,7 @@
 
 > Mirrored byte-for-byte in `plugin/README.md` (the npm readme) — edit one, copy to the other.
 
-[![npm version](https://img.shields.io/badge/npm-0.1.4-6a4c93)](https://www.npmjs.com/package/trans-genderian-orchestra)
+[![npm version](https://img.shields.io/badge/npm-0.1.5-6a4c93)](https://www.npmjs.com/package/trans-genderian-orchestra)
 [![License: MIT](https://img.shields.io/badge/license-MIT-6a4c93)](LICENSE)
 [![OpenCode 1.18.13](https://img.shields.io/badge/OpenCode-1.18.13-6a4c93)](https://opencode.ai)
 
@@ -29,7 +29,7 @@ The multi-agent literature is blunt about where orchestration fails, and TGO's s
 Add the plugin to your opencode config:
 
 ```json
-{ "plugin": ["trans-genderian-orchestra@0.1.4"] }
+{ "plugin": ["trans-genderian-orchestra@0.1.5"] }
 ```
 
 OpenCode installs the package and its dependencies. Restart opencode. Per-repo setup is host-dependent: when `bd` is exposed, TGO can attempt `bd init` and `bd setup opencode` in the target repository and reports subprocess exit code, stdout, and stderr. When the host supports the read commands, TGO may render a read-only Beads-derived board. Beads create, claim, close, reopen, recovery, and authorization remain disabled or unproven; Bernstein-owned lifecycle support remains planned follow-up.

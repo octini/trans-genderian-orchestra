@@ -11,7 +11,7 @@ function input() {
       app: { log: async () => ({}) },
       session: {
         get: async ({ path }: { path: { id: string } }) => ({
-          data: path.id === "delegated" ? { parentID: "primary" } : { parentID: null },
+          data: path.id === "delegated" ? { parentID: "primary" } : path.id === "missing" ? {} : { parentID: null },
         }),
       },
     },
@@ -23,6 +23,20 @@ function input() {
 }
 
 describe("plugin completion observer boundary", () => {
+  test("exposes a read-only snapshot tool to primary sessions", async () => {
+    const hooks = await TgoPlugin(input(), {});
+    const snapshot = hooks.tool?.tgo_beads_snapshot as { execute: (args: unknown, context: { sessionID: string }) => Promise<string> };
+    const output = await snapshot.execute({}, { sessionID: "primary" });
+    expect(output).toContain("BEADS SNAPSHOT");
+  });
+
+  test("denies snapshot reads for child and missing-parent sessions", async () => {
+    const hooks = await TgoPlugin(input(), {});
+    const snapshot = hooks.tool?.tgo_beads_snapshot as { execute: (args: unknown, context: { sessionID: string }) => Promise<string> };
+    expect(await snapshot.execute({}, { sessionID: "delegated" })).toContain("only from a primary session");
+    expect(await snapshot.execute({}, { sessionID: "missing" })).toContain("only from a primary session");
+  });
+
   test("tool boundary validates tiny, standard, and heavy packets while bypassing ordinary tools", async () => {
     const hooks = await TgoPlugin(input(), {});
     const before = hooks["tool.execute.before"]!;

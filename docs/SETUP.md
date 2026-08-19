@@ -9,7 +9,7 @@ This page is the human-readable version of `docs/spec/setup.md`; that spec stays
 The npm path — add the plugin to your opencode config:
 
 ```json
-{ "plugin": ["trans-genderian-orchestra@0.1.4"] }
+{ "plugin": ["trans-genderian-orchestra@0.1.5"] }
 ```
 
 OpenCode installs the package and its dependencies. A blank-slate install ends up with the plugin loaded, not just config files on disk.
@@ -35,7 +35,7 @@ The installer is idempotent — re-running never duplicates entries.
 
 ### The two load paths
 
-1. **npm** — add `"trans-genderian-orchestra@0.1.4"` to the `plugin` array of `opencode.jsonc`. OpenCode installs the package and its dependencies automatically.
+1. **npm** — add `"trans-genderian-orchestra@0.1.5"` to the `plugin` array of `opencode.jsonc`. OpenCode installs the package and its dependencies automatically.
 2. **Local plugin** — symlink or copy `src/plugin.ts` into `~/.config/opencode/plugins/`. Seat prompts are auto-discovered from `~/.config/opencode/agent/` (opencode scans both `agent/` and `agents/`).
 
 ### What the installer writes
@@ -70,6 +70,10 @@ Via the plugin config:
 ```
 
 ## Verifying the install
+
+### Beads snapshot
+
+For a one-shot terminal view, invoke the `tgo_beads_snapshot` OpenCode tool from a primary session. It shows ready, open, pending, in-progress, and blocked work with dependency edges. This is a read-only renderer snapshot, not an interactive TUI; it does not authorize lifecycle actions. `plugin/src/tui.ts` remains the implementation detail for the loader and renderer.
 
 - **Register + concision are live:** check the installed seats (`~/.config/opencode/agent/dylan.md`) for the house-style block and the "present in *register* mode by default" line — that's the register that took effect at install.
 - **The runtime concision hook is firing:** start opencode with `TGO_DEBUG_EVENTS=1`; the log line `event concision.appended <session-id> {"register":"concise"}` appears each time the instruction is injected into a primary session's system prompt. Absence of the line means the hook isn't firing.

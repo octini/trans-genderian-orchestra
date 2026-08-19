@@ -2,6 +2,13 @@
 
 All notable changes to TGO, in reverse chronological order. Versions track `plugin/package.json`.
 
+## [0.1.5] - 2026-08-19
+
+- **Renderer-only Beads snapshot:** added the `tgo_beads_snapshot` OpenCode tool, rendering ready, open, pending, in_progress, and blocked work in a table with assignees, priorities, and dependency edges.
+- **Primary-session gate:** the tool runs only in the explicit primary session.
+- **Read handling:** malformed, empty, and unavailable Beads responses render explicit snapshot states; the tool is read-only and performs no lifecycle writes.
+- **Gates:** 368 tests, TypeScript typecheck, validation, and build gates pass.
+
 ## [0.1.4] - 2026-08-19
 
 - **5-way ablation benchmark:** variants none(0)/tgo-small(85)/tgo-current(720)/tgo-ste-selective(580)/tgo-large(6680), 10 fixtures (terse-qa + orchestration + tool-heavy + voice-forward), 50 cases with input/cached/output/retries/delegation/latency/cost/costPerSuccessfulTask (proxy), drift/preservation/requiredClaim/taskSuccess, externalClaims vendor-not-TGO, limitations documented, no auto-adoption, cost per successful task primary tradeoff, no hard 20/25 cap (STE soft metric-only for tool-heavy)
