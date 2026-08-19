@@ -49,6 +49,7 @@ const boardConfig = z.object({
 
 const concisionConfig = z.object({
   enabled: z.boolean().default(true),
+  reinforcement: z.boolean().default(false),
 });
 
 const setupConfig = z.object({
@@ -75,7 +76,7 @@ export const tgoConfigSchema = z.object({
   register: z.enum(["concise", "natural"]).default("concise"),
   agentDir: z.string().optional(),
   board: boardConfig.optional().default(() => ({ enabled: true, refreshMs: 5000 })),
-  concision: concisionConfig.optional().default(() => ({ enabled: true })),
+  concision: concisionConfig.optional().default(() => ({ enabled: true, reinforcement: false })),
   setup: setupConfig.optional().default(() => ({ enabled: true, autoInstallBeads: true })),
   watchdog: watchdogConfig.optional().default(() => ({
     enabled: true,

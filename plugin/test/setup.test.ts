@@ -132,6 +132,19 @@ describe("SetupController.maybeSetup", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
+  test("includes subprocess exit status and stderr in setup failures", async () => {
+    const dir = tmpDir();
+    const c = controller({
+      run: async () => ({ exitCode: 7, stdout: "partial output", stderr: "unsupported operation" }),
+    });
+    const result = await c.maybeSetup(dir);
+    expect(result).toEqual({
+      action: "failed",
+      error: "Error: bd init exited 7: unsupported operation\npartial output",
+    });
+    rmSync(dir, { recursive: true, force: true });
+  });
+
   test("existing .beads with missing markers never re-runs bd init", async () => {
     const dir = tmpDir();
     await import("node:fs/promises").then((fs) => fs.mkdir(path.join(dir, ".beads")));

@@ -73,6 +73,9 @@ const agentClient = {
       ],
     }),
   },
+  session: {
+    get: async () => ({ data: { parentID: null } }),
+  },
 };
 
 describe("board renderer", () => {
@@ -255,6 +258,30 @@ describe("BoardController", () => {
     ];
     await ctrl.transform(messages);
     expect(messages.some((m) => isBoardMessage(m))).toBe(false);
+  });
+
+  test("requires an explicit primary session identity", async () => {
+    const ctrl = new BoardController({ run: fakeRunner() });
+    const client = {
+      app: agentClient.app,
+      session: {
+        get: async ({ path: { id } }: { path: { id: string } }) =>
+          id === "child"
+            ? { data: { parentID: "primary" } }
+            : id === "missing"
+              ? { data: {} }
+              : { data: { parentID: null } },
+      },
+    };
+    await ctrl.gate(client, { sessionID: "child", agent: "bernstein" });
+    await ctrl.gate(client, { sessionID: "missing", agent: "bernstein" });
+    await ctrl.gate(client, { sessionID: "primary", agent: "bernstein" });
+
+    for (const sessionID of ["child", "missing", "primary"]) {
+      const messages = [{ ...msg("user", "go"), info: { ...msg("user", "go").info, sessionID } }];
+      await ctrl.transform(messages);
+      expect(messages.some((message) => isBoardMessage(message)), sessionID).toBe(sessionID === "primary");
+    }
   });
 
   test("band seats (nirvana + lenses) never receive the board", async () => {

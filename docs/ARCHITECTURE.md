@@ -1,6 +1,6 @@
 # TGO Architecture
 
-TGO is a **hybrid**: configuration owns the orchestra, and a thin plugin core enforces lifecycle and state. Routing, delegation, and seat behavior live in config — agent prompt files, a per-seat permission graph, and presets — while the plugin core provides exactly four runtime hooks. The plugin never reimplements control flow.
+TGO is a **hybrid**: configuration owns the orchestra, and a thin plugin core observes lifecycle metadata and state. Routing, delegation, and seat behavior live in config — agent prompt files, a per-seat permission graph, and presets — while the plugin core provides exactly four runtime hooks plus an opt-in, inert-by-default completion observer for surrogate-only reinforcement. The plugin never reimplements control flow or performs Beads lifecycle writes.
 
 This page is the human-readable version of `docs/spec/architecture.md`; that spec, plus the ADRs, stays canonical.
 
@@ -31,11 +31,11 @@ This page is the human-readable version of `docs/spec/architecture.md`; that spe
 
 Hub-and-spoke, with a single writer. Bernstein is the only seat that plans, delegates, reconciles, and verifies; Dylan is the only seat that writes files. Nas researches read-only, Horowitz reviews work that already exists, and Nirvana convenes for judgment-heavy or ambiguous calls. The five seats are documented in `docs/ROSTER.md`.
 
-## The four hooks (and one load-time config hook)
+## Four core hooks, plus opt-in observer and load-time config
 
-Everything the plugin does in code fits in four runtime hooks, verified against `@opencode-ai/plugin` 1.18.13:
+The plugin's core runtime boundary has four hooks, verified against `@opencode-ai/plugin` 1.18.13. It also registers an opt-in completion observer for surrogate-only style reinforcement. The observer is not a fifth core orchestra hook. Watchdog activity hooks and load-time config/setup paths are supporting lifecycle code, not additional core orchestra hooks:
 
-1. **Background Job Board injection** — `experimental.chat.messages.transform` + a `chat.message` gate. The board is a renderer over beads plus a thin live-state shim: four `bd` queries merged with genuinely-live state (streaming tasks), sentinel-tagged and strip-and-replaced every turn so it never accumulates.
+1. **Background Job Board injection** — `experimental.chat.messages.transform` + a `chat.message` gate. The board is a read-only renderer over Beads plus a thin live-state shim, using `bd list`, `bd ready`, `bd blocked`, and `bd memories` when host setup supports those reads. Board reads do not authorize lifecycle actions; create, claim, close, reopen, recovery, and authorization remain disabled or unproven. bd init --directory is unsupported; bd -C fails, must use .cwd(directory). Plugin remains metadata-only until host boundary validated.
 2. **Session reconciliation** — `session.status` / `session.idle` / `session.compacted` events. Keeps the board's live-state shim consistent across busy/idle/retry transitions, compactions, and resumes.
 3. **Task-fit rejection normalization** — `tool.execute.after` on the `task` tool. Turns a specialist's "this isn't my lane" rejection into a REROUTE-NOT-RETRY signal so Bernstein reroutes to the right seat instead of retrying the same one.
 4. **Always-on concision transform** — `experimental.chat.system.transform`. Appends the house-style instruction to the primary loop's system prompt every turn. Subagent seats get the same ruleset folded into their prompts at build time; Bernstein has no fold slot, so he is never double-injected. See `docs/CONCISION.md`.
@@ -46,7 +46,7 @@ Two additional code paths sit outside the hooks: the **installer** (builds seats
 
 ## The delegation contract
 
-Every delegation carries a **Five-part Spec**: Objective / Files / Interfaces / Constraints / Verification. Verification is the boolean exit gate — tests pass, lint clean — that must hold before Bernstein closes the issue. Specialists reply with a **structured report**: STATUS (complete / partial / blocked / escalate) · CHANGES · VERIFIED · GAPS.
+Every delegation carries a **Five-part Spec**: Objective / Files / Interfaces / Constraints / Verification. Verification is the boolean exit gate — tests pass, lint clean — that Bernstein uses when deciding whether to close the issue. Specialists reply with a **structured report**: STATUS (complete / partial / blocked / escalate) · CHANGES · VERIFIED · GAPS. The plugin validates delegation and reports but does not close Beads issues.
 
 Heavy state lives in files on disk, never pasted into context. The per-turn job board snapshot is the one thing injected into the prompt loop, and it is re-derived from beads each step — inherently cache-safe.
 
@@ -64,7 +64,7 @@ The point of the graph: the orchestrator cannot drift into doing, because it lac
 
 ## State and work units
 
-Beads is the work-unit store, and Bernstein is its single writer: he creates an issue before delegating, claims it at dispatch, and closes it only on verified completion. Specialists have zero beads surface. Each issue doubles as a **living spec** — explicit success criteria, bidirectional updates (implementation writes back what was built), a spec-review checkpoint before coding starts, and a decision log. This is the answer to context/alignment drift, the top failure mode in the orchestration literature.
+Beads is the intended work-unit store, and Bernstein is its future single writer. The current plugin validates the metadata that Bernstein supplies but does not create, claim, close, reopen, or recover issues. Specialists have zero beads surface. Each future issue doubles as a **living spec** — explicit success criteria, bidirectional updates (implementation writes back what was built), a spec-review checkpoint before coding starts, and a decision log.
 
 The Background Job Board is a *renderer* over beads plus a thin live-state shim — one store, no drift. Details in `docs/spec/beads-integration.md`.
 

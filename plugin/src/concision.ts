@@ -24,7 +24,7 @@ export async function buildConcisionInstruction(
 
 export interface SessionClient {
   session: {
-    get(options: { path: { id: string } }): Promise<{ data?: { parentID?: string } }>;
+    get(options: { path: { id: string } }): Promise<{ data?: { parentID?: string | null } }>;
   };
 }
 
@@ -61,7 +61,10 @@ export class ConcisionController {
     const cached = this.primaryCache.get(sessionID);
     if (cached !== undefined) return cached;
     const res = await client.session.get({ path: { id: sessionID } }).catch(() => undefined);
-    const primary = !res?.data?.parentID;
+    const data = res?.data;
+    const primary = Boolean(
+      data && Object.prototype.hasOwnProperty.call(data, "parentID") && data.parentID === null
+    );
     this.primaryCache.set(sessionID, primary);
     return primary;
   }

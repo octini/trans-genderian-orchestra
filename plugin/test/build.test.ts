@@ -99,12 +99,14 @@ describe("bernstein mandate encoding", () => {
     expect(prompt).toContain("Run the exit gate");
   });
 
-  test("carries single-writer beads ops", () => {
+  test("carries metadata-only Beads lifecycle boundaries", () => {
     const prompt = readFileSync(path.join(agentsDir, "bernstein.md"), "utf-8");
-    expect(prompt).toContain("ONLY beads operator");
-    expect(prompt).toContain("Create the issue before delegating");
-    expect(prompt).toContain("mark in_progress at dispatch");
-    expect(prompt).toContain("close only on verified completion");
+    expect(prompt).toContain("ONLY intended Beads operator in the future architecture");
+    expect(prompt).toContain("does not create, claim, close, reopen, or recover Beads issues");
+    expect(prompt).toContain("Treat `issueId`, `issueStatusObserved`, `issueAssigneeObserved`, `claimExitCode`, `beadsOperator`, `exitGate`");
+    expect(prompt).toContain("issueStatusObserved");
+    expect(prompt).toContain("issueAssigneeObserved");
+    expect(prompt).toContain("claimExitCode");
     expect(prompt).toContain("ephemeral");
   });
 
@@ -116,7 +118,7 @@ describe("bernstein mandate encoding", () => {
 
   test("carries the doing-boundary + routing amendments", () => {
     const prompt = readFileSync(path.join(agentsDir, "bernstein.md"), "utf-8");
-    expect(prompt).toContain("Never edit/grep/glob/list files");
+    expect(prompt).toContain("Never use the direct `edit`/`grep`/`glob`/`list` tools");
     expect(prompt).toContain("Route by blast radius");
     expect(prompt).toContain("Prose-nudge");
     expect(prompt).toContain("Depth caps at 2");

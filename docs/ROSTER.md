@@ -31,16 +31,16 @@ Seat→model maps are called **presets**: named data files, not code, so model-n
 
 | Seat | Balanced | Cheap | Frontier |
 |---|---|---|---|
-| Bernstein | `github-copilot/gpt-5.6-luna` (max) | `opencode/deepseek-v4-flash-free` (effort max) | `opencode-go/kimi-k3` (max) |
-| Horowitz | `github-copilot/gpt-5.6-luna` (max) | `opencode/deepseek-v4-flash-free` (effort high) | `opencode-go/kimi-k3` (max) |
-| Nas | `github-copilot/gpt-5.6-luna` (medium) | `opencode/mimo-v2.5-free` (vision; default) | `opencode-go/deepseek-v4-flash` (effort high) |
-| Dylan | `github-copilot/gpt-5.6-luna` (high) | `opencode/deepseek-v4-flash-free` (effort high) | `opencode-go/deepseek-v4-flash` (effort max) |
-| Nirvana synth | `github-copilot/gpt-5.6-luna` (max) | `opencode/deepseek-v4-flash-free` (effort max) | `opencode-go/kimi-k3` (max) |
-| Band members | `github-copilot/gpt-5.6-luna` (high) | `opencode/deepseek-v4-flash-free` (effort high) | `opencode-go/deepseek-v4-flash` (effort high) |
+| Bernstein | `opencode-go/muse-spark-1.2-contributor` (xhigh) | `opencode/deepseek-v4-flash-free` (effort max) | `opencode-go/kimi-k3` (max) |
+| Horowitz | `opencode-go/muse-spark-1.2-contributor` (xhigh) | `opencode/deepseek-v4-flash-free` (effort high) | `opencode-go/kimi-k3` (max) |
+| Nas | `opencode-go/muse-spark-1.2-contributor` (medium; vision) | `opencode/mimo-v2.5-free` (vision; default) | `opencode-go/deepseek-v4-flash` (effort high) |
+| Dylan | `opencode-go/muse-spark-1.2-contributor` (high) | `opencode/deepseek-v4-flash-free` (effort high) | `opencode-go/deepseek-v4-flash` (effort max) |
+| Nirvana synth | `opencode-go/muse-spark-1.2-contributor` (xhigh) | `opencode/deepseek-v4-flash-free` (effort max) | `opencode-go/kimi-k3` (max) |
+| Band members | `opencode-go/muse-spark-1.2-contributor` (high) | `opencode/deepseek-v4-flash-free` (effort high) | `opencode-go/deepseek-v4-flash` (effort high) |
 
 The routing rationale, from the spec:
 
-- **Balanced = GitHub Copilot GPT-5.6 Luna on every seat** — all six balanced entries route to `github-copilot/gpt-5.6-luna`; the preset differentiates by reasoning variant only: max on the judgment seats (Bernstein/Horowitz/Nirvana), medium on Nas (read-only research), high on Dylan (writing) and band members (tool-less reasoning). Luna supports none/low/medium/high/xhigh/max variants.
+- **Balanced = Muse Spark 1.2 Contributor on every seat** — all six balanced entries route to `opencode-go/muse-spark-1.2-contributor`; the preset differentiates by supported reasoning effort: xhigh on the judgment seats (Bernstein/Horowitz/Nirvana), medium on Nas (read-only research and vision), and high on Dylan (writing) and band members (tool-less reasoning). Dylan stays at high for execution work; Nas stays at medium for read-only research while preserving his vision lane.
 - **Nas is the eyes** — the read-only researcher role is unchanged: Bernstein delegates vision tasks to Nas, and when his own model has vision (frontier Kimi K3), he reads images himself and only delegates vision work that is research or recon. Cheap keeps MiMo V2.5 (vision) for Nas.
 - **Frontier = Kimi K3** for the judgment seats — 1M context, vision, reasoning max.
 
@@ -61,7 +61,7 @@ Two boundaries are absolute:
 - **The doing-boundary.** Bernstein never modifies a file, however trivial; any change goes to Dylan via a beads issue. He may read, run verification (`git diff`/`status`, lint, test), run `bd`, delegate, and reconcile. "Delegate the doing, keep the deciding."
 - **Routing scales with blast radius.** Tiny/mechanical work gets a minimal spec, a direct Dylan dispatch, and a fast verify. Standard multi-step work gets the full Five-part Spec and normal wave dispatch. Judgment-heavy or high-blast-radius work gets the full pipeline: grilling/wayfinder for shape, the band for risk, review before merge. The heavy pipeline is reserved, not the default for small work.
 
-His beads operating rules (single-writer: create before delegating, claim at dispatch, close only on verified completion) live in `docs/spec/beads-integration.md`.
+His future Beads operating rules (single-writer: create before delegating, claim at dispatch, close only on verified completion) live in `docs/spec/beads-integration.md`; the current plugin host validates metadata only. Board reads do not authorize lifecycle actions; bd init --directory is unsupported, bd -C fails, must use .cwd(directory). Plugin remains metadata-only (beadsLifecycle.allowed:false) until host boundary validated. Tiny routing retains its documented bypass.
 
 ## Structured output contracts
 

@@ -10,7 +10,7 @@ These are the four dependencies the installer checks for and installs when missi
 
 | Dependency | What it is | How TGO treats it |
 |---|---|---|
-| **beads** (`bd` CLI) | The work-unit store and job-board engine (Dolt-backed) | TGO wraps it with its own opencode-side wiring — the Background Job Board is a renderer over beads. Bernstein is the single writer. |
+| **beads** (`bd` CLI) | The work-unit store and job-board engine (Dolt-backed) | When host setup supports it, TGO may render a read-only Beads-derived board from `bd list`, `bd ready`, `bd blocked`, and `bd memories`. Board reads do not authorize lifecycle actions; create, claim, close, reopen, recovery, and authorization remain disabled or unproven. bd init --directory is unsupported; bd -C fails, must use .cwd(directory). Plugin remains metadata-only (beadsLifecycle.allowed:false) until host boundary validated. Bernstein remains the intended single writer. |
 | **AFT** | Symbol-aware code tools (`aft_*`, `ast_grep_*`) | A **full dependency** — its value IS the engine; TGO doesn't adapt or re-wrap it. Dylan's motor lane. |
 | **magic-context** | Long-term memory + cross-session recall (`ctx_*`) | A **full dependency** — the historian/dreamer/recall pipeline is the engine. The installer configures it end to end (historian on the active preset's Dylan model, TUI sidebar, built-in compaction off). |
 | **context7** | Docs lookup MCP (`context7_*`) | The **one external MCP** — a remote 2-tool server, token-cheap, no local process. Granted to Nas and Dylan. |

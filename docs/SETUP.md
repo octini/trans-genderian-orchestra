@@ -2,14 +2,14 @@
 
 TGO installs in two layers: a **global install** (the plugin, seat prompts, config, and engine dependencies in `~/.config/opencode/`) and a **per-repo setup** (the beads work-unit store and the AGENTS advice fragment in each repo you work in). The per-repo step is auto-triggered; the global install is the one place you have choices.
 
-This page is the human-readable version of `docs/spec/setup.md`; that spec stays canonical.
+This page is the human-readable version of `docs/spec/setup.md`; that spec stays canonical. Setup can attempt host-supported `bd` commands, but this does not provide plugin-mediated Beads lifecycle support. Board reads do not authorize lifecycle actions; bd init --directory is unsupported, bd -C fails, must use .cwd(directory). Plugin remains metadata-only (beadsLifecycle.allowed:false) until host boundary validated.
 
 ## Global install
 
 The npm path — add the plugin to your opencode config:
 
 ```json
-{ "plugin": ["trans-genderian-orchestra@0.1.2"] }
+{ "plugin": ["trans-genderian-orchestra@0.1.4"] }
 ```
 
 OpenCode installs the package and its dependencies. A blank-slate install ends up with the plugin loaded, not just config files on disk.
@@ -35,7 +35,7 @@ The installer is idempotent — re-running never duplicates entries.
 
 ### The two load paths
 
-1. **npm** — add `"trans-genderian-orchestra@0.1.3"` to the `plugin` array of `opencode.jsonc`. OpenCode installs the package and its dependencies automatically.
+1. **npm** — add `"trans-genderian-orchestra@0.1.4"` to the `plugin` array of `opencode.jsonc`. OpenCode installs the package and its dependencies automatically.
 2. **Local plugin** — symlink or copy `src/plugin.ts` into `~/.config/opencode/plugins/`. Seat prompts are auto-discovered from `~/.config/opencode/agent/` (opencode scans both `agent/` and `agents/`).
 
 ### What the installer writes
@@ -49,11 +49,12 @@ The installer is idempotent — re-running never duplicates entries.
 
 The plugin watches `session.created` (primary sessions only) and runs per-repo setup on first contact with a repo — the same pattern as `bd prime`'s auto-initialization:
 
-- `.beads/` is initialized via `bd init` (the `bd` CLI is auto-installed if missing).
-- The official `bd setup opencode` managed Beads block is installed.
+- `bd init` and `bd setup opencode` are attempted from the target repository when the host provides `bd` (the CLI is auto-installed if configured). Exit code, stdout, and stderr are retained; a nonzero command is a failed setup result.
+- The official `bd setup opencode` managed Beads block is installed only after that command succeeds.
+- The current plugin does not perform issue reads, create, claim, close, reopen, recovery, or authorization. `bd init --directory` is unsupported; host-mediated lifecycle validation remains future work.
 - TGO's thin AGENTS.md advice fragment is merged in — no-clobber, so existing content is preserved.
 
-Guardrails, all of them: **no-clobber** (existing AGENTS.md/user content is preserved), **idempotent + per-repo marker** (a repo with `.beads/` and both markers is never re-touched), **granular** (`bd init` only runs when `.beads/` is absent; `bd init` on an existing store aborts with a non-zero exit, so it is never re-run), and **zero user input** (defaults: tracker → beads, labels → default triage, monorepo → auto-detect). Personal choices are deferred, not required.
+Guardrails, all of them: **no-clobber** (existing AGENTS.md/user content is preserved), **idempotent + per-repo marker** (a repo with `.beads/` and both markers is never re-touched), **granular** (`bd init` only runs when `.beads/` is absent), and **zero user input** (defaults: tracker → beads, labels → default triage, monorepo → auto-detect). Personal choices are deferred, not required. These guardrails do not authorize lifecycle writes.
 
 The `tgo-setup` skill (`skills/tgo-setup/SKILL.md`, copied into the config dir at install) documents the same steps and offers the manual path.
 

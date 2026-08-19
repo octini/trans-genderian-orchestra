@@ -38,7 +38,7 @@ describe("frontmatter parsing", () => {
     const p = parseSeatPermission(seat("bernstein"));
     const bash = p.bash as Record<string, string>;
     expect(bash["*"]).toBe("deny");
-    expect(bash["bd *"]).toBe("allow");
+    expect(bash["bd *"]).toBeUndefined();
     const task = p.task as Record<string, string>;
     expect(task["*"]).toBe("deny");
     expect(task.dylan).toBe("allow");
@@ -75,7 +75,7 @@ describe("permission graph — named seats", () => {
     expect(r.todowriteDenied).toBe(true);
   });
 
-  test("bernstein: denies edit/grep/glob/list, allows read, delegates only to named seats", async () => {
+  test("bernstein: denies direct file tools, allows read, delegates only to named seats", async () => {
     const r = reportSeat("bernstein", await readSeatContent(agentsDir, "bernstein"));
     expect(r.denyList).toContain("edit");
     expect(r.denyList).toContain("grep");
@@ -83,10 +83,37 @@ describe("permission graph — named seats", () => {
     expect(r.denyList).toContain("list");
     expect(r.readAllowed).toBe(true);
     expect(r.bashDenyAll).toBe(true);
+    // Direct tool permissions and bash command permissions are separate
+    // surfaces. Read-only shell glue is intentional for compound verification
+    // commands; it does not grant Bernstein the direct grep/glob/list tools.
+    expect(r.bashAllowed).toEqual(expect.arrayContaining(["grep *", "rg *", "find *"]));
     expect(r.taskAllowed).toEqual(
       expect.arrayContaining(["horowitz", "nas", "dylan", "nirvana"])
     );
     expect(r.taskAllowed).not.toContain("general");
+  });
+
+  test("Bernstein's direct search/listing boundary is distinct from bash inspection", async () => {
+    const permission = parseSeatPermission(
+      await readSeatContent(agentsDir, "bernstein")
+    );
+    expect(permission.edit).toBe("deny");
+    expect(permission.grep).toBe("deny");
+    expect(permission.glob).toBe("deny");
+    expect(permission.list).toBe("deny");
+    expect((permission.bash as Record<string, string>)["*"]).toBe("deny");
+    expect((permission.bash as Record<string, string>)["grep *"]).toBe("allow");
+  });
+
+  test("Bernstein bash rules retain a catch-all deny around explicit segments", async () => {
+    const bash = parseSeatPermission(
+      await readSeatContent(agentsDir, "bernstein")
+    ).bash as Record<string, string>;
+    expect(bash["*"]).toBe("deny");
+    expect(bash["git diff*"]).toBe("allow");
+    expect(bash["bd *"]).toBeUndefined();
+    expect(bash["rm *"]).toBeUndefined();
+    expect(bash["git reset*"]).toBeUndefined();
   });
 
   test("horowitz: read-only investigate bash allowlist", async () => {

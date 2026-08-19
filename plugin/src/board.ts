@@ -278,12 +278,21 @@ export class BoardController {
   }
 
   async gate(
-    client: { app: { agents(): Promise<{ data?: Array<{ name: string; mode: "primary" | "subagent" | "all" }> }> } },
+    client: {
+      app: { agents(): Promise<{ data?: Array<{ name: string; mode: "primary" | "subagent" | "all" }> }> };
+      session: { get(options: { path: { id: string } }): Promise<{ data?: { parentID?: string | null } }> };
+    },
     input: { sessionID: string; agent?: string }
   ): Promise<void> {
     if (this.injectedSessions.has(input.sessionID)) return;
     this.injectedSessions.add(input.sessionID);
-    const eligible = await this.shouldInject(client, input.agent);
+    const session = await client.session.get({ path: { id: input.sessionID } }).catch(() => undefined);
+    const isPrimary = Boolean(
+      session?.data &&
+        Object.prototype.hasOwnProperty.call(session.data, "parentID") &&
+        session.data.parentID === null
+    );
+    const eligible = isPrimary && (await this.shouldInject(client, input.agent));
     this.sessionEligibility.set(input.sessionID, eligible);
   }
 

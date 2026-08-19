@@ -45,6 +45,11 @@
           "description": "Universal off-switch for the per-turn house-style injection.",
           "type": "boolean",
           "default": true
+        },
+        "reinforcement": {
+          "description": "Opt-in generation-time style reinforcement. The verified completion hook does not provide preservation or response-lineage context; default disabled.",
+          "type": "boolean",
+          "default": false
         }
       },
       "additionalProperties": false

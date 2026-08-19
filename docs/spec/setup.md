@@ -4,7 +4,7 @@ Status: **spec** (buildable). Source decision: `docs/wayfinder/decisions.md` (tg
 
 ## 1. Decision: Option A — auto-trigger at first session
 
-No first message needed: it's a **session-start plugin hook**, exactly like `bd prime` (verified: bd prime auto-runs at session start and provably auto-initialized this repo — `.beads/`, AGENTS.md block, git init). Precedent is real and proven in this exact stack.
+No first message needed: it's a **session-start plugin hook**. The `bd prime` comparison is host-dependent and evidence-limited: this repository has evidence of auto-initialization in one host run, not universal proof across hosts.
 
 **Why not B (detect-and-pause):** the agent can't message the user before the user's first message; and in a task-laden first message, a setup question is the first thing the flow drops — the "forgotten/skipped" failure the user feared.
 
@@ -26,6 +26,6 @@ Personal choices are **deferred, not required** — a non-blocking "customize?" 
 
 ## 4. Deliverables of setup
 
-- `.beads/` initialized (tracker engine installed/verified; auto-installed if missing).
-- TGO's global `AGENTS.md` fragment merged (thin always-on advice layer — see `docs/spec/roster.md` §3) + the **official `bd setup opencode` managed Beads block** (guidance only; decided 2026-08-05) — no-clobber merge of existing content.
-- Per-repo beads wiring in place (work-unit store for the job board).
+- TGO attempts `bd init` and `bd setup opencode` from the target repository when the host exposes the `bd` CLI. Setup preserves subprocess exit code, stdout, and stderr; a nonzero result is reported as failed setup.
+- TGO's global `AGENTS.md` fragment is merged (thin always-on advice layer — see `docs/spec/roster.md` §3) with the **official `bd setup opencode` managed Beads block** (guidance only; decided 2026-08-05) — no-clobber merge of existing content.
+- A host-supported `.beads/` store may be initialized. The plugin does not read issues or perform Beads create, claim, close, reopen, recovery, or authorization operations. bd init --directory is unsupported; bd -C fails with 'cannot use -C directory ...: no beads project found' — setup must use .cwd(directory); host-mediated lifecycle validation remains future work until OpenCode host boundary proven. Board reads do not authorize lifecycle actions; plugin remains metadata-only (beadsLifecycle.allowed:false).

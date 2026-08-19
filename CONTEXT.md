@@ -2,7 +2,7 @@
 
 ## What this is
 
-TGO (**trans-genderian-orchestra**) is a custom multi-agent orchestration plugin for [OpenCode](https://opencode.ai). It coordinates a fixed roster of named, role-anchored subagents (a "band") around one primary orchestrator agent. TGO is configuration-first: routing and delegation are prompt-driven; a thin plugin core enforces lifecycle and state, never reimplementing control flow.
+TGO (**trans-genderian-orchestra**) is a custom multi-agent orchestration plugin for [OpenCode](https://opencode.ai). It coordinates a fixed roster of named, role-anchored subagents (a "band") around one primary orchestrator agent. TGO is configuration-first: routing and delegation are prompt-driven; a thin plugin core validates lifecycle metadata and observes state, never reimplementing control flow or performing Beads lifecycle writes.
 
 This `CONTEXT.md` is the single-context root for the TGO project. It is the entry point for the build expedition that implements the spec.
 
@@ -20,7 +20,7 @@ tgo_build_notes.md      <- the original project brief
 ## Reading order
 
 1. **This file** — domain vocabulary and the one-paragraph design.
-2. `docs/spec/architecture.md` — the shape: hybrid config-first + thin plugin core; the 4-hook code boundary; capabilities-not-compliance enforcement.
+2. `docs/spec/architecture.md` — the shape: hybrid config-first + thin plugin core; the four core hooks plus opt-in observer boundary; capabilities-not-compliance enforcement.
 3. `docs/spec/roster.md` — the five seats, prompt anatomy, model routing, Bernstein's mandate (including the 5 architectural-review amendments).
 4. `docs/spec/band.md` — the Nirvana review band mechanism.
 5. `docs/spec/skill-candidates.md` — **the resolved 11-skill/13-grant bundle** and the full per-cluster decision trail.
@@ -51,4 +51,30 @@ tgo_build_notes.md      <- the original project brief
 
 ## One-paragraph design
 
-TGO is a hub-and-spoke orchestra with a single writer. **Bernstein**, the primary, turns each goal into a dependency-ordered DAG of work units, each a living-spec beads issue with a boolean exit gate. He dispatches same-level tasks together as waves to the specialist seats — **Dylan** (sole writer), **Nas** (read-only lookup), **Horowitz** (review/advisor) — and convenes **Nirvana** (three tool-less lenses + synthesizer) for judgment-heavy calls. Bernstein alone operates beads (single-writer), verifies each result against its spec's exit gate, and only then closes the issue. All seats speak in one uniform, always-on concise house style enforced by a per-turn system transform and folded seat prompts; a two-position register dial rides on Dylan's output alone. Enforcement is by capabilities, not compliance: the Orchestrator literally cannot edit, grep, or glob; specialists can only do their lane. A thin plugin core provides exactly four hooks (job-board injection, session reconciliation, task-fit rejection normalization, concision transform); everything else lives in config, prompts, and presets. Autonomy is a mode, not the default — deepwork is opt-in with hard bounds, and a checkpoint protocol pauses on irreversible, expensive, or direction-changing actions.
+TGO is a hub-and-spoke orchestra with a single writer. **Bernstein**, the primary, turns each goal into a dependency-ordered DAG of work units, each a living-spec beads issue with a boolean exit gate. He dispatches same-level tasks together as waves to the specialist seats — **Dylan** (sole writer), **Nas** (read-only lookup), **Horowitz** (review/advisor) — and convenes **Nirvana** (three tool-less lenses + synthesizer) for judgment-heavy calls. Bernstein is the intended single-writer in the future architecture (create before delegating, claim at dispatch, close only on verified completion per docs/spec/beads-integration.md); the current plugin host validates lifecycle metadata only via four runtime hooks plus a thin live-state shim and does not perform Beads create, claim, close, reopen, or recovery — see that spec for host limitation (bd init --directory unsupported, bd -C fails, must use .cwd(directory)). All seats speak in one uniform, always-on concise house style enforced by a per-turn system transform and folded seat prompts; a two-position register dial rides on Dylan's output alone. Enforcement is by capabilities, not compliance: the Orchestrator literally cannot edit, grep, or glob; specialists can only do their lane. A thin plugin core provides four core runtime hooks (job-board injection, session reconciliation, task-fit rejection normalization, concision transform) plus an opt-in completion observer for surrogate-only style reinforcement; everything else lives in config, prompts, and presets. Autonomy is a mode, not the default — deepwork is opt-in with hard bounds, and a checkpoint protocol pauses on irreversible, expensive, or direction-changing actions.
+
+## Session handoff — 2026-08-19
+
+### Verified state
+
+- Proportional routing classifier, delegation validator, structured report parser, metadata-only lifecycle validation, and a deterministic vague-request E2E fixture are implemented and tested. Tiny work keeps its minimal bypass; standard/heavy work requires the Five-part Spec, explicit boolean exit gate, and lifecycle metadata.
+- The disposable Beads CLI probe covers `bd init`, create, show, claim, close, invalid-command exit status, and cleanup. Setup captures subprocess exit code, stdout, and stderr. Primary setup is gated on an explicitly null `parentID`; missing identity is not treated as primary. The Background Job Board is read-only; board reads do not authorize Beads lifecycle writes.
+- Explicit-null primary gates and the read-only board clarification are documented and covered by tests. The implementation does **not** prove live plugin-mediated Beads lifecycle authorization or writes.
+- Balanced presets use `opencode-go/muse-spark-1.2-contributor` for every seat with role-specific efforts: xhigh for Bernstein/Horowitz/Nirvana, medium for Nas, and high for Dylan and band members.
+
+### Verified gates and limitations
+
+- The repository's documented gates are `bun test`, `bunx tsc --noEmit`, `bun run validate`, and `bun run build`; the handoff session also has the independent Beads probe and deterministic E2E coverage.
+- AFT inspection repeatedly returned `PHASE-FAILED` with `inspect_not_fresh` (`diagnostics did not complete`) after LSP startup/quiescence. This is a tooling freshness limitation, not proof of a code failure; retry/investigate it next session.
+
+### Next session
+
+1. Retry and investigate the AFT `inspect_not_fresh` diagnosis.
+2. Decide and test the remaining OpenCode↔Beads validation, without claiming live plugin-mediated lifecycle authorization or writes.
+3. Review, commit, push, publish the new npm version, and update the local installation.
+
+### Parked backlog
+
+- Magic Context automatic-update/doctor failure and dependency-update checks.
+- Periodic adapted-source checks.
+- Beads TUI visualizer.

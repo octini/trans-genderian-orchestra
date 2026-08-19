@@ -9,9 +9,15 @@ export type SetupResult =
   | { action: "failed"; error: string };
 
 export interface SetupControllerOptions {
-  run: (command: string, cwd?: string) => Promise<string>;
+  run: (command: string, cwd?: string) => Promise<string | SetupCommandResult>;
   hasBd: () => Promise<boolean>;
   installBd?: () => Promise<void>;
+}
+
+export interface SetupCommandResult {
+  exitCode: number;
+  stdout: string;
+  stderr: string;
 }
 
 export class SetupController {
@@ -84,7 +90,11 @@ export class SetupController {
     try {
       for (const step of missing) {
         if (step === "bd init" || step === "bd setup opencode") {
-          await this.run(step, directory);
+          const result = await this.run(step, directory);
+          if (typeof result !== "string" && result.exitCode !== 0) {
+            const detail = [result.stderr.trim(), result.stdout.trim()].filter(Boolean).join("\n");
+            throw new Error(`${step} exited ${result.exitCode}${detail ? `: ${detail}` : ""}`);
+          }
         } else if (step === "AGENTS fragment") {
           await mergeAgentsFragment(directory);
         }

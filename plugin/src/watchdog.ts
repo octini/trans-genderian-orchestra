@@ -115,7 +115,7 @@ export class WatchdogController {
   }
 
   // A delegation is any session with a parent (created by the task tool).
-  noteSessionCreated(info: { id?: string; parentID?: string }): void {
+  noteSessionCreated(info: { id?: string; parentID?: string | null }): void {
     if (!info.id || !info.parentID) return;
     if (this.sessions.has(info.id)) return;
     const now = this.awakeNow();

@@ -2,13 +2,21 @@ import type { Plugin, PluginInput } from "@opencode-ai/plugin";
 import { loadTgoConfig, validateAgentDir, BD_ENV, type TgoConfig } from "./config";
 import { BoardController, type BoardMessage } from "./board";
 import { ConcisionController } from "./concision";
+import { StyleReinforcementController } from "./style-reinforcement";
 import { SessionReconciler } from "./session";
-import { TaskFitController } from "./fit";
+import { TaskFitController, classifyRouting } from "./fit";
 import { WatchdogController } from "./watchdog";
+import { parseTaskReport } from "./report";
 import { SetupController } from "./setup";
 import { preapproveExternalDirectory, resolveWorktreeFamily } from "./permissions";
 import { DEPENDENCIES, installMissing, runShellCommand } from "./deps";
 import { applyPreset, readPresetNudge, resolveActivePreset } from "./presets";
+import { validateDelegationBoundary, validateDelegationPacket, verifyClaimObserved as verifyDelegationClaimObserved } from "./delegation";
+import { authorizeLifecycleSession, evaluateClosure, verifyClaimObserved } from "./lifecycle";
+export { validateDelegationBoundary, validateDelegationPacket, verifyClaimObserved as verifyDelegationClaimObserved } from "./delegation";
+export type { DelegationPacket, DelegationValidation } from "./delegation";
+export { evaluateClosure, authorizeLifecycleSession, verifyClaimObserved } from "./lifecycle";
+export type { ClosureGate, LifecycleMetadata } from "./lifecycle";
 import * as path from "node:path";
 import * as os from "node:os";
 
@@ -63,6 +71,11 @@ export const TgoPlugin: Plugin = async (
     enabled: config.concision?.enabled,
     register: config.register,
   });
+  const styleReinforcement = new StyleReinforcementController({
+    enabled: config.concision?.enabled,
+    productionEnabled: config.concision?.reinforcement,
+    register: config.register,
+  });
 
   const fit = new TaskFitController();
 
@@ -89,9 +102,14 @@ export const TgoPlugin: Plugin = async (
       try {
         const args = command.split(/\s+/);
         const proc = cwd ? $`${args}`.cwd(cwd) : $`${args}`;
-        return await proc.env({ ...process.env, BD_NON_INTERACTIVE: "1", HOME: os.homedir() }).nothrow().text();
-      } catch {
-        return "";
+        const completed = await proc.env({ ...process.env, BD_NON_INTERACTIVE: "1", HOME: os.homedir() }).nothrow();
+        return {
+          exitCode: completed.exitCode,
+          stdout: completed.stdout.toString(),
+          stderr: completed.stderr.toString(),
+        };
+      } catch (error) {
+        return { exitCode: 1, stdout: "", stderr: String(error) };
       }
     },
     hasBd: async () => (Bun.which("bd") ?? null) !== null,
@@ -123,9 +141,9 @@ export const TgoPlugin: Plugin = async (
     appLog("info", `event ${type} ${id}`, extra);
   };
 
-  const handleSessionCreated = async (info: { directory?: string; parentID?: string }) => {
+  const handleSessionCreated = async (info: { directory?: string; parentID?: string | null }) => {
     if (config.setup?.enabled === false) return;
-    if (info.parentID) return;
+    if (info.parentID !== null) return;
     const directory = info.directory;
     if (!directory) return;
     try {
@@ -150,6 +168,7 @@ export const TgoPlugin: Plugin = async (
         board.reset(event.properties.sessionID);
         reconciler.onCompact(event.properties.sessionID);
         concision.reset();
+        // Reinforcement state remains in the live controller instance only.
         watchdog.onCompact(event.properties.sessionID);
         logEvent("session.compacted", event.properties.sessionID);
       } else if (event.type === "session.status") {
@@ -173,7 +192,7 @@ export const TgoPlugin: Plugin = async (
       } else if (event.type === "session.created") {
         const info = event.properties.info as {
           id?: string;
-          parentID?: string;
+          parentID?: string | null;
         };
         logEvent("session.created", info.id ?? "?", {
           parentID: info.parentID ?? null,
@@ -227,6 +246,11 @@ export const TgoPlugin: Plugin = async (
 
     "chat.message": async (input, output) => {
       watchdog.noteActivity(input.sessionID);
+      const text = output.parts
+        .filter((part) => part.type === "text")
+        .map((part) => (part as { text?: string }).text ?? "")
+        .join("\n");
+      styleReinforcement.noteUserMessage(input.sessionID, text);
       if (config.board?.enabled === false) return;
       const agent = output.message.agent ?? input.agent;
       reconciler.noteAgent(input.sessionID, agent);
@@ -234,6 +258,18 @@ export const TgoPlugin: Plugin = async (
     },
 
     "tool.execute.before": async (input, output) => {
+      const args = output?.args;
+      const delegation = input.tool === "task" ? validateDelegationBoundary(args) : undefined;
+      if (delegation && !delegation.valid) {
+        appLog("error", "delegation packet rejected", delegation as unknown as Record<string, unknown>);
+        throw new Error(`Invalid ${delegation.route} delegation packet: ${delegation.diagnostics.join(" ")}`);
+      }
+      if (delegation?.valid && delegation.route !== "tiny") {
+        const authorized = await authorizeLifecycleSession(client, input.sessionID);
+        if (!authorized) {
+          throw new Error("Beads lifecycle packets are allowed only from an identified primary session.");
+        }
+      }
       // A tool is about to execute (bash, edit, etc.). While a foreground tool
       // runs the idle clock is paused so long-running commands don't false-trip
       // the cap. Background-intent calls (args.background === true — dev
@@ -253,6 +289,47 @@ export const TgoPlugin: Plugin = async (
         (input.args as Record<string, unknown>).background === true;
       watchdog.noteToolEnd(input.sessionID, background);
       watchdog.noteActivity(input.sessionID);
+      if (input.tool === "task" && typeof output?.output === "string") {
+        const report = parseTaskReport(output.output);
+        if (output && typeof output === "object") {
+          const metadata = output.metadata && typeof output.metadata === "object"
+            ? output.metadata as Record<string, unknown>
+            : {};
+           output.metadata = { ...metadata, specialistReport: report };
+          const args = input.args && typeof input.args === "object" ? input.args as Record<string, unknown> : {};
+          const packet = args.delegationPacket && typeof args.delegationPacket === "object"
+            ? args.delegationPacket as Record<string, unknown>
+            : {};
+           const route = classifyRouting(args as never).route;
+           // Horowitz records review completion on the task result metadata;
+           // keep the delegation packet as the lifecycle source for the other
+           // fields and pass that review signal into the metadata-only gate.
+           const lifecycle = {
+             ...packet,
+             reviewComplete: metadata.reviewComplete,
+           };
+            const closureGate = evaluateClosure(route, lifecycle, report);
+            output.metadata.closureGate = closureGate;
+             if (route !== "tiny") {
+               output.metadata.beadsLifecycle = {
+                 allowed: false,
+                 action: "metadata-only",
+                 diagnostics: ["Metadata validation checks observed claim fields (issueStatusObserved, issueAssigneeObserved, claimExitCode) but does not query or mutate Beads; plugin remains metadata-only until host write path proven."]
+               };
+             }
+        }
+        if (!report.valid) {
+          appLog("warn", "specialist report requires recovery", {
+            sessionID: input.sessionID,
+            recovery: report.recovery,
+            missing: report.missing,
+            malformed: report.malformed,
+            contradictions: report.contradictions,
+            watchdogAborted: report.watchdogAborted,
+            raw: report.raw,
+          });
+        }
+      }
       await fit.normalize(input, output);
     },
 
@@ -263,15 +340,26 @@ export const TgoPlugin: Plugin = async (
 
     "experimental.chat.system.transform": async (input, output) => {
       const appended = await concision.transform(client, input, output);
+      const reinforced = input.sessionID ? await styleReinforcement.appendPending(client, input.sessionID, output.system) : false;
       if (appended) {
         logEvent("concision.appended", input.sessionID ?? "?", {
           register: config.register,
         });
       }
+      if (reinforced) logEvent("style_reinforcement.appended", input.sessionID ?? "?", { register: config.register });
+    },
+
+    "experimental.text.complete": async (input, output) => {
+      await styleReinforcement.noteCompletion(client, {
+        sessionID: input.sessionID,
+        messageID: input.messageID,
+        candidate: output.text,
+      });
     },
 
     dispose: async () => {
       watchdog.dispose();
+      styleReinforcement.reset();
     },
   };
 };

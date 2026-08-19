@@ -2,7 +2,7 @@
 
 TGO is a small codebase on purpose: a thin plugin core plus configuration assets. This page covers the dev workflow, the test commands, how to add a skill, and the seat-prompt budget that keeps the whole thing lean.
 
-Work is tracked in beads (`bd`), not markdown TODOs. Check `bd ready` for available work, claim with `bd update <id> --claim`, close with `bd close <id> --reason "..."`. Use `bd create` to file new issues, and link discovered work with `--deps discovered-from:<parent-id>`.
+Work is tracked in beads (`bd`), not markdown TODOs. These are contributor-side CLI commands, not operations performed by the current plugin: check `bd ready` for available work, claim with `bd update <id> --claim`, close with `bd close <id> --reason "..."`, and use `bd create` to file new issues. Link discovered work with `--deps discovered-from:<parent-id>`. Bernstein-owned create/claim/close lifecycle integration remains follow-up work. Board reads do not authorize lifecycle actions; bd init --directory is unsupported, bd -C fails, must use .cwd(directory). Plugin remains metadata-only (beadsLifecycle.allowed:false) until host boundary validated.
 
 ## Layout
 

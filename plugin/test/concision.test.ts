@@ -15,7 +15,7 @@ const RUNTIME_MAX_TOKENS = 500;
 const RUNTIME_MIN_TOKENS = 300;
 const FOLD_MAX_TOKENS = 250;
 
-function fakeClient(sessions: Record<string, { parentID?: string }>): SessionClient {
+function fakeClient(sessions: Record<string, { parentID?: string | null }>): SessionClient {
   return {
     session: {
       get: async ({ path }) => ({
@@ -93,6 +93,16 @@ describe("concision drift protection", () => {
     expect(text).toContain("ubiquitous language");
   });
 
+  test("runtime payload carries selective STE structure and article guardrails", async () => {
+    const text = await loadConcisionInstruction();
+    expect(text).toContain("active voice");
+    expect(text).toContain("condition before");
+    expect(text).toContain("one action per numbered step");
+    expect(text).toContain("complete instructional sentences");
+    expect(text).toContain("scan-oriented fragments");
+    expect(text).toContain("qualifiers");
+  });
+
   test("build fold carries the highest-leverage rules too", async () => {
     const text = await loadHouseStyle();
     expect(text).toContain("Never invent facts");
@@ -100,12 +110,15 @@ describe("concision drift protection", () => {
     expect(text).toContain("utilize");
     expect(text).toContain("seamless");
     expect(text).toContain("project's own language");
+    expect(text).toContain("active voice");
+    expect(text).toContain("one action per numbered step");
+    expect(text).toContain("scan-oriented fragments");
   });
 });
 
 describe("ConcisionController", () => {
   const client = fakeClient({
-    "primary-1": {},
+    "primary-1": { parentID: null },
     "sub-1": { parentID: "primary-1" },
   });
 
@@ -122,6 +135,14 @@ describe("ConcisionController", () => {
     const ctrl = new ConcisionController({});
     const output = makeOutput();
     const appended = await ctrl.transform(client, { sessionID: "sub-1" }, output);
+    expect(appended).toBe(false);
+    expect(output.system).toEqual(["existing"]);
+  });
+
+  test("does not append when parentID is missing", async () => {
+    const ctrl = new ConcisionController({});
+    const output = makeOutput();
+    const appended = await ctrl.transform(fakeClient({ missing: {} }), { sessionID: "missing" }, output);
     expect(appended).toBe(false);
     expect(output.system).toEqual(["existing"]);
   });
@@ -148,7 +169,7 @@ describe("ConcisionController", () => {
       session: {
         get: async () => {
           calls++;
-          return { data: {} };
+           return { data: { parentID: null } };
         },
       },
     };

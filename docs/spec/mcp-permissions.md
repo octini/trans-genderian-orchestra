@@ -5,7 +5,7 @@ Status: **spec** (buildable). Source decisions: `docs/wayfinder/decisions.md` (t
 ## 1. Dependencies (pinned)
 
 - **AFT + magic-context = FULL dependencies (do not adapt).** Their value IS the engine — AFT's symbol-aware tree-sitter tooling, magic-context's historian/dreamer/recall pipeline. There is no thin stable wrapper to own; "adapting" would re-wrap a fast-moving engine.
-- **beads = make our own opencode-side wrapper** over the `bd` engine (see `docs/spec/beads-integration.md`). The `bd` CLI + Dolt DB stays an engine dependency.
+- **beads = planned opencode-side wrapper** over the `bd` engine (see `docs/spec/beads-integration.md`). The `bd` CLI + Dolt DB stays an engine dependency; live lifecycle operations are unsupported in the current plugin host.
 - **context7 = the one external MCP** (decided 2026-08-05, deep-dive): remote 2-tool server (`https://mcp.context7.com/mcp`), granted to **Nas + Dylan**. Token-cheap, no local process; CLI+Skills fallback noted. Free key auto-generated at `npx ctx7 setup --opencode`. Context: all frameworks converge on context7 for docs lookup (gsd/slim/bmad); no framework ships a websearch MCP (native Exa `websearch` wins).
 - **Installer auto-installs missing dependencies** (beads, AFT, magic-context, context7) — checks presence, fetches/installs if absent, as part of TGO's own setup.
 - Native feel is achieved via the **permission graph**: `aft_*` / `ctx_*` / `ctx7_*` tools become grantable/deniable per seat exactly like skills.
@@ -26,7 +26,7 @@ This is the framework + per-seat constraints + grant *guidance*, **not a final i
 
 | Seat | Deny | Allow | Tools/task | Notes |
 |---|---|---|---|---|
-| **Bernstein** | `edit`/`grep`/`glob`/`list`; bash except allowlist | `read`/`websearch`/`skill`; **bash = verification allowlist** (`git diff`/`status`, lint, test) + **`bd` CLI commands** (create/update/close/dep/label/list/show/remember) | `task` → Horowitz/Nas/Dylan/Nirvana | skills = structure+grammar sliders |
+| **Bernstein** | direct `edit`/`grep`/`glob`/`list` tools; bash except allowlist | `read`/`websearch`/`skill`; **bash = read-only verification allowlist** (`git diff`/`status`/`log`/`show`/`rev-parse`, toolchain probes, test/lint/typecheck, read-only shell glue for compound commands) | `task` → Horowitz/Nas/Dylan/Nirvana | `bd` lifecycle writes are planned/unsupported in the current plugin host; Board reads do not authorize lifecycle actions; bd init --directory unsupported, bd -C fails, must use .cwd(directory). Plugin remains metadata-only (beadsLifecycle.allowed:false) until host boundary validated. direct file-search/listing tools remain denied; allowed bash commands are matched per segment |
 | **Horowitz** | `edit`; bash except allowlist | **bash = read-only investigate allowlist** (`git log/show/status`, log/process/file inspection) | `task` → built-in `explore` only | review skill. Investigate vs. verify — separate lanes |
 | **Nas** | `edit`/`bash`/`task` | `read`/`grep`/`glob`/`list` + `websearch`/`webfetch` + `context7` + MC recall | — | recon/research skills; read-only lookup |
 | **Dylan** | — | `edit`/`bash`; **AFT symbol tools**; **context7** | `task` → built-in `explore` only | all three concision sliders + implementation skills |
@@ -42,10 +42,10 @@ Recall is pull-based (opt-in querying): no worklane-contamination concern, no ti
 
 ## 4. What this enforces
 
-- Bernstein literally cannot edit/grep/glob/list — he can only orchestrate and verify.
+- Bernstein cannot use the direct `edit`/`grep`/`glob`/`list` tools. His separate bash rule allows only the documented read-only command patterns, including `grep`/`rg`/`find` as shell glue for compound verification commands; every compound-command segment is matched independently. This distinction is intentional: prompt prose names direct tools, while the permission graph enforces tool rules and bash command patterns separately.
 - Nas has zero bash/task — findings return as structured reports.
 - Dylan is the only seat that writes.
-- Bernstein's `bd` allowlist (amended via tgo-a6r.18) is the single-writer beads contract: specialists have zero beads surface.
+- Bernstein remains the only intended Beads operator in the future architecture. The current plugin host exposes metadata validation only; specialists have zero Beads surface.
 - **`todowrite: deny` globally** (config level, not prompt-level). This is capabilities-not-compliance for task tracking: the agent cannot fall back to native todos, so beads is the only work tracker. Verified: opencode's `permission` field accepts tool rules (tools.md); `todowrite` is also disabled for subagents by default. (Decided 2026-08-05 — resolves opencode-beads issue #66 discussion, closed as not planned.)
 
 ## 5. Cross-references

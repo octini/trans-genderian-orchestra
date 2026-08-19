@@ -74,6 +74,18 @@ describe("isPresetName", () => {
 });
 
 describe("applyPreset", () => {
+  test("routes every balanced seat to Muse Spark with supported effort variants", async () => {
+    const cfg = await loadTgoConfig({ preset: "balanced" });
+    const balanced = cfg.presets!.balanced;
+    const model = "opencode-go/muse-spark-1.2-contributor";
+    expect(balanced.bernstein).toEqual({ model, variant: "xhigh" });
+    expect(balanced.horowitz).toEqual({ model, variant: "xhigh" });
+    expect(balanced.nirvana).toEqual({ model, variant: "xhigh" });
+    expect(balanced.dylan).toEqual({ model, variant: "high" });
+    expect(balanced.nas).toEqual({ model, variant: "medium" });
+    expect(balanced["band-members"]).toEqual({ model, variant: "high" });
+  });
+
   test("sets model + variant on every seat", async () => {
     const cfg = await loadTgoConfig({ preset: "frontier" });
     const agent: Record<string, Record<string, unknown>> = {

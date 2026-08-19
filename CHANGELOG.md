@@ -2,6 +2,16 @@
 
 All notable changes to TGO, in reverse chronological order. Versions track `plugin/package.json`.
 
+## [0.1.4] - 2026-08-19
+
+- **5-way ablation benchmark:** variants none(0)/tgo-small(85)/tgo-current(720)/tgo-ste-selective(580)/tgo-large(6680), 10 fixtures (terse-qa + orchestration + tool-heavy + voice-forward), 50 cases with input/cached/output/retries/delegation/latency/cost/costPerSuccessfulTask (proxy), drift/preservation/requiredClaim/taskSuccess, externalClaims vendor-not-TGO, limitations documented, no auto-adoption, cost per successful task primary tradeoff, no hard 20/25 cap (STE soft metric-only for tool-heavy)
+- **Lifecycle claim semantics:** forgeable `issueClaimed` → observed `issueStatusObserved:in_progress` + `issueAssigneeObserved` + `claimExitCode:0`, 8 disposable `bd` probes (happy claim, forged rejection, observed pass, missing/double-claim, 3× reopen: closed→open, active demotes to open, missing exit1, plus `bd -C` unsupported)
+- **Failed-gate recovery:** 5-row table (failed verification / active / missing / watchdog-abort / tiny) with `canClose:false` + `recovery: retry/reroute/escalate/user-clarification`, docs state `active≠reopen`, `recovery create --deps discovered-from` disabled (`allowed:false`)
+- **Docs audit:** 14 docs now state `bd init --directory unsupported; bd -C fails; must use .cwd(directory); host-mediated lifecycle validation remains future work` + `Board reads do not authorize lifecycle actions; ... allowed:false` + `tgo-3id` separation + CHANGELOG 0.1.0 qualification + `CONTEXT.md` single-writer future intent
+- **Routing:** one-shot tiny/standard/heavy intent, preset mapping, docs/tests only, no delegation/closure enforcement
+- **Report parser:** deterministic `parseTaskReport` with `WATCHDOG-ABORT` → `reroute`, `blocked/escalate` → `escalate`, GAPS clarification → `user-clarification` else `retry`, no `bd` calls
+- **Gates:** `bun test` 360 pass 0 fail 1882 expects, `bunx tsc --noEmit -p plugin/tsconfig.json` clean, `bun run --cwd plugin validate` PASSED
+
 ## 0.1.3 — 2026-08-16
 
 - **Changed:** the balanced preset routes every seat through `github-copilot/gpt-5.6-luna` with role-specific reasoning variants.
@@ -19,9 +29,10 @@ Docs-only release: the npm package page now carries the full documentation suite
 
 Initial release. The scaffolded plugin, its config assets, and everything that made the shape real:
 
-- **Thin core, four hooks.** Background Job Board injection (`experimental.chat.messages.transform`), session reconciliation (`session.status`/`idle`), task-fit rejection normalization (`tool.execute.after`), and the always-on concision transform (`experimental.chat.system.transform`), plus a `config` hook that applies the active preset at load.
+- **Thin core, four core hooks plus observer.** Background Job Board injection (`experimental.chat.messages.transform`), session reconciliation (`session.status`/`idle`), task-fit rejection normalization (`tool.execute.after`), and the always-on concision transform (`experimental.chat.system.transform`), plus an opt-in `experimental.text.complete` observer for surrogate-only style reinforcement. Watchdog and load-time config paths are supporting lifecycle code.
+- **Opt-in completion observer.** Surrogate-only style reinforcement is default-inert; the observer has no production context or response lineage and keeps state only in memory for the controller instance.
 - **The roster.** Five build-generated seats (Bernstein, Horowitz, Nas, Dylan, Nirvana + band members) with the 4-block prompt anatomy, the house-style fold, and the register dial. The Nirvana band wired end to end.
-- **Beads-native work tracking.** Bernstein as single writer; each work-unit issue is a living spec with a boolean exit gate; the Background Job Board is a renderer over beads with a thin live-state shim.
+- **Beads-native work tracking (initial intent for 0.1.0). Current plugin host validates metadata only per docs/spec/beads-integration.md; lifecycle writes (create/claim/close/reopen/recovery) remain disabled/unproven — see that spec for host limitation.**
 - **Capabilities, not compliance.** Per-seat permission graph in seat frontmatter, global `todowrite` deny, `subagent_depth: 2`, step caps on the specialist seats, and the verification/read-only bash allowlists.
 - **Presets.** balanced / cheap / frontier seat→model maps, applied at plugin load, switched at runtime by prose nudge, with partial overrides supported.
 - **Deepwork mode.** Opt-in autonomous loop with hard bounds, checkpoint protocol, stagnation detection, and light/medium/heavy re-planning.

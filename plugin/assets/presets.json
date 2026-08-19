@@ -1,11 +1,11 @@
 {
   "balanced": {
-    "bernstein": { "model": "github-copilot/gpt-5.6-luna", "variant": "max" },
-    "horowitz": { "model": "github-copilot/gpt-5.6-luna", "variant": "max" },
-    "nas": { "model": "github-copilot/gpt-5.6-luna", "variant": "medium" },
-    "dylan": { "model": "github-copilot/gpt-5.6-luna", "variant": "high" },
-    "nirvana": { "model": "github-copilot/gpt-5.6-luna", "variant": "max" },
-    "band-members": { "model": "github-copilot/gpt-5.6-luna", "variant": "high" }
+    "bernstein": { "model": "opencode-go/muse-spark-1.2-contributor", "variant": "xhigh" },
+    "horowitz": { "model": "opencode-go/muse-spark-1.2-contributor", "variant": "xhigh" },
+    "nas": { "model": "opencode-go/muse-spark-1.2-contributor", "variant": "medium" },
+    "dylan": { "model": "opencode-go/muse-spark-1.2-contributor", "variant": "high" },
+    "nirvana": { "model": "opencode-go/muse-spark-1.2-contributor", "variant": "xhigh" },
+    "band-members": { "model": "opencode-go/muse-spark-1.2-contributor", "variant": "high" }
   },
   "cheap": {
     "bernstein": { "model": "opencode/deepseek-v4-flash-free", "variant": "max" },
