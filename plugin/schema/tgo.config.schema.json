@@ -19,6 +19,11 @@
       "description": "Directory holding seat prompt .md files (defaults to the opencode global agent dir).",
       "type": "string"
     },
+    "checkVersion": {
+      "description": "When true, check npm for a newer trans-genderian-orchestra release at startup and warn via app.log. No auto-write; update with `opencode plugin trans-genderian-orchestra --force -g`.",
+      "type": "boolean",
+      "default": true
+    },
     "board": {
       "description": "Background Job Board (hook #1) settings.",
       "type": "object",
@@ -97,6 +102,18 @@
           "type": "integer",
           "exclusiveMinimum": 0,
           "default": 10000
+        },
+        "stuckLoopTools": {
+          "description": "Consecutive tool calls without progress before the stuck-loop detector fires.",
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "default": 20
+        },
+        "stuckLoopMs": {
+          "description": "Window for the stuck-loop detector.",
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "default": 300000
         }
       },
       "additionalProperties": false

@@ -14,6 +14,7 @@ import { applyPreset, readPresetNudge, resolveActivePreset } from "./presets";
 import { validateDelegationBoundary, validateDelegationPacket, verifyClaimObserved as verifyDelegationClaimObserved } from "./delegation";
 import { authorizeLifecycleSession, evaluateClosure, verifyClaimObserved } from "./lifecycle";
 import { loadBeadsTui, renderBeadsTui } from "./tui";
+import { checkVersionDrift } from "./version";
 export { validateDelegationBoundary, validateDelegationPacket, verifyClaimObserved as verifyDelegationClaimObserved } from "./delegation";
 export type { DelegationPacket, DelegationValidation } from "./delegation";
 export { evaluateClosure, authorizeLifecycleSession, verifyClaimObserved } from "./lifecycle";
@@ -45,6 +46,20 @@ export const TgoPlugin: Plugin = async (
   const appLog = (level: "info" | "warn" | "error", message: string, extra?: Record<string, unknown>) => {
     client.app.log({ body: { service: "tgo", level, message, extra } }).catch(() => {});
   };
+
+  if (config.checkVersion !== false) {
+    void checkVersionDrift()
+      .then((drift) => {
+        if (drift?.drift) {
+          appLog(
+            "warn",
+            `TGO update available: installed ${drift.local} < npm ${drift.latest} — run: opencode plugin trans-genderian-orchestra --force -g and restart`,
+            { local: drift.local, latest: drift.latest }
+          );
+        }
+      })
+      .catch(() => {});
+  }
 
   const seatDir =
     config.agentDir ?? path.join(os.homedir(), ".config", "opencode", "agent");

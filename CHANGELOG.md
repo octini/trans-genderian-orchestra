@@ -2,6 +2,18 @@
 
 All notable changes to TGO, in reverse chronological order. Versions track `plugin/package.json`.
 
+## [0.1.8] - 2026-08-20
+
+- **Version-drift warning:** startup fetch of `https://registry.npmjs.org/trans-genderian-orchestra/latest` vs local `plugin/package.json:3` via `plugin/src/version.ts:compareVersions`/`readLocalVersion`/`fetchLatestVersion`; `client.app.log` warn `installed < npm — run: opencode plugin trans-genderian-orchestra --force -g and restart` when `compareVersions < 0`. Behind `config.checkVersion` (`plugin/src/config.ts:83` default `true`, no auto-write); fire-and-forget with 3s abort timeout, never throws (plugin load stays non-fatal).
+- **Schema parity:** `plugin/schema/tgo.config.schema.json` adds `checkVersion` (boolean, default true) and missing `watchdog.stuckLoopTools`/`stuckLoopMs` to match `tgoConfigSchema` — `bun run src/validate.ts` PASSED.
+- **Gates:** `bunx tsc --noEmit`, `bun run src/build.ts` Lean ok, `bun test` 370 pass.
+
+## [0.1.7] - 2026-08-20
+
+- **Preset create-missing-agent:** `applyPreset` now creates missing seat agents instead of skipping silent drift; missing preset seats logged via `app.log`.
+- **Watchdog stuck-loop detector:** `stuckLoopTools` (20) / `stuckLoopMs` (5m) in `tgoConfigSchema` + `plugin/src/watchdog.ts` — aborts delegated sessions that loop on tool calls without progress and injects `WATCHDOG-ABORT` for parent re-dispatch.
+- **Gates:** `bunx tsc --noEmit`, `bun run src/build.ts` Lean ok, `bun test` pass.
+
 ## [0.1.6] - 2026-08-20
 
 - **Vendored Beads sidebar:** vendored `nycdubliner/opencode-beads-sidebar` MIT (~950 LOC) into TGO as `plugin/src/sidebar/*` + `plugin/src/tui-plugin.ts`; dual-package single-install `exports "./server" → "./dist/server.js"` + `"./tui" → "./dist/tui.js"` with shared peer externals (`solid-js`, `@opentui/solid`, `@opentui/core`, `@opencode-ai/plugin`).

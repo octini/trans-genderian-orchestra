@@ -14353,6 +14353,7 @@ var tgoConfigSchema = exports_external.object({
   }).optional(),
   register: exports_external.enum(["concise", "natural"]).default("concise"),
   agentDir: exports_external.string().optional(),
+  checkVersion: exports_external.boolean().default(true),
   board: boardConfig.optional().default(() => ({ enabled: true, refreshMs: 5000 })),
   concision: concisionConfig.optional().default(() => ({ enabled: true, reinforcement: false })),
   setup: setupConfig.optional().default(() => ({ enabled: true, autoInstallBeads: true })),
@@ -15956,8 +15957,83 @@ No ready, open, pending, in_progress, or blocked work.`;
 `);
 }
 
-// src/plugin.ts
+// src/version.ts
+import * as fs5 from "node:fs/promises";
 import * as path6 from "node:path";
+import { fileURLToPath as fileURLToPath4 } from "node:url";
+var PLUGIN_NPM_NAME = "trans-genderian-orchestra";
+var REGISTRY_URL = `https://registry.npmjs.org/${PLUGIN_NPM_NAME}/latest`;
+function compareVersions(a, b) {
+  const norm = (v) => v.trim().replace(/^v/, "");
+  const parse6 = (v) => {
+    const [core2, pre] = norm(v).split("-", 2);
+    const parts = core2.split(".").map((p) => {
+      const n = Number.parseInt(p, 10);
+      return Number.isNaN(n) ? 0 : n;
+    });
+    return { parts, pre: pre ?? null };
+  };
+  const pa = parse6(a);
+  const pb = parse6(b);
+  const len = Math.max(pa.parts.length, pb.parts.length);
+  for (let i = 0;i < len; i++) {
+    const av = pa.parts[i] ?? 0;
+    const bv = pb.parts[i] ?? 0;
+    if (av < bv)
+      return -1;
+    if (av > bv)
+      return 1;
+  }
+  if (pa.pre === pb.pre)
+    return 0;
+  if (pa.pre === null)
+    return 1;
+  if (pb.pre === null)
+    return -1;
+  return pa.pre < pb.pre ? -1 : pa.pre > pb.pre ? 1 : 0;
+}
+async function readLocalVersion(packageRoot3) {
+  const root = packageRoot3 ?? path6.resolve(path6.dirname(fileURLToPath4(import.meta.url)), "..");
+  try {
+    const raw = await fs5.readFile(path6.join(root, "package.json"), "utf-8");
+    const json2 = JSON.parse(raw);
+    return typeof json2.version === "string" && json2.version.length > 0 ? json2.version : null;
+  } catch {
+    return null;
+  }
+}
+async function fetchLatestVersion(opts) {
+  const fetchImpl = opts?.fetchImpl ?? globalThis.fetch;
+  if (typeof fetchImpl !== "function")
+    return null;
+  const url2 = opts?.url ?? REGISTRY_URL;
+  const timeoutMs = opts?.timeoutMs ?? 3000;
+  const controller = new AbortController;
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetchImpl(url2, { signal: controller.signal, headers: { accept: "application/json" } });
+    if (!res.ok)
+      return null;
+    const json2 = await res.json();
+    return typeof json2.version === "string" && json2.version.length > 0 ? json2.version : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+async function checkVersionDrift(opts) {
+  const local = await readLocalVersion(opts?.packageRoot);
+  if (!local)
+    return null;
+  const latest = await fetchLatestVersion({ fetchImpl: opts?.fetchImpl, timeoutMs: opts?.timeoutMs, url: opts?.url });
+  if (!latest)
+    return null;
+  return { local, latest, drift: compareVersions(local, latest) < 0 };
+}
+
+// src/plugin.ts
+import * as path7 from "node:path";
 import * as os2 from "node:os";
 function isPrimarySessionData(data) {
   return Boolean(data && typeof data === "object" && Object.prototype.hasOwnProperty.call(data, "parentID") && data.parentID === null);
@@ -15967,7 +16043,14 @@ var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => 
   const appLog = (level, message, extra) => {
     client.app.log({ body: { service: "tgo", level, message, extra } }).catch(() => {});
   };
-  const seatDir = config2.agentDir ?? path6.join(os2.homedir(), ".config", "opencode", "agent");
+  if (config2.checkVersion !== false) {
+    checkVersionDrift().then((drift) => {
+      if (drift?.drift) {
+        appLog("warn", `TGO update available: installed ${drift.local} < npm ${drift.latest} — run: opencode plugin trans-genderian-orchestra --force -g and restart`, { local: drift.local, latest: drift.latest });
+      }
+    }).catch(() => {});
+  }
+  const seatDir = config2.agentDir ?? path7.join(os2.homedir(), ".config", "opencode", "agent");
   try {
     const checked = await validateAgentDir(seatDir);
     if (checked > 0) {
@@ -16128,7 +16211,7 @@ var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => 
       const nextPermission = preapproveExternalDirectory(input.permission, worktreeRoot);
       if (nextPermission && Object.keys(nextPermission).length > 0) {
         input.permission = nextPermission;
-        const parent = worktreeRoot ? path6.dirname(worktreeRoot) : undefined;
+        const parent = worktreeRoot ? path7.dirname(worktreeRoot) : undefined;
         appLog("info", `pre-approved external_directory for worktree family ${parent}/*`, {
           worktreeRoot,
           projectWorktree: project?.worktree ?? null,

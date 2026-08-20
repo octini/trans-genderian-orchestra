@@ -77,6 +77,7 @@ export const tgoConfigSchema = z.object({
     .optional(),
   register: z.enum(["concise", "natural"]).default("concise"),
   agentDir: z.string().optional(),
+  checkVersion: z.boolean().default(true),
   board: boardConfig.optional().default(() => ({ enabled: true, refreshMs: 5000 })),
   concision: concisionConfig.optional().default(() => ({ enabled: true, reinforcement: false })),
   setup: setupConfig.optional().default(() => ({ enabled: true, autoInstallBeads: true })),
