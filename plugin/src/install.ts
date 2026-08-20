@@ -225,6 +225,7 @@ export async function install(overrides?: InstallOptions): Promise<InstallReport
         : PLUGIN_MODULE;
   if (registerModule) {
     const registered = await registerGlobalPlugin(target.configDir, registerModule);
+    await registerTuiPlugin(target.configDir, registerModule);
     plugin = registerModule;
     pluginAction = registered.action;
   }

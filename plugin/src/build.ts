@@ -393,4 +393,51 @@ if (import.meta.main) {
     }
     console.log(`\n${seats.length} seat prompts render under budget. Pass --outDir <dir> to write them.`);
   }
+
+  // dual-package emit: server + TUI (single-install: one npm package exposes both surfaces)
+  const distDir = path.join(packageRoot, "dist");
+  await fs.mkdir(distDir, { recursive: true });
+  const externals = ["solid-js", "@opentui/solid", "@opentui/core", "@opencode-ai/plugin", "@opencode-ai/plugin/*"];
+  const serverEntry = path.join(packageRoot, "src/plugin.ts");
+  const tuiEntry = path.join(packageRoot, "src/sidebar/tui.tsx");
+  const doBuild = async (entry: string, outfile: string) => {
+    const result = await Bun.build({
+      entrypoints: [entry],
+      outdir: distDir,
+      target: "node",
+      format: "esm",
+      external: externals,
+    });
+    if (!result.success) {
+      console.error(result.logs);
+      throw new Error(`build failed for ${entry}`);
+    }
+    // Bun emits based on entry basename (plugin.js / tui.js); rename to stable dist names.
+    const emittedBase = path.basename(entry).replace(/\.(ts|tsx|js)$/, ".js");
+    const emittedPath = path.join(distDir, emittedBase);
+    if (emittedPath !== outfile) {
+      // Prefer output path from build result when available.
+      const builtPath = (result.outputs as unknown as Array<{ path: string }> | undefined)?.[0]?.path;
+      const srcPath = builtPath ?? emittedPath;
+      try {
+        await fs.rename(srcPath, outfile);
+      } catch {
+        // Fallback: if rename race, copy then unlink
+        try {
+          await fs.copyFile(srcPath, outfile);
+          await fs.unlink(srcPath).catch(() => {});
+        } catch {}
+      }
+    }
+    console.log(`Built ${path.relative(packageRoot, outfile)}`);
+  };
+  await doBuild(serverEntry, path.join(distDir, "server.js"));
+  await doBuild(tuiEntry, path.join(distDir, "tui.js"));
+
+  // lean asserts: server must not contain TUI slots, TUI must not contain chat hooks
+  const serverText = await fs.readFile(path.join(distDir, "server.js"), "utf-8");
+  if (serverText.includes("slots.register")) throw new Error("lean violation: server.js contains slots.register");
+  const tuiText = await fs.readFile(path.join(distDir, "tui.js"), "utf-8");
+  if (tuiText.includes("experimental.chat")) throw new Error("lean violation: tui.js contains experimental.chat");
+  console.log("Lean check: server 0 slots, tui 0 experimental.chat OK");
 }

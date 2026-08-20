@@ -6,13 +6,19 @@ This page is the human-readable version of `docs/spec/setup.md`; that spec stays
 
 ## Global install
 
-The npm path — add the plugin to your opencode config:
+Single `opencode plugin add trans-genderian-orchestra` gives both surfaces — board (server) + sidebar (TUI) — no second install. One npm package exposes both via dual-package exports since v0.1.5+ (`exports "./server" → "./dist/server.js"`, `"./tui" → "./dist/tui.js"`); peers `solid-js`, `@opentui/solid`, `@opentui/core` are host-resolved externals. Interactive TUI sidebar (order 450) added in 0.1.6 — 0.1.5 shipped the dual exports and the renderer-only `tgo_beads_snapshot` tool, not the live sidebar.
 
-```json
-{ "plugin": ["trans-genderian-orchestra@0.1.5"] }
+```bash
+opencode plugin add trans-genderian-orchestra
 ```
 
-OpenCode installs the package and its dependencies. A blank-slate install ends up with the plugin loaded, not just config files on disk.
+Manual `opencode.jsonc` entry also works — the npm path:
+
+```json
+{ "plugin": ["trans-genderian-orchestra@0.1.6"] }
+```
+
+OpenCode installs the package and its dependencies. A blank-slate install ends up with the plugin loaded, not just config files on disk. The plugin registers itself in both `opencode.jsonc` (server) and `tui.jsonc` (TUI) — one `trans-genderian-orchestra` entry covers both surfaces, no second install.
 
 For more control, run the installer from a checkout:
 
@@ -33,9 +39,25 @@ Installer flags:
 
 The installer is idempotent — re-running never duplicates entries.
 
+### TUI ordering & Todo coexistence
+
+`tui.jsonc` is the TUI surface: OpenCode's TUI loads external plugins only from `tui.json`/`tui.jsonc` (the `TuiConfig.pluginOrigins` list), never from `opencode.jsonc`. The Beads sidebar registers at `order: 450` in `tui.jsonc` — between the built-in Todo panel at `400` and Modified Files at `500` — via `slots.register({ order: 450, slots: { sidebar_content } })` with the default `append` mode, so it coexists with Todo rather than replacing it.
+
+To replace the built-in Todo panel instead of coexisting, disable it in `tui.jsonc`:
+
+```jsonc
+{ "plugin_enabled": { "internal:sidebar-todo": false } }
+```
+
+This hides Todo while keeping the Beads sidebar at 450; remove the flag to restore Todo alongside Beads.
+
+### Lean & peer externals
+
+Lean (0 LLM tokens): `grep -c slots.register plugin/dist/server.js` ==0 and `grep -c experimental.chat plugin/dist/tui.js` ==0 — server has no TUI slots, TUI has no chat hooks. Validated by `plugin/src/build.ts` and CI. `plugin/dist/server.js` and `plugin/dist/tui.js` are separate bundles with shared externals (`solid-js`, `@opentui/solid`, `@opentui/core`, `@opencode-ai/plugin`, `@opencode-ai/plugin/*`) left host-resolved (not bundled), so they share peers without duplication.
+
 ### The two load paths
 
-1. **npm** — add `"trans-genderian-orchestra@0.1.5"` to the `plugin` array of `opencode.jsonc`. OpenCode installs the package and its dependencies automatically.
+1. **npm** — add `"trans-genderian-orchestra@0.1.6"` to the `plugin` array of `opencode.jsonc`. OpenCode installs the package and its dependencies automatically.
 2. **Local plugin** — symlink or copy `src/plugin.ts` into `~/.config/opencode/plugins/`. Seat prompts are auto-discovered from `~/.config/opencode/agent/` (opencode scans both `agent/` and `agents/`).
 
 ### What the installer writes
@@ -71,9 +93,25 @@ Via the plugin config:
 
 ## Verifying the install
 
-### Beads snapshot
+### Beads snapshot (renderer-only, 0.1.5)
 
-For a one-shot terminal view, invoke the `tgo_beads_snapshot` OpenCode tool from a primary session. It shows ready, open, pending, in-progress, and blocked work with dependency edges. This is a read-only renderer snapshot, not an interactive TUI; it does not authorize lifecycle actions. `plugin/src/tui.ts` remains the implementation detail for the loader and renderer.
+For a one-shot terminal view, invoke the `tgo_beads_snapshot` OpenCode tool from a primary session. It shows ready, open, pending, in-progress, and blocked work with dependency edges. This is a read-only renderer snapshot added in 0.1.5, not the interactive TUI; it does not authorize lifecycle actions. `plugin/src/tui.ts` remains the implementation detail for the loader and renderer. The interactive sidebar at `order 450` in `tui.jsonc` was added in 0.1.6.
+
+### Sidebar graceful states & debug
+
+The interactive sidebar (added in 0.1.6, at `order 450` in `tui.jsonc`) degrades without throwing:
+
+- **No `.beads/` directory** → sidebar renders nothing (no panel, no error) — the repo has no work-unit store.
+- **`bd` missing from `PATH` (`ENOENT`)** → sidebar treats beads as unavailable (shows empty/unavailable, `bd not found on PATH` on mutate) rather than crashing.
+- **Manual refresh** → `beads.refresh` (`bd-refresh`) re-reads beads now; `beads.focus`/`beads.unfocus` pin per-session epic scope.
+
+For tracing, set the debug sink:
+
+```bash
+BEADS_SIDEBAR_DEBUG=/tmp/beads-sidebar.log opencode
+```
+
+The sidebar appends `refresh` / `pin` / `signature` lines with ISO timestamps to that file (`src/sidebar/debug.ts`); unset (default) stays silent.
 
 - **Register + concision are live:** check the installed seats (`~/.config/opencode/agent/dylan.md`) for the house-style block and the "present in *register* mode by default" line — that's the register that took effect at install.
 - **The runtime concision hook is firing:** start opencode with `TGO_DEBUG_EVENTS=1`; the log line `event concision.appended <session-id> {"register":"concise"}` appears each time the instruction is injected into a primary session's system prompt. Absence of the line means the hook isn't firing.

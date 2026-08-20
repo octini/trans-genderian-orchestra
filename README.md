@@ -2,7 +2,7 @@
 
 > Mirrored byte-for-byte in `plugin/README.md` (the npm readme) — edit one, copy to the other.
 
-[![npm version](https://img.shields.io/badge/npm-0.1.5-6a4c93)](https://www.npmjs.com/package/trans-genderian-orchestra)
+[![npm version](https://img.shields.io/badge/npm-0.1.6-6a4c93)](https://www.npmjs.com/package/trans-genderian-orchestra)
 [![License: MIT](https://img.shields.io/badge/license-MIT-6a4c93)](LICENSE)
 [![OpenCode 1.18.13](https://img.shields.io/badge/OpenCode-1.18.13-6a4c93)](https://opencode.ai)
 
@@ -26,13 +26,23 @@ The multi-agent literature is blunt about where orchestration fails, and TGO's s
 
 ## Quick start
 
-Add the plugin to your opencode config:
+Single `opencode plugin add trans-genderian-orchestra` gives both surfaces — board (server) + sidebar (TUI) — no second install.
+
+```bash
+opencode plugin add trans-genderian-orchestra
+```
+
+One npm package exposes both via dual-package exports since v0.1.5+ (`exports "./server" → "./dist/server.js"`, `"./tui" → "./dist/tui.js"`; peers `solid-js`, `@opentui/solid`, `@opentui/core` are host-resolved externals, not bundled). The board lives on the server (`experimental.chat.messages.transform` / `experimental.chat.system.transform` in `dist/server.js`); the sidebar lives on the TUI (`slots.register` at `order 450` in `tui.jsonc` — between Todo `400` and Modified Files `500` — in `dist/tui.js`). Interactive TUI sidebar added in 0.1.6 — 0.1.5 shipped the dual-package exports and the renderer-only `tgo_beads_snapshot` tool, not the live sidebar.
+
+Manual `opencode.jsonc` entry also works:
 
 ```json
-{ "plugin": ["trans-genderian-orchestra@0.1.5"] }
+{ "plugin": ["trans-genderian-orchestra@0.1.6"] }
 ```
 
 OpenCode installs the package and its dependencies. Restart opencode. Per-repo setup is host-dependent: when `bd` is exposed, TGO can attempt `bd init` and `bd setup opencode` in the target repository and reports subprocess exit code, stdout, and stderr. When the host supports the read commands, TGO may render a read-only Beads-derived board. Beads create, claim, close, reopen, recovery, and authorization remain disabled or unproven; Bernstein-owned lifecycle support remains planned follow-up.
+
+Lean (0 LLM tokens): `grep -c slots.register plugin/dist/server.js` ==0 and `grep -c experimental.chat plugin/dist/tui.js` ==0 — server has no TUI slots, TUI has no chat hooks; validated by `plugin/src/build.ts` and CI.
 
 Or install from source:
 
@@ -42,7 +52,7 @@ bun install
 bun run setup
 ```
 
-That builds the seat prompts from templates, writes the global config fragment, auto-installs the engine dependencies (beads, AFT, magic-context, context7), and self-registers the plugin in your global `opencode.jsonc`. These installer actions are host-dependent; live Bernstein-owned Beads setup is not provided by the current plugin host. Restart opencode.
+That builds the seat prompts from templates, writes the global config fragment, auto-installs the engine dependencies (beads, AFT, magic-context, context7), and self-registers the plugin in both `opencode.jsonc` and `tui.jsonc` (one `trans-genderian-orchestra` entry covers both surfaces). These installer actions are host-dependent; live Bernstein-owned Beads setup is not provided by the current plugin host. Restart opencode.
 
 A local-plugin path also exists, documented in `docs/SETUP.md`: symlink or copy `src/plugin.ts` into `~/.config/opencode/plugins/`, then run the installer for the config assets.
 

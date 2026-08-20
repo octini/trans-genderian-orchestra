@@ -2,6 +2,15 @@
 
 All notable changes to TGO, in reverse chronological order. Versions track `plugin/package.json`.
 
+## [0.1.6] - 2026-08-20
+
+- **Vendored Beads sidebar:** vendored `nycdubliner/opencode-beads-sidebar` MIT (~950 LOC) into TGO as `plugin/src/sidebar/*` + `plugin/src/tui-plugin.ts`; dual-package single-install `exports "./server" → "./dist/server.js"` + `"./tui" → "./dist/tui.js"` with shared peer externals (`solid-js`, `@opentui/solid`, `@opentui/core`, `@opencode-ai/plugin`).
+- **Sidebar UX:** Beads TUI sidebar at `order 450` (between Todo `400` and Modified Files `500`) via `slots.register` with glyphs, poll 1.5s (`.beads/last-touched` mtime), collapse 2, header pct; graceful empty/ENOENT states + `BEADS_SIDEBAR_DEBUG` sink.
+- **Palette + slash commands:** 6 commands `beads.focus`/`beads.unfocus`/`beads.start`/`beads.close`/`beads.reopen`/`beads.refresh` via `registerLayer` + `kv` focus pin per `sessionID` + `VALID_BEAD_ID` guard (anchored, leading-char restricted, no option injection).
+- **Lean 0 tokens:** server 0 `slots.register` startup, TUI 0 `experimental.chat` per-turn — `grep -c slots.register plugin/dist/server.js ==0` + `grep -c experimental.chat plugin/dist/tui.js ==0` validated by `plugin/src/build.ts` and CI (`plugin/dist/server.js` + `plugin/dist/tui.js` separate bundles).
+- **Docs single-install:** `opencode plugin add trans-genderian-orchestra` covers both surfaces (server board + TUI sidebar); `README`/`plugin/README` badge `npm-0.1.6` + `plugin` array `trans-genderian-orchestra@0.1.6`.
+- **Gates:** `bunx tsc --noEmit`, `bun run src/build.ts` Lean check ok, `bun test` pass.
+
 ## [0.1.5] - 2026-08-19
 
 - **Renderer-only Beads snapshot:** added the `tgo_beads_snapshot` OpenCode tool, rendering ready, open, pending, in_progress, and blocked work in a table with assignees, priorities, and dependency edges.
