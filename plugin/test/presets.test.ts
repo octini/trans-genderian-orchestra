@@ -96,7 +96,9 @@ describe("applyPreset", () => {
       nirvana: {},
     };
     const applied = applyPreset({ agent }, "frontier", cfg.presets);
-    expect(applied).toEqual(["bernstein", "horowitz", "nas", "dylan", "nirvana"]);
+    expect(applied.sort()).toEqual(
+      ["bernstein", "horowitz", "nas", "dylan", "nirvana", "cobain", "grohl", "novoselic"].sort()
+    );
     expect(agent.bernstein.model).toBe(cfg.presets!.frontier.bernstein.model);
     expect(agent.nas.variant).toBe("high");
   });
@@ -109,16 +111,24 @@ describe("applyPreset", () => {
       novoselic: {},
     };
     const applied = applyPreset({ agent }, "balanced", cfg.presets);
-    expect(applied).toEqual(["cobain", "grohl", "novoselic"]);
+    expect(applied.sort()).toEqual(
+      ["bernstein", "horowitz", "nas", "dylan", "nirvana", "cobain", "grohl", "novoselic"].sort()
+    );
     for (const lens of BAND_LENS_SEATS) {
       expect(agent[lens].model).toBe(cfg.presets!.balanced["band-members"].model);
     }
   });
 
-  test("skips seats missing from the agent map", async () => {
+  test("creates missing agent entries and applies preset to all seats", async () => {
     const cfg = await loadTgoConfig({ preset: "balanced" });
-    const applied = applyPreset({ agent: { bernstein: {} } }, "balanced", cfg.presets);
-    expect(applied).toEqual(["bernstein"]);
+    const agent: Record<string, Record<string, unknown>> = { bernstein: {} };
+    const applied = applyPreset({ agent }, "balanced", cfg.presets);
+    expect(applied.sort()).toEqual(
+      ["bernstein", "horowitz", "nas", "dylan", "nirvana", "cobain", "grohl", "novoselic"].sort()
+    );
+    expect(agent.dylan.model).toBeDefined();
+    expect(agent.nas.model).toBeDefined();
+    expect(agent.horowitz.model).toBeDefined();
   });
 
   test("unknown preset applies nothing", async () => {

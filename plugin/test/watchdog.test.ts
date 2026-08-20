@@ -11,6 +11,8 @@ function makeConfig(overrides: Partial<WatchdogConfig> = {}): WatchdogConfig {
     wallClockMs: 60_000,
     idleMs: 30_000,
     checkMs: 1_000,
+    stuckLoopTools: 20,
+    stuckLoopMs: 5 * 60_000,
     ...overrides,
   };
 }
@@ -461,6 +463,81 @@ describe("WatchdogController", () => {
       await wd.check();
     }
     expect(aborts).toEqual([]);
+    wd.dispose();
+  });
+
+  test("stuck loop without edits aborts as stuck-loop after count+time", async () => {
+    let wall = 1_000_000;
+    let uptime = 500_000;
+    const { deps, aborts, notifies } = makeDeps();
+    const wd = new WatchdogController(
+      makeConfig({ wallClockMs: 600_000, idleMs: 600_000, stuckLoopTools: 5, stuckLoopMs: 30_000, checkMs: 1_000 }),
+      {
+        ...deps,
+        wallNow: () => wall,
+        uptimeNow: () => uptime,
+      }
+    );
+    wd.noteSessionCreated({ id: "s-sub", parentID: "p" });
+    wd.noteStatus("s-sub", "busy");
+    // 4 non-progress tools quickly — not enough count, no abort
+    for (let i = 0; i < 4; i++) {
+      wd.noteToolStart("s-sub");
+      wd.noteToolEnd("s-sub", false, false);
+    }
+    wall += 20_000;
+    uptime += 20_000;
+    await wd.check();
+    expect(aborts).toEqual([]);
+    // 6th tool pushes over count (5) but time only 20s < 30s — no abort
+    wd.noteToolStart("s-sub");
+    wd.noteToolEnd("s-sub", false, false);
+    await wd.check();
+    expect(aborts).toEqual([]);
+    // Advance past stuckLoopMs with no edit — now count 5+ and time 40s
+    wall += 20_000;
+    uptime += 20_000;
+    await wd.check();
+    expect(aborts).toEqual(["s-sub"]);
+    expect(notifies[0]?.text).toContain("stuck-loop");
+    wd.dispose();
+  });
+
+  test("edit progress resets stuck-loop counter (no false abort)", async () => {
+    let wall = 1_000_000;
+    let uptime = 500_000;
+    const { deps, aborts } = makeDeps();
+    const wd = new WatchdogController(
+      makeConfig({ wallClockMs: 600_000, idleMs: 600_000, stuckLoopTools: 5, stuckLoopMs: 30_000, checkMs: 1_000 }),
+      {
+        ...deps,
+        wallNow: () => wall,
+        uptimeNow: () => uptime,
+      }
+    );
+    wd.noteSessionCreated({ id: "s-sub", parentID: "p" });
+    wd.noteStatus("s-sub", "busy");
+    for (let i = 0; i < 4; i++) {
+      wd.noteToolStart("s-sub");
+      wd.noteToolEnd("s-sub", false, false);
+    }
+    // A meaningful edit resets the loop detector
+    wd.noteToolStart("s-sub");
+    wd.noteToolEnd("s-sub", false, true);
+    wall += 40_000;
+    uptime += 40_000;
+    await wd.check();
+    expect(aborts).toEqual([]);
+    // Need 5 more non-progress after the edit to trip again
+    for (let i = 0; i < 5; i++) {
+      wd.noteToolStart("s-sub");
+      wd.noteToolEnd("s-sub", false, false);
+    }
+    wall += 5_000;
+    uptime += 5_000;
+    await wd.check();
+    // Time since edit only 45s >30s but count just hit, so now aborts
+    expect(aborts).toEqual(["s-sub"]);
     wd.dispose();
   });
 });

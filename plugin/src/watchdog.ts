@@ -5,12 +5,14 @@ export interface WatchdogConfig {
   wallClockMs: number;
   idleMs: number;
   checkMs: number;
+  stuckLoopTools: number;
+  stuckLoopMs: number;
 }
 
 export interface WatchdogAbortSignal {
   sessionID: string;
   parentID: string | undefined;
-  reason: "wall-clock" | "idle";
+  reason: "wall-clock" | "idle" | "stuck-loop";
   elapsedMs: number;
 }
 
@@ -54,8 +56,14 @@ interface TrackedSession {
   lastProgress: number;
   // Wall time the oldest in-flight tool started, for diagnostics.
   toolStartedAt: number;
+  // Loop-aware progress: wall time of the last *meaningful* write (edit) that
+  // signals forward progress. A tight read/grep loop without edits increments
+  // nonProgressCount and is aborted when both count and time thresholds hit.
+  lastMeaningfulProgress: number;
+  nonProgressCount: number;
 }
 
+export const WATCHDOG_ABORT_REASON_STUCK_LOOP = "stuck-loop";
 export const WATCHDOG_ABORT_MARKER = "## WATCHDOG-ABORT";
 
 // The host slept during a tick gap when the monotonic (sleep-excluded) uptime
@@ -131,6 +139,8 @@ export class WatchdogController {
       toolStartedAt: 0,
       backgroundInFlight: 0,
       lastProgress: now,
+      lastMeaningfulProgress: now,
+      nonProgressCount: 0,
     });
   }
 
@@ -181,17 +191,26 @@ export class WatchdogController {
   // A completed FOREGROUND tool is forward progress: record it as the wall-clock
   // baseline so a long-but-productive session isn't killed by a fixed budget
   // (test-9). Background completions don't move the baseline.
-  noteToolEnd(sessionID: string, background = false): void {
+  // isProgress signals a *meaningful* write (edit/write) that resets the stuck-loop
+  // detector; read/grep loops without edits increment nonProgressCount.
+  noteToolEnd(sessionID: string, background = false, isProgress = false): void {
     const tracked = this.sessions.get(sessionID);
     if (!tracked || tracked.aborted) return;
+    const now = this.awakeNow();
     if (background) {
       if (tracked.backgroundInFlight > 0) tracked.backgroundInFlight -= 1;
     } else if (tracked.toolInFlight > 0) {
       tracked.toolInFlight -= 1;
       if (tracked.toolInFlight === 0) tracked.toolStartedAt = 0;
-      tracked.lastProgress = this.awakeNow();
+      tracked.lastProgress = now;
+      if (isProgress) {
+        tracked.lastMeaningfulProgress = now;
+        tracked.nonProgressCount = 0;
+      } else {
+        tracked.nonProgressCount += 1;
+      }
     }
-    tracked.lastActivity = this.awakeNow();
+    tracked.lastActivity = now;
   }
 
   onCompact(sessionID: string): void {
@@ -268,7 +287,13 @@ export class WatchdogController {
       // past the wall-clock cap (the test-8 false abort).
       const wallClockExempt = tracked.backgroundInFlight > 0 && tracked.toolInFlight === 0;
       const idleElapsed = tracked.toolInFlight > 0 ? 0 : now - tracked.lastActivity;
-      if (!wallClockExempt && wallElapsed >= this.config.wallClockMs) {
+      const stuckElapsed = now - tracked.lastMeaningfulProgress;
+      const isStuckLoop =
+        tracked.nonProgressCount >= this.config.stuckLoopTools &&
+        stuckElapsed >= this.config.stuckLoopMs;
+      if (isStuckLoop) {
+        await this.abort(tracked, "stuck-loop", stuckElapsed);
+      } else if (!wallClockExempt && wallElapsed >= this.config.wallClockMs) {
         await this.abort(tracked, "wall-clock", wallElapsed);
       } else if (idleElapsed >= this.config.idleMs) {
         await this.abort(tracked, "idle", idleElapsed);
@@ -280,7 +305,7 @@ export class WatchdogController {
     if (this.timer) clearInterval(this.timer);
   }
 
-  private async abort(tracked: TrackedSession, reason: "wall-clock" | "idle", elapsedMs: number): Promise<void> {
+  private async abort(tracked: TrackedSession, reason: "wall-clock" | "idle" | "stuck-loop", elapsedMs: number): Promise<void> {
     tracked.aborted = true;
     tracked.busy = false;
     const signal: WatchdogAbortSignal = {
@@ -303,10 +328,16 @@ export class WatchdogController {
     }
     if (tracked.parentID && !tracked.notified) {
       tracked.notified = true;
+      const detail =
+        reason === "stuck-loop"
+          ? `was stuck in a read/grep loop without making edits (${tracked.nonProgressCount} tools, ${Math.round(elapsedMs / 1000)}s since last edit)`
+          : reason === "idle"
+            ? `stopped producing output (idle ${Math.round(elapsedMs / 1000)}s)`
+            : `exceeded the wall-clock cap (wall ${Math.round(elapsedMs / 1000)}s)`;
       try {
         await this.deps.notifyParent(
           tracked.parentID,
-          `${WATCHDOG_ABORT_MARKER}\nDelegated session ${tracked.sessionID} was aborted by the TGO watchdog (${reason}, ${Math.round(elapsedMs / 1000)}s). It stopped producing output or exceeded the wall-clock cap. Verify what landed, then re-dispatch it smaller or re-decompose per the lane-card — do not trust the empty result.`,
+          `${WATCHDOG_ABORT_MARKER}\nDelegated session ${tracked.sessionID} was aborted by the TGO watchdog (${reason}, ${Math.round(elapsedMs / 1000)}s). It ${detail}. Verify what landed, then re-dispatch it smaller or re-decompose per the lane-card — do not trust the empty result.`,
         );
       } catch (error) {
         this.deps.log("error", `watchdog parent notify failed for ${tracked.sessionID}`, {

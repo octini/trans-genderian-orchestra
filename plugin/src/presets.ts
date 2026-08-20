@@ -52,8 +52,8 @@ export function applyPreset(
     const ref = seatMap[seat];
     if (!ref) continue;
     for (const name of agentName(seat)) {
-      const agent = config.agent?.[name];
-      if (!agent) continue;
+      if (!config.agent) config.agent = {};
+      const agent = (config.agent[name] ??= {});
       agent.model = ref.model;
       if (ref.variant) agent.variant = ref.variant;
       applied.push(name);

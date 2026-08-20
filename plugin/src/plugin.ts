@@ -313,7 +313,8 @@ export const TgoPlugin: Plugin = async (
         input.args != null &&
         typeof input.args === "object" &&
         (input.args as Record<string, unknown>).background === true;
-      watchdog.noteToolEnd(input.sessionID, background);
+      const isProgress = input.tool === "edit";
+      watchdog.noteToolEnd(input.sessionID, background, isProgress);
       watchdog.noteActivity(input.sessionID);
       if (input.tool === "task" && typeof output?.output === "string") {
         const report = parseTaskReport(output.output);

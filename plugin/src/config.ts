@@ -62,6 +62,8 @@ const watchdogConfig = z.object({
   wallClockMs: z.number().int().positive().default(20 * 60 * 1000),
   idleMs: z.number().int().positive().default(15 * 60 * 1000),
   checkMs: z.number().int().positive().default(10 * 1000),
+  stuckLoopTools: z.number().int().positive().default(20),
+  stuckLoopMs: z.number().int().positive().default(5 * 60 * 1000),
 });
 
 export const tgoConfigSchema = z.object({
@@ -83,6 +85,8 @@ export const tgoConfigSchema = z.object({
     wallClockMs: 20 * 60 * 1000,
     idleMs: 15 * 60 * 1000,
     checkMs: 10 * 1000,
+    stuckLoopTools: 20,
+    stuckLoopMs: 5 * 60 * 1000,
   })),
 });
 

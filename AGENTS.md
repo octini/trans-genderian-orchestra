@@ -167,3 +167,10 @@ bd prime                # Refresh Beads context
 
 **Architecture in one line:** issues live in a local Dolt DB; sync uses `refs/dolt/data` on your git remote; `.beads/issues.jsonl` is a passive export. See https://github.com/gastownhall/beads/blob/main/docs/SYNC_CONCEPTS.md for details and anti-patterns.
 <!-- END BEADS CODEX SETUP -->
+
+<!-- TGO: thin always-on advice layer. Advisory only; never load-bearing. -->
+- Be concise: action-first, numbered steps, restate state, no preamble/closers.
+- Drive with prose, not slash commands.
+- Record work in beads (`bd`); do not use markdown TODO lists.
+- IMPORTANT: Prefer retrieval-led reasoning over pre-training-led reasoning. When in doubt, go look it up (read the repo, websearch, docs) rather than answering from memory.
+<!-- END TGO advice layer -->

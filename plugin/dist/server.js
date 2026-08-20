@@ -14340,7 +14340,9 @@ var watchdogConfig = exports_external.object({
   enabled: exports_external.boolean().default(true),
   wallClockMs: exports_external.number().int().positive().default(20 * 60 * 1000),
   idleMs: exports_external.number().int().positive().default(15 * 60 * 1000),
-  checkMs: exports_external.number().int().positive().default(10 * 1000)
+  checkMs: exports_external.number().int().positive().default(10 * 1000),
+  stuckLoopTools: exports_external.number().int().positive().default(20),
+  stuckLoopMs: exports_external.number().int().positive().default(5 * 60 * 1000)
 });
 var tgoConfigSchema = exports_external.object({
   preset: exports_external.enum(PRESET_NAMES).default("balanced"),
@@ -14358,7 +14360,9 @@ var tgoConfigSchema = exports_external.object({
     enabled: true,
     wallClockMs: 20 * 60 * 1000,
     idleMs: 15 * 60 * 1000,
-    checkMs: 10 * 1000
+    checkMs: 10 * 1000,
+    stuckLoopTools: 20,
+    stuckLoopMs: 5 * 60 * 1000
   }))
 });
 function estimateTokens(text) {
@@ -15176,7 +15180,9 @@ class WatchdogController {
       toolInFlight: 0,
       toolStartedAt: 0,
       backgroundInFlight: 0,
-      lastProgress: now
+      lastProgress: now,
+      lastMeaningfulProgress: now,
+      nonProgressCount: 0
     });
   }
   noteStatus(sessionID, status) {
@@ -15216,10 +15222,11 @@ class WatchdogController {
     }
     tracked.lastActivity = this.awakeNow();
   }
-  noteToolEnd(sessionID, background = false) {
+  noteToolEnd(sessionID, background = false, isProgress = false) {
     const tracked = this.sessions.get(sessionID);
     if (!tracked || tracked.aborted)
       return;
+    const now = this.awakeNow();
     if (background) {
       if (tracked.backgroundInFlight > 0)
         tracked.backgroundInFlight -= 1;
@@ -15227,9 +15234,15 @@ class WatchdogController {
       tracked.toolInFlight -= 1;
       if (tracked.toolInFlight === 0)
         tracked.toolStartedAt = 0;
-      tracked.lastProgress = this.awakeNow();
+      tracked.lastProgress = now;
+      if (isProgress) {
+        tracked.lastMeaningfulProgress = now;
+        tracked.nonProgressCount = 0;
+      } else {
+        tracked.nonProgressCount += 1;
+      }
     }
-    tracked.lastActivity = this.awakeNow();
+    tracked.lastActivity = now;
   }
   onCompact(sessionID) {
     this.sessions.delete(sessionID);
@@ -15279,7 +15292,11 @@ class WatchdogController {
       const wallElapsed = now2 - wallBaseline;
       const wallClockExempt = tracked.backgroundInFlight > 0 && tracked.toolInFlight === 0;
       const idleElapsed = tracked.toolInFlight > 0 ? 0 : now2 - tracked.lastActivity;
-      if (!wallClockExempt && wallElapsed >= this.config.wallClockMs) {
+      const stuckElapsed = now2 - tracked.lastMeaningfulProgress;
+      const isStuckLoop = tracked.nonProgressCount >= this.config.stuckLoopTools && stuckElapsed >= this.config.stuckLoopMs;
+      if (isStuckLoop) {
+        await this.abort(tracked, "stuck-loop", stuckElapsed);
+      } else if (!wallClockExempt && wallElapsed >= this.config.wallClockMs) {
         await this.abort(tracked, "wall-clock", wallElapsed);
       } else if (idleElapsed >= this.config.idleMs) {
         await this.abort(tracked, "idle", idleElapsed);
@@ -15313,9 +15330,10 @@ class WatchdogController {
     }
     if (tracked.parentID && !tracked.notified) {
       tracked.notified = true;
+      const detail = reason === "stuck-loop" ? `was stuck in a read/grep loop without making edits (${tracked.nonProgressCount} tools, ${Math.round(elapsedMs / 1000)}s since last edit)` : reason === "idle" ? `stopped producing output (idle ${Math.round(elapsedMs / 1000)}s)` : `exceeded the wall-clock cap (wall ${Math.round(elapsedMs / 1000)}s)`;
       try {
         await this.deps.notifyParent(tracked.parentID, `${WATCHDOG_ABORT_MARKER}
-Delegated session ${tracked.sessionID} was aborted by the TGO watchdog (${reason}, ${Math.round(elapsedMs / 1000)}s). It stopped producing output or exceeded the wall-clock cap. Verify what landed, then re-dispatch it smaller or re-decompose per the lane-card — do not trust the empty result.`);
+Delegated session ${tracked.sessionID} was aborted by the TGO watchdog (${reason}, ${Math.round(elapsedMs / 1000)}s). It ${detail}. Verify what landed, then re-dispatch it smaller or re-decompose per the lane-card — do not trust the empty result.`);
       } catch (error51) {
         this.deps.log("error", `watchdog parent notify failed for ${tracked.sessionID}`, {
           error: String(error51)
@@ -15609,9 +15627,9 @@ function applyPreset(config2, preset, presets) {
     if (!ref)
       continue;
     for (const name of agentName(seat)) {
-      const agent = config2.agent?.[name];
-      if (!agent)
-        continue;
+      if (!config2.agent)
+        config2.agent = {};
+      const agent = config2.agent[name] ??= {};
       agent.model = ref.model;
       if (ref.variant)
         agent.variant = ref.variant;
@@ -16148,7 +16166,8 @@ var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => 
     },
     "tool.execute.after": async (input, output) => {
       const background = input.args != null && typeof input.args === "object" && input.args.background === true;
-      watchdog.noteToolEnd(input.sessionID, background);
+      const isProgress = input.tool === "edit";
+      watchdog.noteToolEnd(input.sessionID, background, isProgress);
       watchdog.noteActivity(input.sessionID);
       if (input.tool === "task" && typeof output?.output === "string") {
         const report = parseTaskReport(output.output);
