@@ -291,3 +291,46 @@ describe("skill bundle", () => {
     }
   });
 });
+
+describe("plugin gate: parentID undefined treated as primary + chat.message fallback idempotence", () => {
+  function shouldHandleSession(info: { parentID?: string | null }): boolean {
+    // mirrors plugin handleSessionCreated gate: if (info.parentID != null) return (skip)
+    if (info.parentID != null) return false;
+    return true;
+  }
+
+  test("parentID undefined treated as primary for maybeSetup path", () => {
+    expect(shouldHandleSession({ parentID: null })).toBe(true);
+    expect(shouldHandleSession({ parentID: undefined })).toBe(true);
+    expect(shouldHandleSession({})).toBe(true);
+    expect(shouldHandleSession({ parentID: "abc" })).toBe(false);
+  });
+
+  test("parentID string is subagent skip", () => {
+    expect(shouldHandleSession({ parentID: "sub-123" })).toBe(false);
+  });
+
+  test("chat.message fallback single-call via SetupController dedupe", async () => {
+    const dir = tmpDir();
+    let runCalls = 0;
+    const c = controller({
+      run: async () => {
+        runCalls++;
+        return "";
+      },
+    });
+    // Simulate chat.message fallback: maybeSetup called for primary twice should dedupe second
+    const first = await c.maybeSetup(dir);
+    expect(first.action).toBe("completed");
+    expect(runCalls).toBe(2); // bd init + bd setup opencode
+    const second = await c.maybeSetup(dir);
+    expect(second.action).toBe("already-set-up");
+    expect(runCalls).toBe(2); // no additional runs
+    // also simulate parentID check: fallback only fires when primary
+    const chatShouldRun = (parentID: unknown) => parentID == null;
+    expect(chatShouldRun(undefined)).toBe(true);
+    expect(chatShouldRun(null)).toBe(true);
+    expect(chatShouldRun("child")).toBe(false);
+    rmSync(dir, { recursive: true, force: true });
+  });
+});

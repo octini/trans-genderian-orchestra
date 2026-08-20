@@ -15455,6 +15455,7 @@ class SetupController {
       return { action: "failed", error: "no directory" };
     if (this.attempted.has(directory))
       return { action: "already-set-up" };
+    this.attempted.add(directory);
     if (!await this.needsSetup(directory)) {
       this.attempted.add(directory);
       return { action: "already-set-up" };
@@ -16140,15 +16141,15 @@ var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => 
   const handleSessionCreated = async (info) => {
     if (config2.setup?.enabled === false)
       return;
-    if (info.parentID !== null)
+    if (info.parentID != null)
       return;
-    const directory2 = info.directory;
-    if (!directory2)
+    const resolvedDirectory = info.directory ?? directory;
+    if (!resolvedDirectory || resolvedDirectory === "/")
       return;
     try {
-      const result = await setup.maybeSetup(directory2);
+      const result = await setup.maybeSetup(resolvedDirectory);
       if (result.action === "completed") {
-        appLog("info", `per-repo setup: ${result.steps.join(" → ")} (${directory2})`);
+        appLog("info", `per-repo setup: ${result.steps.join(" → ")} (${resolvedDirectory})`);
       }
     } catch (error51) {
       appLog("warn", `per-repo setup failed: ${String(error51)}`);
@@ -16222,6 +16223,21 @@ var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => 
     },
     "chat.message": async (input, output) => {
       watchdog.noteActivity(input.sessionID);
+      if (config2.setup?.enabled !== false && directory && directory !== "/") {
+        try {
+          const session = await client.session.get({ path: { id: input.sessionID } });
+          const data = session?.data ?? session;
+          const parentID = data?.parentID;
+          if (parentID == null) {
+            const result = await setup.maybeSetup(directory);
+            if (result.action === "completed") {
+              appLog("info", `per-repo setup (chat fallback): ${result.steps.join(" → ")} (${directory})`);
+            }
+          }
+        } catch (error51) {
+          appLog("warn", `per-repo setup fallback failed: ${String(error51)}`);
+        }
+      }
       const text = output.parts.filter((part) => part.type === "text").map((part) => part.text ?? "").join(`
 `);
       styleReinforcement.noteUserMessage(input.sessionID, text);

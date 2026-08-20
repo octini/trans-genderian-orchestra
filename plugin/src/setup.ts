@@ -65,6 +65,7 @@ export class SetupController {
   async maybeSetup(directory: string): Promise<SetupResult> {
     if (!directory) return { action: "failed", error: "no directory" };
     if (this.attempted.has(directory)) return { action: "already-set-up" };
+    this.attempted.add(directory);
 
     if (!(await this.needsSetup(directory))) {
       this.attempted.add(directory);

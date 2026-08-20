@@ -168,13 +168,13 @@ export const TgoPlugin: Plugin = async (
 
   const handleSessionCreated = async (info: { directory?: string; parentID?: string | null }) => {
     if (config.setup?.enabled === false) return;
-    if (info.parentID !== null) return;
-    const directory = info.directory;
-    if (!directory) return;
+    if (info.parentID != null) return;
+    const resolvedDirectory = info.directory ?? directory;
+    if (!resolvedDirectory || resolvedDirectory === "/") return;
     try {
-      const result = await setup.maybeSetup(directory);
+      const result = await setup.maybeSetup(resolvedDirectory);
       if (result.action === "completed") {
-        appLog("info", `per-repo setup: ${result.steps.join(" → ")} (${directory})`);
+        appLog("info", `per-repo setup: ${result.steps.join(" → ")} (${resolvedDirectory})`);
       }
     } catch (error) {
       appLog("warn", `per-repo setup failed: ${String(error)}`);
@@ -287,6 +287,21 @@ export const TgoPlugin: Plugin = async (
 
     "chat.message": async (input, output) => {
       watchdog.noteActivity(input.sessionID);
+      if (config.setup?.enabled !== false && directory && directory !== "/") {
+        try {
+          const session = await client.session.get({ path: { id: input.sessionID } });
+          const data: unknown = (session as { data?: unknown })?.data ?? session;
+          const parentID = (data as { parentID?: unknown })?.parentID;
+          if (parentID == null) {
+            const result = await setup.maybeSetup(directory);
+            if (result.action === "completed") {
+              appLog("info", `per-repo setup (chat fallback): ${result.steps.join(" → ")} (${directory})`);
+            }
+          }
+        } catch (error) {
+          appLog("warn", `per-repo setup fallback failed: ${String(error)}`);
+        }
+      }
       const text = output.parts
         .filter((part) => part.type === "text")
         .map((part) => (part as { text?: string }).text ?? "")

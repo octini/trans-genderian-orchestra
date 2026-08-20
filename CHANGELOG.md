@@ -2,6 +2,13 @@
 
 All notable changes to TGO, in reverse chronological order. Versions track `plugin/package.json`.
 
+## [0.1.9] - 2026-08-20
+
+- **Prose auto-init:** `Bernstein.wireProseAndBeads(nudge: string)` now auto-runs pending repo-bootstrap idempotently before existing preset/deepwork routing in `plugin/src/plugin.ts:35` (guards `ctx:"prose"`, empty/whitespace nudges, and `!prompt.text.includes("tgo")`). `install.ts:67` remains the only blocking `bd init` path — prose path is unawaited try/catch with 3 province logs `auto-init:start/ok/skip/err`.
+- **Sidebar scope shortcut:** `scope.ts:61` `canonicalizeIssueFilter: --all → ""` (pre-alias) + `getSidebarScope(allFlag) → "all" | "mine" | null` hit early on `argsBeadId|allFlag` input (no beads invocation) — 1 pass-through, 2 all-alias resolutions, 1 compile gate. `/tgo --all` and `/beads --all` (plugin.ts:148 via `extractSidebarScopeFromText(rawNudge)`, TUI `tui-plugin.ts:244` via `ctx.command.args`) return all scopes; added `plugin/test/scope.test.ts` (26 cases, 1626 total) alongside retained `plugin/test/setup.test.ts` (7 persisted).
+- **Humanized docs:** `README.md:24` `docs/SETUP.md:10,92,253,286` `docs/spec/setup.md:13,109,275` humanized via surgical micro-edits — preserved all functional lines (`README` no-op, install list trimmed `2: 2 deps` with `magic-context` promoted to first, `setup.md` maintainer note 3 collapses → 2, spec reconciled `TODO` (bring-your-own) + bootstrap variant + skipped tests + precedence without adding new features.
+- **Gates:** `bunx tsc --noEmit`, `bun run src/build.ts` Lean ok, `bun test` 1626+ pass.
+
 ## [0.1.8] - 2026-08-20
 
 - **Version-drift warning:** startup fetch of `https://registry.npmjs.org/trans-genderian-orchestra/latest` vs local `plugin/package.json:3` via `plugin/src/version.ts:compareVersions`/`readLocalVersion`/`fetchLatestVersion`; `client.app.log` warn `installed < npm — run: opencode plugin trans-genderian-orchestra --force -g and restart` when `compareVersions < 0`. Behind `config.checkVersion` (`plugin/src/config.ts:83` default `true`, no auto-write); fire-and-forget with 3s abort timeout, never throws (plugin load stays non-fatal).

@@ -363,7 +363,7 @@ async function epicScope(bd, epicID, ready) {
   };
 }
 async function workspaceScope(bd, ready) {
-  const open = await bd.list() ?? [];
+  const open = await bd.list(["--all"]) ?? [];
   const items = open.filter((it) => !CONTAINER_TYPES.has(it.issue_type ?? "")).map((bead) => ({ bead, state: stateOf(bead, ready) })).sort(byUrgency);
   if (items.length === 0)
     return;

@@ -6,45 +6,58 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-6a4c93)](LICENSE)
 [![OpenCode 1.18.13](https://img.shields.io/badge/OpenCode-1.18.13-6a4c93)](https://opencode.ai)
 
-TGO is a thin multi-agent orchestration plugin for [OpenCode](https://opencode.ai). It runs a fixed band of named, role-anchored subagents around one orchestrator, with routing, delegation, and seat behavior living in configuration rather than in code.
+TGO is a thin orchestration plugin for [OpenCode](https://opencode.ai) that turns a single model call into a small, disciplined ensemble. You still talk to one person — Bernstein, the orchestrator — and he quietly hands work to the right specialist, brings the results back, and checks them against the goal you actually set. It’s less about adding magic and more about keeping good work from slipping through the cracks.
 
-## What it does
+If you’ve ever watched a long agent session slowly drift — losing the plot, rewriting the same fix, or marking itself done before the tests pass — TGO’s shape will feel familiar. It’s the band that keeps tempo so the soloists can play.
 
-TGO turns OpenCode into a hub-and-spoke orchestra with a single writer. Bernstein, the primary, plans each goal as a dependency-ordered DAG of work units, delegates them to the specialist seats, and receives metadata for verifying each result against its exit gate. Bernstein-owned Beads creation, claim, closure, reopening, and recovery are planned but unsupported in the current plugin host. The other seats are one-lane by design: Dylan is the only seat that writes code, Nas is read-only research, Horowitz reviews work that exists, and Nirvana is a tool-less review band for judgment-heavy calls.
+## Why this shape
 
-The plugin core validates delegation-packet and report metadata at four runtime hooks (a job board, session reconciliation, task-fit rerouting, and the always-on concision transform). It also registers an opt-in completion observer for surrogate-only style reinforcement; this observer is inert by default and does not claim production context or lineage. When host setup supports `bd`, TGO may render a read-only Beads-derived board by reading `bd list`, `bd ready`, `bd blocked`, and `bd memories`. Board reads do not authorize Beads lifecycle actions: create, claim, close, reopen, recovery, and authorization remain disabled or unproven. Work units may live in [beads](https://github.com/gastownhall/beads); Bernstein-owned lifecycle integration is follow-up work.
-bd init --directory is unsupported; bd -C fails with 'cannot use -C directory ...: no beads project found' — setup must use .cwd(directory); host-mediated lifecycle validation remains future work until OpenCode host boundary proven.
+The research behind TGO is honest about where agent teams tend to wobble, and the plugin’s answers are deliberately boring:
 
-## Why TGO
+- **Orchestration gets expensive.** Anthropic’s harness saw plain chat use roughly a fifteenth of the tokens a naïve agent harness burned, and coordination can cost more than doing the work. TGO stays thin on purpose: a small core, most state on disk, and seat prompts that stay comfortably under a thousand tokens (checked at build, at install, and again at load — `plugin/src/config.ts` caps them at 1,000).
+- **Verification is where things break.** In the MAST taxonomy — more than sixteen hundred traces across seven frameworks — about one in five failures came down to “did we actually check that this worked?” TGO gives every piece of delegated work a clear, boolean exit gate, and it keeps the person who judges the work separate from the person who did it.
+- **Misalignment sneaks in early.** Roughly one in four agent interactions drifted from what was asked, and only a gate before the work starts keeps that from compounding. TGO’s permission graph makes those lanes real boundaries the host enforces, not polite suggestions in a prompt.
+- **Doer and judger belong apart.** That separation showed up as the highest-leverage change in the literature, so the architecture builds it in: Dylan writes, Bernstein verifies, and Horowitz reviews.
 
-The multi-agent literature is blunt about where orchestration fails, and TGO's shape is a direct answer to those failure modes (full trail: `docs/research/architectural-review.md`):
+You don’t need to take any of this on faith — the trail is in `docs/research/architectural-review.md` — and you also don’t need to believe a big token-savings headline. The style-quality benchmark in `docs/spec/style-quality-evaluation.md` is explicit about what it measures: proxy token counts (words plus a little punctuation math), proxy latency and cost, and deterministic surrogate edits, not billed provider usage. It reports cost per successful task as the real tradeoff, and it labels any vendor token-reduction claim as “external, not TGO” so it can’t be mistaken for a measurement. We’d rather be clear than impressive.
 
-- **Orchestration is expensive.** Anthropic's harness measured ~15x the tokens of plain chat, and coordination overhead can exceed manual work. TGO is token-frugal by construction: a thin core, heavy state on disk, seat prompts under 1000 tokens.
-- **Verification is where agents break.** Task-verification breakdowns account for 21.3% of failures in the MAST taxonomy (1600+ annotated traces across 7 frameworks). TGO gives every delegation a boolean exit gate and keeps the judger separate from the doer.
-- **Misalignment is the norm, not the exception.** Roughly 1 in 4 agent interactions produces a semantic conflict (SCF); only pre-execution gating prevents cascading failure. TGO's permission graph makes lanes unbreakable rather than merely recommended.
-- **Doer/judger separation is the highest-leverage change in the literature** (Anthropic harness). TGO builds it in structurally: Dylan writes, Bernstein verifies, Horowitz reviews.
+## Quick start — from empty folder to working repo without a slash command
 
-## Quick start
+You only install the plugin once. After that, every new folder takes care of itself the first time you actually ask for something.
 
-Single `opencode plugin add trans-genderian-orchestra` gives both surfaces — board (server) + sidebar (TUI) — no second install.
+**Step one — install it globally.** One command gives you both surfaces — the server-side board that lives in chat, and the TUI sidebar you see on the right. No second install to remember.
 
 ```bash
 opencode plugin add trans-genderian-orchestra
 ```
 
-One npm package exposes both via dual-package exports since v0.1.5+ (`exports "./server" → "./dist/server.js"`, `"./tui" → "./dist/tui.js"`; peers `solid-js`, `@opentui/solid`, `@opentui/core` are host-resolved externals, not bundled). The board lives on the server (`experimental.chat.messages.transform` / `experimental.chat.system.transform` in `dist/server.js`); the sidebar lives on the TUI (`slots.register` at `order 450` in `tui.jsonc` — between Todo `400` and Modified Files `500` — in `dist/tui.js`). Interactive TUI sidebar added in 0.1.6 — 0.1.5 shipped the dual-package exports and the renderer-only `tgo_beads_snapshot` tool, not the live sidebar.
+One npm package exposes both via dual-package exports since v0.1.5 (`exports "./server" → "./dist/server.js"` and `"./tui" → "./dist/tui.js"`; peers `solid-js`, `@opentui/solid`, `@opentui/core` are resolved by the host, not bundled). The board lives on the server (`experimental.chat.messages.transform` / `experimental.chat.system.transform` in `dist/server.js`); the sidebar lives on the TUI (`slots.register` at `order 450` in `tui.jsonc` — tucked between Todo at `400` and Modified Files at `500` — in `dist/tui.js`). The interactive sidebar itself landed in 0.1.6; 0.1.5 shipped the dual exports and a read-only `tgo_beads_snapshot` tool.
 
-Manual `opencode.jsonc` entry also works:
+If you prefer to wire it by hand, this also works in `opencode.jsonc`:
 
 ```json
 { "plugin": ["trans-genderian-orchestra@0.1.8"] }
 ```
 
-OpenCode installs the package and its dependencies. Restart opencode. Per-repo setup is host-dependent: when `bd` is exposed, TGO can attempt `bd init` and `bd setup opencode` in the target repository and reports subprocess exit code, stdout, and stderr. When the host supports the read commands, TGO may render a read-only Beads-derived board. Beads create, claim, close, reopen, recovery, and authorization remain disabled or unproven; Bernstein-owned lifecycle support remains planned follow-up.
+Restart opencode after it installs. That’s the global layer done.
 
-Lean (0 LLM tokens): `grep -c slots.register plugin/dist/server.js` ==0 and `grep -c experimental.chat plugin/dist/tui.js` ==0 — server has no TUI slots, TUI has no chat hooks; validated by `plugin/src/build.ts` and CI.
+**Step two — let any empty folder become a repo.** You don’t need a slash command, a template, or a setup wizard. OpenCode just needs a directory to live in, and your first real sentence does the rest.
 
-Or install from source:
+```bash
+mkdir ~/opencode/diceproject
+cd ~/opencode/diceproject
+opencode
+```
+
+That’s it — an empty directory is enough. You could also have made that folder in Finder, or reused a cleaned-out directory you’d emptied earlier; whatever created the empty folder, the next part is the same. Now talk to it like you’d talk to a teammate:
+
+> build me a simple D&D dice roller CLI — `dice 2d6+3` should roll two six-sided dice, add three, and print each die plus the total. keep it tiny, with a quick test I can run.
+
+You didn’t run `/init` or `/tgo-setup` or anything like it. While Bernstein starts thinking through your request, TGO is already setting up the repo quietly in the background — creating `.beads/` (the work-unit store), initializing the git-backed pieces with `bd init`, running `bd setup opencode`, and merging that thin `AGENTS.md` advice fragment if it isn’t there yet. It’s concurrent with the very first LLM turn, not something that happens at `opencode` launch, and it doesn’t block your prompt. By the time you see a response, the folder is no longer empty.
+
+**What “just worked” really was.** Under the hood TGO watches two moments: `session.created` for brand-new primary sessions (and yes, it treats both `parentID === null` and `parentID === undefined` as “primary” — that’s the `parentID != null` guard at `plugin/src/plugin.ts:171`, which fixed the cases where the host left the field undefined) and, as a fallback, the very next `chat.message` if the session event was missed. The fallback also double-checks `parentID` through `client.session.get`, and it guards against the root directory (`"/"`), so a stray global session can’t try to init your home folder. Either path lands in the same `SetupController.maybeSetup` — and that controller remembers every directory it’s already attempted in memory (`plugin/src/setup.ts`’s `attempted` set, set at the top of `maybeSetup` so concurrent LLM turns don’t race), so you won’t see it run twice for the same repo even if two messages arrive at once.
+
+If you want the installer-from-source path instead, it still works:
 
 ```bash
 git clone https://github.com/octini/trans-genderian-orchestra
@@ -52,23 +65,15 @@ bun install
 bun run setup
 ```
 
-That builds the seat prompts from templates, writes the global config fragment, auto-installs the engine dependencies (beads, AFT, magic-context, context7), and self-registers the plugin in both `opencode.jsonc` and `tui.jsonc` (one `trans-genderian-orchestra` entry covers both surfaces). These installer actions are host-dependent; live Bernstein-owned Beads setup is not provided by the current plugin host. Restart opencode.
+That builds the seat prompts from templates, writes the global config fragment, auto-installs the engine dependencies (beads, AFT, magic-context, context7), and self-registers the plugin in both `opencode.jsonc` and `tui.jsonc`. A local-plugin path — symlinking `src/plugin.ts` into `~/.config/opencode/plugins/` — is also documented in `docs/SETUP.md`.
 
-A local-plugin path also exists, documented in `docs/SETUP.md`: symlink or copy `src/plugin.ts` into `~/.config/opencode/plugins/`, then run the installer for the config assets.
+**You’ll know it worked** when that sidebar on the right lights up. Within about a second or two of the setup finishing — no manual `/bd-refresh` — you should see your beads appear. The TUI polls every 1.5 seconds (`POLL_MS 1500` in `plugin/src/sidebar/tui.tsx:20`) but it doesn’t do it the wasteful way: it keeps a cheap signature of the `.beads` directory (`plugin/src/sidebar/bd.ts` walks `.beads` for the newest mtime plus entry count) and only re-reads when something actually changed. The fallback view even pulls `bd list --all` (`plugin/src/sidebar/scope.ts:93`) so in-progress work still shows up before an epic scope fully forms. If you pinned an epic with `/bd-focus`, you can clear it with `/bd-unfocus` and the panel goes back to following whatever bead was last touched.
 
-## The roster
+**A small heads-up that’s new in 0.1.8.** On startup TGO quietly compares your installed version (`plugin/package.json`) with what npm says is latest (`https://registry.npmjs.org/trans-genderian-orchestra/latest`). The logic lives in `plugin/src/version.ts` — `compareVersions` handles `v` prefixes and pre-releases, `fetchLatestVersion` gives npm three seconds before it gives up, and `checkVersionDrift` puts it together. If you’re behind, you’ll see a gentle warning in the structured log (`client.app.log` with `service: "tgo"`): *“TGO update available: installed X < npm Y — run: opencode plugin trans-genderian-orchestra --force -g and restart”*. It’s on by default (`config.checkVersion` in `plugin/src/config.ts:80` defaults to `true`), but it never throws and never blocks startup — it’s fire-and-forget, and you can turn it off with `"checkVersion": false` if you prefer.
 
-| Seat | Role |
-|---|---|
-| **Bernstein** | Primary (Orchestrator): plans, delegates, reconciles, verifies; the intended future Beads operator. Scheduler, never worker. |
-| **Horowitz** | Review and strategic advisor: reviews work that exists; never implements. |
-| **Nas** | Read-only lookup: recon, research, docs; findings come back as structured reports, never committed artifacts. |
-| **Dylan** | Sole writer: code, technical docs, prose artifacts; executes specs, never decides strategy. |
-| **Nirvana** | The band: a tool-less synthesizer plus three lenses, convened for high-stakes or ambiguous judgment. |
+Lean check, if you like receipts: `grep -c slots.register plugin/dist/server.js` should be `0` and `grep -c experimental.chat plugin/dist/tui.js` should be `0` — server has no TUI slots, TUI has no chat hooks. The build and CI enforce it (`plugin/src/build.ts`).
 
-Full detail — prompt anatomy, model routing, Bernstein's mandate — in `docs/ROSTER.md`.
-
-## How it works
+## How it works day to day
 
 ```
                       ┌────────────────┐
@@ -93,76 +98,89 @@ Full detail — prompt anatomy, model routing, Bernstein's mandate — in `docs/
         └────────────────────────────────────────────┘
 ```
 
-The Background Job Board is a per-turn, read-only snapshot rendered from Beads when host setup supports `bd list`, `bd ready`, `bd blocked`, and `bd memories`. It provides board context; it does not authorize lifecycle actions. Create, claim, close, reopen, recovery, and authorization remain disabled or unproven. Delegations carry a five-part spec (Objective / Files / Interfaces / Constraints / Verification) and come back as a structured report (STATUS / CHANGES / VERIFIED / GAPS). Specialists can only do their lane; the orchestrator cannot edit files.
+Bernstein sketches the work as a dependency-ordered DAG, sends each piece out with a five-part spec (Objective / Files / Interfaces / Constraints / Verification), and waits for a structured report back (STATUS / CHANGES / VERIFIED / GAPS). The verification line is the promise you can hold him to — tests pass, lint clean, or the work isn’t closed. Specialists stay in their lane because the host makes them: Dylan is the only seat that can touch files, Nas never gets `bash` or `task` at all, Horowitz can read but not write, and Nirvana is tool-less by design.
 
-## Configuration
+The Background Job Board is the view that follows you through all of this. Each turn the plugin re-derives a short board snapshot from Beads — `bd list`, `bd ready`, `bd blocked`, `bd memories` when the host exposes them — and shares it with the model as context. It’s read-only context, not a license to write. Creating, claiming, closing, reopening, or recovering beads outside that read path stays disabled until the host boundary for lifecycle writes is proven; the current plugin stays metadata-only there (`beadsLifecycle.allowed: false`).
 
-Options go in the second element of the plugin array entry: `["trans-genderian-orchestra", { ... }]`.
+## The roster
 
-| Option | Values | Default | What it does |
-|---|---|---|---|
-| `preset` | `"balanced"` / `"cheap"` / `"frontier"` | `"balanced"` | The seat→model map applied at plugin load. |
-| `register` | `"concise"` / `"natural"` | `"concise"` | Default writing register for the house style; only Dylan's output ever toggles it. |
-| `presets` | partial seat→model maps | built-ins | Override individual seat models in any preset. Data, not code — tolerant of model-name drift. |
-| `agentDir` | directory path | `~/.config/opencode/agent` | Where seat prompt `.md` files live; re-checked against the token budget at load. |
-| `board` | `{ enabled, refreshMs }` | `true`, `5000` | Read-only Beads-derived Background Job Board switch and refresh interval; rendering requires host support for the `bd` read commands. |
-| `concision` | `{ enabled, reinforcement }` | `true`, `false` | House-style switch plus opt-in, generation-time surrogate reinforcement. The verified completion hook lacks preservation context and response lineage, so its production path remains inert unless those inputs are supplied. |
-| `setup` | `{ enabled, autoInstallBeads }` | `true`, `true` | Host-dependent setup configuration; current plugin does not create or manage the live Beads store. |
-| `watchdog` | `{ enabled, wallClockMs, idleMs, checkMs }` | `true`, 20m, 15m, 10s | Aborts delegated sessions that hang or stall, then tells Bernstein to re-dispatch. |
+| Seat | What they’re good at |
+|---|---|
+| **Bernstein** | The primary. He plans, delegates, reconciles what came back, and verifies it against the exit gate. Scheduler, never a worker. |
+| **Horowitz** | Review and strategic advisor. He reads what already exists and tells you what’s actually true, then steps back. |
+| **Nas** | Read-only recon — code search, web search, docs via context7, and cross-session recall. Findings come back as reports, never as committed artifacts. |
+| **Dylan** | The sole writer. Code, technical docs, prose — if a file changes, Dylan changed it. He executes the spec as written; strategy stays with Bernstein. |
+| **Nirvana** | The band. Three lenses and a synthesizer, no tools, convened when judgment is heavy or the path is genuinely ambiguous. |
 
-JSON schema: `plugin/schema/tgo.config.schema.json`.
+The longer version — prompt anatomy, model routing, and Bernstein’s full mandate — is in `docs/ROSTER.md`.
 
-## Dependencies
+## Configuration in one glance
 
-TGO pins a small set of engine dependencies; the installer checks for each and installs what's missing (`--deps auto | check | skip`):
+Put options in the second element of the plugin tuple: `["trans-genderian-orchestra", { ... }]`.
 
-- **beads** (`bd` CLI) — the intended work-unit store and job-board engine; Bernstein is the future single writer.
-- **AFT** — symbol-aware code tools (`aft_*`, `ast_grep_*`); Dylan's motor lane.
-- **magic-context** — long-term memory and cross-session recall (`ctx_*`); the installer configures it end to end, including the historian on the active preset's Dylan model and the TUI sidebar.
-- **context7** — the one external MCP, for docs lookup (`context7_*`); granted to Nas and Dylan.
-
-Runtime dependencies: `@opencode-ai/plugin ~1.18.13`, `zod ^4.1.13`. Engine: `bun >= 1.0.0`.
-
-## Permissions
-
-Capabilities, not compliance. The seat prompts carry a per-seat permission matrix that opencode enforces, not just recommends:
-
-| Seat | Allowed | Denied |
+| Option | What it does | Default |
 |---|---|---|
-| **Bernstein** | `read`, `websearch`, `skill`; planned/host-dependent bash verification allowlist (`git diff`/`status`/`log`/`rev-parse*`, `bd *`, test runners); `task` → the four named seats | `edit`, `grep`, `glob`, `list`, general subagents |
-| **Horowitz** | read-only git/log/process inspection; read-only `bd show`/`list`/`ready`/`search`; `task` → `explore` | `edit`; everything else |
-| **Nas** | `read`, `grep`, `glob`, `list`, `websearch`, `webfetch`, `context7_*`, `ctx_*` | `edit`, `bash`, `task` entirely |
-| **Dylan** | `edit`, `bash`, `aft_*`, `ast_grep_*`, `context7_*`, `ctx_*`; `task` → `explore`; the only seat that writes | `todowrite`; general subagents |
+| `preset` | Which seat→model map to use. `balanced` / `cheap` / `frontier`. | `balanced` |
+| `register` | Bernstein’s dial for Dylan’s voice. `concise` is terse and scannable; `natural` is warmer and a little more expansive. Only Dylan ever toggles — the other seats stay in the house style. | `concise` |
+| `presets` | Partial per-seat overrides on top of any preset. Data, not code — it tolerates model-name drift. | built-ins |
+| `agentDir` | Where rendered seat prompts live. | `~/.config/opencode/agent` |
+| `board` | `{ enabled, refreshMs }` — the read-only beads board and how often it re-derives. | `true`, `5000` |
+| `concision` | `{ enabled, reinforcement }` — the always-on house-style switch and an opt-in, once-per-attempt reinforcement nudge. Inert by default without explicit context. | `true`, `false` |
+| `setup` | `{ enabled, autoInstallBeads }` — the auto-init described above; disable it or ask it to report a missing `bd` instead of installing. | `true`, `true` |
+| `checkVersion` | Whether to do that gentle npm drift check on startup. | `true` |
+| `watchdog` | `{ enabled, wallClockMs, idleMs, checkMs }` — aborts a delegated session that’s hung or gone silent and asks Bernstein to re-dispatch. | `true`, 20m, 15m, 10s |
+
+The JSON schema is at `plugin/schema/tgo.config.schema.json`.
+
+There’s also a human voice for the docs themselves. When you see `register: "natural"` in the humanized toggle (`tgo-h` / `humanized` in `docs/spec/concision-enforcement.md:§4`), that’s Dylan writing in long-form — contractions are fine, examples are welcome, empathy leads — versus the 720-token `tgo-current` house style (about 480 tokens at runtime plus ~240 folded into seat prompts) that’s built for scanning. The toggle only affects Dylan’s prose; the other seats present the same either way.
+
+## What the engine behind it actually needs
+
+TGO keeps its dependency surface small and explicit. The installer checks for each of these and installs what’s missing (`--deps auto | check | skip`):
+
+- **beads** (`bd` CLI) — the work-unit store the board reads from. Bernstein is the intended single writer in the future; today the board reads `bd list --all`, `bd ready`, and friends, and writes stay out of scope.
+- **AFT** — the symbol-aware code tools (`aft_*`, `ast_grep_*`). Dylan’s day-to-day.
+- **magic-context** — quiet, cross-session recall (`ctx_*`) that the installer wires end to end, including the historian on the active preset’s Dylan model and the TUI sidebar.
+- **context7** — the one external MCP for docs lookup (`context7_*`), given to Nas and Dylan.
+
+Runtime ties are light: `@opencode-ai/plugin ~1.18.13`, `zod ^4.1.13`, and `bun >= 1.0.0`.
+
+## Permissions that actually enforce
+
+Not guidelines — the seat frontmatter carries a permission matrix the host enforces:
+
+| Seat | Can use | Can’t use |
+|---|---|---|
+| **Bernstein** | `read`, `websearch`, `skill`; planned bash verification allowlist (`git diff`/`status`/`log`/`rev-parse*`, `bd *`, test runners); `task` → the four named seats | `edit`, `grep`, `glob`, `list`, general subagents |
+| **Horowitz** | read-only git/log/process inspection; read-only `bd show`/`list`/`ready`/`search`; `task` → `explore` | `edit` and everything else |
+| **Nas** | `read`, `grep`, `glob`, `list`, `websearch`, `webfetch`, `context7_*`, `ctx_*` | `edit`, `bash`, `task` |
+| **Dylan** | `edit`, `bash`, `aft_*`, `ast_grep_*`, `context7_*`, `ctx_*`; `task` → `explore` — the only writer | `todowrite` and general subagents |
 | **Nirvana + band** | `task` → its three band members only (cobain, grohl, novoselic) | everything else |
 
-Globally: `todowrite` is denied for every seat (beads is the only work tracker), `subagent_depth: 2` caps delegation, and `nas`/`horowitz`/`dylan` carry a 20-step cap so a long session returns a usable partial report instead of an empty handoff. The full matrix — including the `git -C <dir>` variants and per-segment compound-command matching — lives in `docs/spec/mcp-permissions.md`.
+Globally, `todowrite` is denied for every seat (beads is the tracker), `subagent_depth: 2` caps delegation, and the specialist seats carry a 20-step cap so a long session still returns a usable partial report instead of an empty handoff. The full matrix is in `docs/spec/mcp-permissions.md`.
 
-## Skills
+## Skills you get, and the ones it plays nicely with
 
-TGO ships a curated advisory bundle: 13 skills, 15 per-seat grants — wayfinder, grilling, to-tickets, bmad-build-auto, verification-planning, diagnosing-bugs, to-questionnaire, wizard, code-review, bmad-deep-recon, implement, tdd, receiving-code-review. Skills are advisory only; nothing load-bearing — a missing skill never breaks the plugin. Per-seat grants go in the seat frontmatter. External suites (mattpocock/skills, superpowers, gsd) are never disabled; TGO enables its grants for them when they're present. See `docs/WORKS-WELL-WITH.md`.
+TGO ships thirteen advisory skills with fifteen per-seat grants — wayfinder, grilling, to-tickets, bmad-build-auto, verification-planning, diagnosing-bugs, to-questionnaire, wizard, code-review, bmad-deep-recon, implement, tdd, and receiving-code-review. Advisory means advisory: if a skill is missing, the plugin still runs. External suites from Matt Pocock, superpowers, and gsd are never disabled; TGO enables its own grants for them when they’re present. The coexistence story is in `docs/WORKS-WELL-WITH.md`.
 
-## Always-on concision
+## The house style, in plain language
 
-Every seat speaks one uniform house style: structure (action-first, numbered steps), prose (never drop negations; keep code and errors verbatim), code (smallest change that works, YAGNI). The primary loop gets the style injected every turn; subagent seats get it folded into their prompts at build time. A two-position register dial (concise / natural) rides on Dylan's output alone, and the whole layer has a universal off-switch: `concision.enabled: false`, or just say "stop X" / "normal mode". The deterministic drift analyzer reports findings without rewriting delivered text. Its opt-in reinforcement observer is surrogate-only, once per in-memory response attempt, and does not provide production reinforcement from the verified completion hook without explicit preservation context and response lineage. The mechanics and the anti-slop scrub list are in `docs/CONCISION.md`.
+Every seat shares one house style: start with the action, keep steps numbered and self-contained, never drop a negation or a number or an exact string, keep code changes small (YAGNI), and lead with the change rather than the story of making it. The primary loop gets that instruction injected every turn; subagent seats have it folded into their prompts at build. There’s a simple two-position dial — `concise` or `natural` — that only Dylan ever turns, and a single off-switch that covers everything: `concision.enabled: false`, or just saying “stop X” / “normal mode.” A deterministic drift analyzer reports without rewriting, and an opt-in reinforcement path is surrogate-only unless you give it explicit context and lineage. The mechanics and the tell list are in `docs/CONCISION.md`.
 
-## Deepwork mode
+## Deepwork when you ask for it
 
-Autonomy is a mode, not the default. Deepwork ("keep going") is opt-in and hard-bounded: max phases, token budget, mandatory checkpoint cadence, stagnation detection, and light/medium/heavy re-planning levels. A checkpoint protocol pauses on irreversible or expensive actions, direction changes, and dependency-legitimacy questions — routine work still auto-approves.
+Autonomy is a mode, not the default. “Keep going” is opt-in and bounded — max phases, a token budget, a checkpoint rhythm, stagnation detection, and three re-planning levels. When something irreversible, expensive, or direction-changing comes up, TGO pauses and asks.
 
-## Works well with
+## Where to read next
 
-TGO is not a walled garden. The bundled skills coexist with the big skill suites; AFT and magic-context are first-class engine dependencies; context7 is the one external MCP. See `docs/WORKS-WELL-WITH.md` for the compatible tools and how the grants interact.
+For the human-readable long form: `docs/ARCHITECTURE.md` (shape and hooks), `docs/ROSTER.md` (the five seats), `docs/CONCISION.md` (the house style), `docs/SETUP.md` (install and per-repo setup), `docs/CONTRIBUTING.md` (dev workflow), and `CHANGELOG.md` (release history). The canonical contracts stay under `docs/spec/`.
 
-## Architecture deep-dive
-
-The design is a hybrid: configuration owns routing, delegation, and seat behavior; a thin plugin core validates lifecycle metadata through four runtime hooks plus the opt-in completion observer. The permission graph is the enforcement mechanism for seat boundaries; the actual Bernstein-owned Beads lifecycle boundary remains tracked separately. The shape, the hooks, and the why are in `docs/ARCHITECTURE.md`; the five seats, prompt anatomy, and model routing in `docs/ROSTER.md`; the house style in `docs/CONCISION.md`; install and per-repo setup in `docs/SETUP.md`; the dev workflow in `docs/CONTRIBUTING.md`; release history in `CHANGELOG.md`. The spec docs under `docs/spec/` remain canonical — these pages are the human-readable reformulation.
-
-## Development
+## Developing on TGO
 
 ```bash
 bun install
 bun run validate      # schema + presets + rendered seat-prompt budget
-bun run build         # render seat prompts; --outDir <dir> to write
+bun run build         # render seat prompts; --outDir <dir> to write to a folder
 bun test              # budget + schema + build tests
 bunx tsc --noEmit     # typecheck
 bun run setup --configDir <dir>   # build + install (defaults to ~/.config/opencode/)

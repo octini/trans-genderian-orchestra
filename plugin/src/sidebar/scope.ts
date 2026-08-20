@@ -90,7 +90,7 @@ async function epicScope(bd: BdClient, epicID: string, ready: Set<string> | unde
 }
 
 async function workspaceScope(bd: BdClient, ready: Set<string> | undefined): Promise<PanelData | undefined> {
-  const open = (await bd.list()) ?? []
+  const open = (await bd.list(["--all"])) ?? []
   const items = open
     .filter((it) => !CONTAINER_TYPES.has(it.issue_type ?? ""))
     .map((bead) => ({ bead, state: stateOf(bead, ready) }))
