@@ -33,23 +33,22 @@ Standing rule (all seats): **effectiveness over theming.** Names are naming/UX d
 
 Per-role model routing via presets (see `docs/spec/features.md` §5): named seat→model/variant maps. Three built-ins: **balanced / cheap / frontier**. **Applied at plugin load** from the active preset (config hook), never mid-task — OpenCode 1.18.13's `task` tool takes no model parameter and a subagent without an explicit `model` inherits the parent's model, so per-seat models are fixed for the session.
 
-**Concrete presets (decided 2026-08-05, Go + free Zen models; balanced amended 2026-08-16, tgo-5a6):**
+**Concrete presets (decided 2026-08-05, Go + free Zen models; balanced amended 2026-08-16, tgo-5a6; unified 2026-08-21, tgo-5ga):**
 
 | Seat | Balanced | Cheap | Frontier |
 |---|---|---|---|
-| Bernstein | `opencode-go/muse-spark-1.2-contributor` (xhigh) | `opencode/deepseek-v4-flash-free` (effort max) | `opencode-go/kimi-k3` (max) |
-| Horowitz | `opencode-go/muse-spark-1.2-contributor` (xhigh) | `opencode/deepseek-v4-flash-free` (effort high) | `opencode-go/kimi-k3` (max) |
-| Nas | `opencode-go/muse-spark-1.2-contributor` (medium; vision) | `opencode/mimo-v2.5-free` (vision; default) | `opencode-go/deepseek-v4-flash` (effort high) |
-| Dylan | `opencode-go/muse-spark-1.2-contributor` (high) | `opencode/deepseek-v4-flash-free` (effort high) | `opencode-go/deepseek-v4-flash` (effort max) |
-| Nirvana synth | `opencode-go/muse-spark-1.2-contributor` (xhigh) | `opencode/deepseek-v4-flash-free` (effort max) | `opencode-go/kimi-k3` (max) |
-| Band members | `opencode-go/muse-spark-1.2-contributor` (high) | `opencode/deepseek-v4-flash-free` (effort high) | `opencode-go/deepseek-v4-flash` (effort high) |
+| Bernstein | `opencode-go/ox-alpha-free` (max) | `opencode-go/ox-alpha-free` (max) | `opencode-go/kimi-k3` (max) |
+| Horowitz | `opencode-go/ox-alpha-free` (max) | `opencode-go/ox-alpha-free` (max) | `opencode-go/kimi-k3` (max) |
+| Nas | `opencode-go/ox-alpha-free` (max) | `opencode-go/ox-alpha-free` (max) | `opencode-go/ox-alpha-free` (max) |
+| Dylan | `opencode-go/ox-alpha-free` (max) | `opencode-go/ox-alpha-free` (max) | `opencode-go/ox-alpha-free` (max) |
+| Nirvana synth | `opencode-go/ox-alpha-free` (max) | `opencode-go/ox-alpha-free` (max) | `opencode-go/kimi-k3` (max) |
+| Band members | `opencode-go/ox-alpha-free` (max) | `opencode-go/ox-alpha-free` (max) | `opencode-go/ox-alpha-free` (max) |
 
 **Rationale:**
-- **Balanced = Muse Spark 1.2 Contributor on every seat**: all six balanced entries route to `opencode-go/muse-spark-1.2-contributor`; the preset differentiates by supported reasoning effort: xhigh on the judgment seats (Bernstein/Horowitz/Nirvana), medium on Nas (read-only research and vision), and high on Dylan (writing) and band members (tool-less reasoning). Dylan stays at high for execution work; Nas stays at medium for read-only research while preserving his vision lane.
-- **Nas = the eyes** (cheap: MiMo V2.5 with vision; balanced: Muse Spark with vision): Bernstein delegates vision tasks to Nas on demand — the slim Observer pattern, with **Nas read-only** (confirmed: slim's Observer is read-only, no write access needed). **Implemented (2026-08-11, tgo-dqa):** Bernstein's prompt carries the vision rule both ways — anything needing sight goes to Nas when his model lacks vision; when his model HAS vision (frontier Kimi K3), he reads images himself and only delegates vision work that's research/recon. Nas's prompt identifies him as "the eyes" so he accepts sight tasks in the structured report format.
-- **Frontier = Kimi K3** for the judgment seats: 1M context, vision, reasoning max (its only option). Nas/Dylan stay DS4 Flash (research/execution never need frontier cost).
-- **Provider split across presets:** balanced runs OpenCode Go; cheap stays OpenCode free-tier. Cross-vendor review remains an option in the "works well with" page.
-- Reasoning-effort variants: xhigh on balanced judgment seats (Bernstein/Horowitz/Nirvana), medium on balanced Nas (research), high on balanced Dylan (writing) and band members (tool-less reasoning).
+- **Balanced = ox-alpha-free on every seat** (max): all six balanced entries route to `opencode-go/ox-alpha-free` at effort `max`. Verified in `~/.cache/opencode/models.json`: ox-alpha-free supports `low/high/max`; kimi-k3 supports `max` (fallback to `high` if max unavailable, but max is available).
+- **Cheap = same as balanced**: all six cheap entries route to `opencode-go/ox-alpha-free` at effort `max`.
+- **Frontier = Kimi K3 on judgment seats, ox-alpha-free elsewhere — all max**: Bernstein/Horowitz/Nirvana → `opencode-go/kimi-k3` (max); Nas/Dylan/band-members → `opencode-go/ox-alpha-free` (max).
+- **Nas = the eyes** (read-only researcher; vision delegation per model capability): Bernstein delegates vision tasks to Nas on demand — the slim Observer pattern, with **Nas read-only** (confirmed: slim's Observer is read-only, no write access needed). **Implemented (2026-08-11, tgo-dqa):** Bernstein's prompt carries the vision rule both ways — anything needing sight goes to Nas when his model lacks vision; when his model HAS vision (frontier Kimi K3), he reads images himself and only delegates vision work that's research/recon. Nas's prompt identifies him as "the eyes" so he accepts sight tasks in the structured report format.
 - Models move fast; these are the plan-as-of-today. The JSON schema + build step should tolerate model-name drift (presets are data, not code).
 
 ## 5. Bernstein's mandate (including architectural-review amendments)

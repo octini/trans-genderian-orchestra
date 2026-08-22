@@ -74,16 +74,16 @@ describe("isPresetName", () => {
 });
 
 describe("applyPreset", () => {
-  test("routes every balanced seat to Muse Spark with supported effort variants", async () => {
+  test("routes every balanced seat to ox-alpha-free max", async () => {
     const cfg = await loadTgoConfig({ preset: "balanced" });
     const balanced = cfg.presets!.balanced;
-    const model = "opencode-go/muse-spark-1.2-contributor";
-    expect(balanced.bernstein).toEqual({ model, variant: "xhigh" });
-    expect(balanced.horowitz).toEqual({ model, variant: "xhigh" });
-    expect(balanced.nirvana).toEqual({ model, variant: "xhigh" });
-    expect(balanced.dylan).toEqual({ model, variant: "high" });
-    expect(balanced.nas).toEqual({ model, variant: "medium" });
-    expect(balanced["band-members"]).toEqual({ model, variant: "high" });
+    const model = "opencode-go/ox-alpha-free";
+    expect(balanced.bernstein).toEqual({ model, variant: "max" });
+    expect(balanced.horowitz).toEqual({ model, variant: "max" });
+    expect(balanced.nirvana).toEqual({ model, variant: "max" });
+    expect(balanced.dylan).toEqual({ model, variant: "max" });
+    expect(balanced.nas).toEqual({ model, variant: "max" });
+    expect(balanced["band-members"]).toEqual({ model, variant: "max" });
   });
 
   test("sets model + variant on every seat", async () => {
@@ -100,7 +100,7 @@ describe("applyPreset", () => {
       ["bernstein", "horowitz", "nas", "dylan", "nirvana", "cobain", "grohl", "novoselic"].sort()
     );
     expect(agent.bernstein.model).toBe(cfg.presets!.frontier.bernstein.model);
-    expect(agent.nas.variant).toBe("high");
+    expect(agent.nas.variant).toBe("max");
   });
 
   test("band-members preset entry maps to the lens agents", async () => {

@@ -31,18 +31,18 @@ Seat→model maps are called **presets**: named data files, not code, so model-n
 
 | Seat | Balanced | Cheap | Frontier |
 |---|---|---|---|
-| Bernstein | `opencode-go/muse-spark-1.2-contributor` (xhigh) | `opencode/deepseek-v4-flash-free` (effort max) | `opencode-go/kimi-k3` (max) |
-| Horowitz | `opencode-go/muse-spark-1.2-contributor` (xhigh) | `opencode/deepseek-v4-flash-free` (effort high) | `opencode-go/kimi-k3` (max) |
-| Nas | `opencode-go/muse-spark-1.2-contributor` (medium; vision) | `opencode/mimo-v2.5-free` (vision; default) | `opencode-go/deepseek-v4-flash` (effort high) |
-| Dylan | `opencode-go/muse-spark-1.2-contributor` (high) | `opencode/deepseek-v4-flash-free` (effort high) | `opencode-go/deepseek-v4-flash` (effort max) |
-| Nirvana synth | `opencode-go/muse-spark-1.2-contributor` (xhigh) | `opencode/deepseek-v4-flash-free` (effort max) | `opencode-go/kimi-k3` (max) |
-| Band members | `opencode-go/muse-spark-1.2-contributor` (high) | `opencode/deepseek-v4-flash-free` (effort high) | `opencode-go/deepseek-v4-flash` (effort high) |
+| Bernstein | `opencode-go/ox-alpha-free` (max) | `opencode-go/ox-alpha-free` (max) | `opencode-go/kimi-k3` (max) |
+| Horowitz | `opencode-go/ox-alpha-free` (max) | `opencode-go/ox-alpha-free` (max) | `opencode-go/kimi-k3` (max) |
+| Nas | `opencode-go/ox-alpha-free` (max) | `opencode-go/ox-alpha-free` (max) | `opencode-go/ox-alpha-free` (max) |
+| Dylan | `opencode-go/ox-alpha-free` (max) | `opencode-go/ox-alpha-free` (max) | `opencode-go/ox-alpha-free` (max) |
+| Nirvana synth | `opencode-go/ox-alpha-free` (max) | `opencode-go/ox-alpha-free` (max) | `opencode-go/kimi-k3` (max) |
+| Band members | `opencode-go/ox-alpha-free` (max) | `opencode-go/ox-alpha-free` (max) | `opencode-go/ox-alpha-free` (max) |
 
 The routing rationale, from the spec:
 
-- **Balanced = Muse Spark 1.2 Contributor on every seat** — all six balanced entries route to `opencode-go/muse-spark-1.2-contributor`; the preset differentiates by supported reasoning effort: xhigh on the judgment seats (Bernstein/Horowitz/Nirvana), medium on Nas (read-only research and vision), and high on Dylan (writing) and band members (tool-less reasoning). Dylan stays at high for execution work; Nas stays at medium for read-only research while preserving his vision lane.
-- **Nas is the eyes** — the read-only researcher role is unchanged: Bernstein delegates vision tasks to Nas, and when his own model has vision (frontier Kimi K3), he reads images himself and only delegates vision work that is research or recon. Cheap keeps MiMo V2.5 (vision) for Nas.
-- **Frontier = Kimi K3** for the judgment seats — 1M context, vision, reasoning max.
+- **Balanced = ox-alpha-free on every seat (max)** — all six balanced entries route to `opencode-go/ox-alpha-free` at effort `max`.
+- **Cheap = same as balanced** — all six cheap entries route to `opencode-go/ox-alpha-free` at effort `max`.
+- **Frontier = Kimi K3 on judgment seats, ox-alpha-free elsewhere — all max** — Bernstein/Horowitz/Nirvana → `opencode-go/kimi-k3` (max); Nas/Dylan/band-members → `opencode-go/ox-alpha-free` (max).
 
 Switching presets at runtime is a prose nudge, not a config edit: say "go cheap" or "use frontier for this" and Bernstein sets the active preset, which takes effect at the next plugin load. Partial overrides are possible via the `presets` config option.
 

@@ -60,7 +60,7 @@ TGO is a hub-and-spoke orchestra with a single writer. **Bernstein**, the primar
 - Proportional routing classifier, delegation validator, structured report parser, metadata-only lifecycle validation, and a deterministic vague-request E2E fixture are implemented and tested. Tiny work keeps its minimal bypass; standard/heavy work requires the Five-part Spec, explicit boolean exit gate, and lifecycle metadata.
 - The disposable Beads CLI probe covers `bd init`, create, show, claim, close, invalid-command exit status, and cleanup. Setup captures subprocess exit code, stdout, and stderr. Primary setup is gated on an explicitly null `parentID`; missing identity is not treated as primary. The Background Job Board is read-only; board reads do not authorize Beads lifecycle writes.
 - Explicit-null primary gates and the read-only board clarification are documented and covered by tests. The implementation does **not** prove live plugin-mediated Beads lifecycle authorization or writes.
-- Balanced presets use `opencode-go/muse-spark-1.2-contributor` for every seat with role-specific efforts: xhigh for Bernstein/Horowitz/Nirvana, medium for Nas, and high for Dylan and band members.
+- Balanced and cheap presets use `opencode-go/ox-alpha-free` (max) on every seat; frontier uses `opencode-go/kimi-k3` (max) on Bernstein/Horowitz/Nirvana and `opencode-go/ox-alpha-free` (max) on Nas/Dylan/band-members.
 
 ### Verified gates and limitations
 
