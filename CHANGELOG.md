@@ -2,6 +2,11 @@
 
 All notable changes to TGO, in reverse chronological order. Versions track `plugin/package.json`.
 
+## [0.1.10] - 2026-08-22
+
+- **Unified presets:** cheap+balanced unified on `opencode-go/ox-alpha-free` max (all six seats); frontier `opencode-go/kimi-k3` max on bernstein/horowitz/nirvana, `opencode-go/ox-alpha-free` max elsewhere (nas/dylan/band-members). Verified `ox-alpha-free` supports `low/high/max`, `kimi-k3` supports `max`. Preset unification landed in 25787a9 (`plugin/assets/presets.json`, `docs/spec/roster.md`, `docs/ROSTER.md`, `CONTEXT.md:63`, `plugin/test/presets.test.ts` — tgo-5ga).
+- **Gates:** `bunx tsc --noEmit`, `bun run src/build.ts` Lean ok, `bun test` 373 pass.
+
 ## [0.1.9] - 2026-08-20
 
 - **Prose auto-init:** `Bernstein.wireProseAndBeads(nudge: string)` now auto-runs pending repo-bootstrap idempotently before existing preset/deepwork routing in `plugin/src/plugin.ts:35` (guards `ctx:"prose"`, empty/whitespace nudges, and `!prompt.text.includes("tgo")`). `install.ts:67` remains the only blocking `bd init` path — prose path is unawaited try/catch with 3 province logs `auto-init:start/ok/skip/err`.
