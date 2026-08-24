@@ -2,6 +2,12 @@
 
 All notable changes to TGO, in reverse chronological order. Versions track `plugin/package.json`.
 
+## [0.1.11] - 2026-08-24
+
+- **Safe plugin entry exports:** the entry module no longer exports internal helpers — fixes the host legacy loader invoking `evaluateClosure` as a factory (`failed to load plugin` on ~25% of runs) (e21270a, tgo-6tq).
+- **Beads sidebar resilience:** the Beads TUI panel shows an explicit error state instead of vanishing, retries with backoff after `bd` failures, and logs the resolved worktree at init under `BEADS_SIDEBAR_DEBUG` (a63a724, tgo-hv6).
+- **Gates:** `bunx tsc --noEmit`, `bun run src/build.ts` Lean ok, `bun test` 378 pass.
+
 ## [0.1.10] - 2026-08-22
 
 - **Unified presets:** cheap+balanced unified on `opencode-go/ox-alpha-free` max (all six seats); frontier `opencode-go/kimi-k3` max on bernstein/horowitz/nirvana, `opencode-go/ox-alpha-free` max elsewhere (nas/dylan/band-members). Verified `ox-alpha-free` supports `low/high/max`, `kimi-k3` supports `max`. Preset unification landed in 25787a9 (`plugin/assets/presets.json`, `docs/spec/roster.md`, `docs/ROSTER.md`, `CONTEXT.md:63`, `plugin/test/presets.test.ts` — tgo-5ga).
