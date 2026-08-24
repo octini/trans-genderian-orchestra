@@ -3,7 +3,7 @@ import { loadTgoConfig, validateAgentDir, BD_ENV, type TgoConfig } from "./confi
 import { BoardController, type BoardMessage } from "./board";
 import { ConcisionController } from "./concision";
 import { StyleReinforcementController } from "./style-reinforcement";
-import { SessionReconciler } from "./session";
+import { isPrimarySessionData, SessionReconciler } from "./session";
 import { TaskFitController, classifyRouting } from "./fit";
 import { WatchdogController } from "./watchdog";
 import { parseTaskReport } from "./report";
@@ -15,21 +15,15 @@ import { validateDelegationBoundary, validateDelegationPacket, verifyClaimObserv
 import { authorizeLifecycleSession, evaluateClosure, verifyClaimObserved } from "./lifecycle";
 import { loadBeadsTui, renderBeadsTui } from "./tui";
 import { checkVersionDrift } from "./version";
-export { validateDelegationBoundary, validateDelegationPacket, verifyClaimObserved as verifyDelegationClaimObserved } from "./delegation";
+// No runtime function re-exports here: opencode's legacy plugin loader calls
+// EVERY exported function as a plugin factory (input, options), so an entry
+// re-export like evaluateClosure gets invoked as one and throws inside the
+// host loader ("failed to load plugin", tgo-6tq). Internal helpers stay in
+// their own modules; only type re-exports are safe on the entry.
 export type { DelegationPacket, DelegationValidation } from "./delegation";
-export { evaluateClosure, authorizeLifecycleSession, verifyClaimObserved } from "./lifecycle";
 export type { ClosureGate, LifecycleMetadata } from "./lifecycle";
 import * as path from "node:path";
 import * as os from "node:os";
-
-export function isPrimarySessionData(data: unknown): boolean {
-  return Boolean(
-    data &&
-      typeof data === "object" &&
-      Object.prototype.hasOwnProperty.call(data, "parentID") &&
-      (data as { parentID?: unknown }).parentID === null
-  );
-}
 
 export const TgoPlugin: Plugin = async (
   { client, $, project, directory, worktree }: PluginInput,

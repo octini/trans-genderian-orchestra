@@ -56,3 +56,18 @@ export class SessionReconciler {
     });
   }
 }
+
+/**
+ * Primary sessions are exactly the top-level ones: opencode marks them by a
+ * `parentID` that is present but null, while subagents carry a parent id. The
+ * own-property check keeps inherited fakes (e.g. `Object.create({parentID:
+ * null})`) from passing as primary.
+ */
+export function isPrimarySessionData(data: unknown): boolean {
+  return Boolean(
+    data &&
+      typeof data === "object" &&
+      Object.prototype.hasOwnProperty.call(data, "parentID") &&
+      (data as { parentID?: unknown }).parentID === null
+  );
+}

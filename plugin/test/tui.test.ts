@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { BEADS_TUI_COMMANDS, loadBeadsTui, renderBeadsTui, type BeadsTuiSnapshot } from "../src/tui";
-import { isPrimarySessionData } from "../src/plugin";
+import { isPrimarySessionData } from "../src/session";
 
 const runWith = (data: Record<string, unknown[]>, calls: string[]) => async (command: string) => {
   calls.push(command);
