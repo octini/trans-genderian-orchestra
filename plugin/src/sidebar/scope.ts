@@ -17,6 +17,8 @@ export type PanelData = {
   total: number
   /** True when we fell back to workspace-wide work rather than a real plan. */
   fallback: boolean
+  /** Set when the refresh itself failed; the panel renders it instead of rows. */
+  error?: string
 }
 
 export function focusKey(sessionID: string): string {

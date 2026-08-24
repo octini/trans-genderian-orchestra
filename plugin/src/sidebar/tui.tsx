@@ -19,6 +19,9 @@ import { type BeadState, focusKey, type PanelData, type PanelItem, resolveScope 
 /** How often we stat `.beads/last-touched` looking for changes. */
 const POLL_MS = 1_500
 
+/** Ceiling for the failure backoff: a persistently broken bd polls half a minute. */
+const MAX_POLL_MS = 30_000
+
 export type Store = ReturnType<typeof createStore>
 
 type Kv = {
@@ -40,6 +43,11 @@ export function createStore(bd: BdClient, kv: Kv) {
   let inFlight = false
   /** A refresh requested while one was in flight; any number coalesce to one. */
   let pending: { force: boolean } | undefined
+  /**
+   * Current poll cadence. Doubles per consecutive failed refresh (capped at
+   * MAX_POLL_MS) so a broken bd doesn't spin, and resets on success.
+   */
+  let pollDelay = POLL_MS
 
   /**
    * The reactive owner the sidebar slot renders under.
@@ -96,9 +104,14 @@ export function createStore(bd: BdClient, kv: Kv) {
       const next = await resolveScope(bd, pinned())
       debug(`refresh items=${next?.items.length ?? "none"} epic=${next?.epic?.id ?? "-"}`)
       commit(next)
+      pollDelay = POLL_MS
     } catch (err) {
       debug(`refresh threw ${String(err)}`)
-      commit(undefined)
+      // Commit an explicit error state rather than undefined: undefined makes
+      // the panel vanish (indistinguishable from plugin-not-loaded), while an
+      // error line tells the user bd is broken and that /bd-refresh retries.
+      pollDelay = Math.min(pollDelay * 2, MAX_POLL_MS)
+      commit({ epic: undefined, items: [], done: 0, total: 0, fallback: false, error: String(err) })
     } finally {
       // Snapshot *after* querying, not before: some bd reads rewrite
       // `.beads/last-touched` themselves, and sampling first would make our own
@@ -117,10 +130,18 @@ export function createStore(bd: BdClient, kv: Kv) {
 
   function start(): () => void {
     void refresh(true)
-    const timer = setInterval(() => {
-      if (bd.signature() !== lastSignature) void refresh()
-    }, POLL_MS)
-    return () => clearInterval(timer)
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const tick = () => {
+      // After a failed refresh the panel shows the error state; retry on the
+      // next tick even though nothing changed on disk — lastSignature was
+      // updated by the failed pass, so waiting for a signature change would
+      // pin the error until some external bd write (tgo-hv6).
+      const failed = data()?.error !== undefined
+      if (failed || bd.signature() !== lastSignature) void refresh()
+      timer = setTimeout(tick, pollDelay)
+    }
+    timer = setTimeout(tick, pollDelay)
+    return () => clearTimeout(timer)
   }
 
   return { data, refresh, start, pin, pinned, sessionID, setSessionID, adopt }
@@ -172,29 +193,51 @@ export function BeadsPanel(props: {
   return (
     <Show when={props.data()}>
       {(data: Accessor<PanelData>) => (
-        <box>
-          <box flexDirection="row" gap={1} onMouseDown={() => collapsible() && setExpanded((it) => !it)}>
-            <Show when={collapsible()}>
-              <text fg={theme().text}>{expanded() ? "▼" : "▶"}</text>
-            </Show>
+        <Show
+          when={data().error}
+          fallback={
+            <box>
+              <box flexDirection="row" gap={1} onMouseDown={() => collapsible() && setExpanded((it) => !it)}>
+                <Show when={collapsible()}>
+                  <text fg={theme().text}>{expanded() ? "▼" : "▶"}</text>
+                </Show>
+                <text fg={theme().text}>
+                  <b>Beads</b>
+                </text>
+                <Show when={data().epic}>
+                  {(epic: Accessor<Bead>) => (
+                    <text fg={theme().textMuted} wrapMode="none">
+                      {epic().id}
+                    </text>
+                  )}
+                </Show>
+                <text fg={theme().textMuted}>{heading()}</text>
+              </box>
+
+              <For each={visible()}>{(item) => <Row api={props.api} item={item} onSelect={props.onSelect} />}</For>
+            </box>
+          }
+        >
+          {/* A failed refresh renders an explicit error line rather than nothing:
+              an absent section is indistinguishable from plugin-not-loaded. */}
+          <box flexDirection="row" gap={1}>
             <text fg={theme().text}>
               <b>Beads</b>
             </text>
-            <Show when={data().epic}>
-              {(epic: Accessor<Bead>) => (
-                <text fg={theme().textMuted} wrapMode="none">
-                  {epic().id}
-                </text>
-              )}
-            </Show>
-            <text fg={theme().textMuted}>{heading()}</text>
+            <text fg={theme().textMuted} wrapMode="none">
+              {`unavailable — ${shortError(data().error ?? "")}; /bd-refresh to retry`}
+            </text>
           </box>
-
-          <For each={visible()}>{(item) => <Row api={props.api} item={item} onSelect={props.onSelect} />}</For>
-        </box>
+        </Show>
       )}
     </Show>
   )
+}
+
+/** Collapse a refresh failure to one row: first non-empty line, capped. */
+function shortError(text: string): string {
+  const line = text.split(/\r?\n/).find((it) => it.trim().length > 0) ?? text
+  return line.length > 80 ? `${line.slice(0, 79)}…` : line
 }
 
 function Row(props: { api: TuiPluginApi; item: PanelItem; onSelect: (item: PanelItem) => void }) {
@@ -236,6 +279,9 @@ const SIDEBAR_ORDER = 450
 
 const tui: TuiPlugin = async (api) => {
   const bd = createBdClient(api.state.path.worktree)
+  // Field diagnosis for an invisible panel (tgo-hv6): record which worktree the
+  // factory captured and whether a beads database exists there at all.
+  debug(`init worktree=${api.state.path.worktree} enabled=${bd.enabled()}`)
   const store = createStore(bd, api.kv)
 
   const stopPolling = store.start()

@@ -15061,6 +15061,9 @@ class SessionReconciler {
     });
   }
 }
+function isPrimarySessionData(data) {
+  return Boolean(data && typeof data === "object" && Object.prototype.hasOwnProperty.call(data, "parentID") && data.parentID === null);
+}
 
 // src/fit.ts
 var REROUTE_NOT_RETRY = "REROUTE-NOT-RETRY";
@@ -15772,9 +15775,6 @@ async function authorizeLifecycleSession(client, sessionID) {
     return false;
   }
 }
-function verifyClaimObserved2(lifecycle) {
-  return lifecycle.issueStatusObserved === "in_progress" && typeof lifecycle.issueAssigneeObserved === "string" && lifecycle.issueAssigneeObserved.trim().length > 0 && lifecycle.claimExitCode === 0;
-}
 function evaluateClosure(route, lifecycle, report) {
   if (route === "tiny") {
     const safe = report?.completionSafe === true;
@@ -16036,9 +16036,6 @@ async function checkVersionDrift(opts) {
 // src/plugin.ts
 import * as path7 from "node:path";
 import * as os2 from "node:os";
-function isPrimarySessionData(data) {
-  return Boolean(data && typeof data === "object" && Object.prototype.hasOwnProperty.call(data, "parentID") && data.parentID === null);
-}
 var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => {
   const config2 = await loadTgoConfig(options);
   const appLog = (level, message, extra) => {
@@ -16335,13 +16332,6 @@ var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => 
 };
 var plugin_default = TgoPlugin;
 export {
-  verifyClaimObserved as verifyDelegationClaimObserved,
-  verifyClaimObserved2 as verifyClaimObserved,
-  validateDelegationPacket,
-  validateDelegationBoundary,
-  isPrimarySessionData,
-  evaluateClosure,
   plugin_default as default,
-  authorizeLifecycleSession,
   TgoPlugin
 };

@@ -409,12 +409,14 @@ function byUrgency(a, b) {
 // src/sidebar/tui.tsx
 import { jsxDEV } from "@opentui/solid/jsx-dev-runtime";
 var POLL_MS = 1500;
+var MAX_POLL_MS = 30000;
 function createStore(bd, kv) {
   const [data, setData] = createSignal(undefined);
   const [sessionID, setSessionID] = createSignal(undefined);
   let lastSignature;
   let inFlight = false;
   let pending;
+  let pollDelay = POLL_MS;
   let owner = null;
   function adopt(next) {
     if (next)
@@ -454,9 +456,11 @@ function createStore(bd, kv) {
       const next = await resolveScope(bd, pinned());
       debug(`refresh items=${next?.items.length ?? "none"} epic=${next?.epic?.id ?? "-"}`);
       commit(next);
+      pollDelay = POLL_MS;
     } catch (err) {
       debug(`refresh threw ${String(err)}`);
-      commit(undefined);
+      pollDelay = Math.min(pollDelay * 2, MAX_POLL_MS);
+      commit({ epic: undefined, items: [], done: 0, total: 0, fallback: false, error: String(err) });
     } finally {
       lastSignature = bd.snapshot();
       inFlight = false;
@@ -469,11 +473,15 @@ function createStore(bd, kv) {
   }
   function start() {
     refresh(true);
-    const timer = setInterval(() => {
-      if (bd.signature() !== lastSignature)
+    let timer;
+    const tick = () => {
+      const failed = data()?.error !== undefined;
+      if (failed || bd.signature() !== lastSignature)
         refresh();
-    }, POLL_MS);
-    return () => clearInterval(timer);
+      timer = setTimeout(tick, pollDelay);
+    };
+    timer = setTimeout(tick, pollDelay);
+    return () => clearTimeout(timer);
   }
   return { data, refresh, start, pin, pinned, sessionID, setSessionID, adopt };
 }
@@ -506,51 +514,75 @@ function BeadsPanel(props) {
   });
   return /* @__PURE__ */ jsxDEV(Show, {
     when: props.data(),
-    children: (data) => /* @__PURE__ */ jsxDEV("box", {
-      children: [
-        /* @__PURE__ */ jsxDEV("box", {
-          flexDirection: "row",
-          gap: 1,
-          onMouseDown: () => collapsible() && setExpanded((it) => !it),
-          children: [
-            /* @__PURE__ */ jsxDEV(Show, {
-              when: collapsible(),
-              children: /* @__PURE__ */ jsxDEV("text", {
+    children: (data) => /* @__PURE__ */ jsxDEV(Show, {
+      when: data().error,
+      fallback: /* @__PURE__ */ jsxDEV("box", {
+        children: [
+          /* @__PURE__ */ jsxDEV("box", {
+            flexDirection: "row",
+            gap: 1,
+            onMouseDown: () => collapsible() && setExpanded((it) => !it),
+            children: [
+              /* @__PURE__ */ jsxDEV(Show, {
+                when: collapsible(),
+                children: /* @__PURE__ */ jsxDEV("text", {
+                  fg: theme().text,
+                  children: expanded() ? "▼" : "▶"
+                }, undefined, false, undefined, this)
+              }, undefined, false, undefined, this),
+              /* @__PURE__ */ jsxDEV("text", {
                 fg: theme().text,
-                children: expanded() ? "▼" : "▶"
-              }, undefined, false, undefined, this)
-            }, undefined, false, undefined, this),
-            /* @__PURE__ */ jsxDEV("text", {
-              fg: theme().text,
-              children: /* @__PURE__ */ jsxDEV("b", {
-                children: "Beads"
-              }, undefined, false, undefined, this)
-            }, undefined, false, undefined, this),
-            /* @__PURE__ */ jsxDEV(Show, {
-              when: data().epic,
-              children: (epic) => /* @__PURE__ */ jsxDEV("text", {
+                children: /* @__PURE__ */ jsxDEV("b", {
+                  children: "Beads"
+                }, undefined, false, undefined, this)
+              }, undefined, false, undefined, this),
+              /* @__PURE__ */ jsxDEV(Show, {
+                when: data().epic,
+                children: (epic) => /* @__PURE__ */ jsxDEV("text", {
+                  fg: theme().textMuted,
+                  wrapMode: "none",
+                  children: epic().id
+                }, undefined, false, undefined, this)
+              }, undefined, false, undefined, this),
+              /* @__PURE__ */ jsxDEV("text", {
                 fg: theme().textMuted,
-                wrapMode: "none",
-                children: epic().id
+                children: heading()
               }, undefined, false, undefined, this)
-            }, undefined, false, undefined, this),
-            /* @__PURE__ */ jsxDEV("text", {
-              fg: theme().textMuted,
-              children: heading()
+            ]
+          }, undefined, true, undefined, this),
+          /* @__PURE__ */ jsxDEV(For, {
+            each: visible(),
+            children: (item) => /* @__PURE__ */ jsxDEV(Row, {
+              api: props.api,
+              item,
+              onSelect: props.onSelect
             }, undefined, false, undefined, this)
-          ]
-        }, undefined, true, undefined, this),
-        /* @__PURE__ */ jsxDEV(For, {
-          each: visible(),
-          children: (item) => /* @__PURE__ */ jsxDEV(Row, {
-            api: props.api,
-            item,
-            onSelect: props.onSelect
           }, undefined, false, undefined, this)
-        }, undefined, false, undefined, this)
-      ]
-    }, undefined, true, undefined, this)
+        ]
+      }, undefined, true, undefined, this),
+      children: /* @__PURE__ */ jsxDEV("box", {
+        flexDirection: "row",
+        gap: 1,
+        children: [
+          /* @__PURE__ */ jsxDEV("text", {
+            fg: theme().text,
+            children: /* @__PURE__ */ jsxDEV("b", {
+              children: "Beads"
+            }, undefined, false, undefined, this)
+          }, undefined, false, undefined, this),
+          /* @__PURE__ */ jsxDEV("text", {
+            fg: theme().textMuted,
+            wrapMode: "none",
+            children: `unavailable — ${shortError(data().error ?? "")}; /bd-refresh to retry`
+          }, undefined, false, undefined, this)
+        ]
+      }, undefined, true, undefined, this)
+    }, undefined, false, undefined, this)
   }, undefined, false, undefined, this);
+}
+function shortError(text) {
+  const line = text.split(/\r?\n/).find((it) => it.trim().length > 0) ?? text;
+  return line.length > 80 ? `${line.slice(0, 79)}…` : line;
 }
 function Row(props) {
   const theme = () => props.api.theme.current;
@@ -593,6 +625,7 @@ function Row(props) {
 var SIDEBAR_ORDER = 450;
 var tui = async (api) => {
   const bd = createBdClient(api.state.path.worktree);
+  debug(`init worktree=${api.state.path.worktree} enabled=${bd.enabled()}`);
   const store = createStore(bd, api.kv);
   const stopPolling = store.start();
   const unregisterCommands = registerCommands(api, bd, store);
