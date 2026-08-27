@@ -2,6 +2,10 @@
 
 All notable changes to TGO, in reverse chronological order. Versions track `plugin/package.json`.
 
+## [0.1.12] - 2026-08-27
+
+- **Ox Alpha withdrawal reconfiguration:** the dead `ox-alpha-free` seat model (revealed as GLM-5.3-Flash at higher cost/quota) removed from all presets. Balanced — Bernstein/Nirvana → `glm-5.3-flash` (max, best Go-fit agentic), Horowitz → `gpt-5.6-luna` (max, best Go-fit coder), Dylan/Nas/band-members → `muse-spark-1.2-contributor` (xhigh). Cheap — Muse Spark (xhigh) on every seat. Frontier (light month) — Bernstein → `glm-5.3` (max), Horowitz → `kimi-k3` (max), Nirvana → `grok-4.6` (xhigh), workhorses → Muse Spark (xhigh). All balanced/cheap seats fit their Go request caps; frontier caps are tight (Grok 4.6 845 / Kimi K3 490 / GLM-5.3 1,080 req/mo). Variant support verified in `~/.cache/opencode/models.json`: Muse Spark and Grok 4.6 top out at `xhigh` (no `max`); the rest support `max`. Updated `plugin/assets/presets.json`, `plugin/test/presets.test.ts`, `docs/spec/roster.md`, `docs/ROSTER.md`, `CONTEXT.md:63`.
+
 ## [0.1.11] - 2026-08-24
 
 - **Safe plugin entry exports:** the entry module no longer exports internal helpers — fixes the host legacy loader invoking `evaluateClosure` as a factory (`failed to load plugin` on ~25% of runs) (e21270a, tgo-6tq).

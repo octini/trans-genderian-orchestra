@@ -31,18 +31,19 @@ Seat→model maps are called **presets**: named data files, not code, so model-n
 
 | Seat | Balanced | Cheap | Frontier |
 |---|---|---|---|
-| Bernstein | `opencode-go/ox-alpha-free` (max) | `opencode-go/ox-alpha-free` (max) | `opencode-go/kimi-k3` (max) |
-| Horowitz | `opencode-go/ox-alpha-free` (max) | `opencode-go/ox-alpha-free` (max) | `opencode-go/kimi-k3` (max) |
-| Nas | `opencode-go/ox-alpha-free` (max) | `opencode-go/ox-alpha-free` (max) | `opencode-go/ox-alpha-free` (max) |
-| Dylan | `opencode-go/ox-alpha-free` (max) | `opencode-go/ox-alpha-free` (max) | `opencode-go/ox-alpha-free` (max) |
-| Nirvana synth | `opencode-go/ox-alpha-free` (max) | `opencode-go/ox-alpha-free` (max) | `opencode-go/kimi-k3` (max) |
-| Band members | `opencode-go/ox-alpha-free` (max) | `opencode-go/ox-alpha-free` (max) | `opencode-go/ox-alpha-free` (max) |
+| Bernstein | `opencode-go/glm-5.3-flash` (max) | `opencode-go/muse-spark-1.2-contributor` (xhigh) | `opencode-go/glm-5.3` (max) |
+| Horowitz | `opencode-go/gpt-5.6-luna` (max) | `opencode-go/muse-spark-1.2-contributor` (xhigh) | `opencode-go/kimi-k3` (max) |
+| Nas | `opencode-go/muse-spark-1.2-contributor` (xhigh) | `opencode-go/muse-spark-1.2-contributor` (xhigh) | `opencode-go/muse-spark-1.2-contributor` (xhigh) |
+| Dylan | `opencode-go/muse-spark-1.2-contributor` (xhigh) | `opencode-go/muse-spark-1.2-contributor` (xhigh) | `opencode-go/muse-spark-1.2-contributor` (xhigh) |
+| Nirvana synth | `opencode-go/glm-5.3-flash` (max) | `opencode-go/muse-spark-1.2-contributor` (xhigh) | `opencode-go/grok-4.6` (xhigh) |
+| Band members | `opencode-go/muse-spark-1.2-contributor` (xhigh) | `opencode-go/muse-spark-1.2-contributor` (xhigh) | `opencode-go/muse-spark-1.2-contributor` (xhigh) |
 
 The routing rationale, from the spec:
 
-- **Balanced = ox-alpha-free on every seat (max)** — all six balanced entries route to `opencode-go/ox-alpha-free` at effort `max`.
-- **Cheap = same as balanced** — all six cheap entries route to `opencode-go/ox-alpha-free` at effort `max`.
-- **Frontier = Kimi K3 on judgment seats, ox-alpha-free elsewhere — all max** — Bernstein/Horowitz/Nirvana → `opencode-go/kimi-k3` (max); Nas/Dylan/band-members → `opencode-go/ox-alpha-free` (max).
+- **Balanced = performance-tiered, all under cap** — Bernstein/Nirvana → `glm-5.3-flash` (max, best Go-fit agentic); Horowitz → `gpt-5.6-luna` (max, best Go-fit coder); Dylan/Nas/band-members → `muse-spark-1.2-contributor` (xhigh, massive 226,600/mo cap). Every seat fits its Go request cap.
+- **Cheap = Muse Spark on every seat (xhigh)** — the 226,600/mo cap makes cost a non-issue; all six cheap entries route to `muse-spark-1.2-contributor` at effort `xhigh`.
+- **Frontier = best-performance-period (light month)** — Bernstein → `glm-5.3` (max, best Go agentic); Horowitz → `kimi-k3` (max, best Go long-horizon coder); Nirvana → `grok-4.6` (xhigh, best knowledge-work synth); Dylan/Nas/band-members → `muse-spark-1.2-contributor` (xhigh). Frontier caps are tight (Grok 4.6 = 845, Kimi K3 = 490, GLM-5.3 = 1,080 req/mo) — assume a light-usage month; they throttle if a frontier month gets heavy.
+- **Variant support (verified in `~/.cache/opencode/models.json`):** Muse Spark and Grok 4.6 top out at `xhigh` (no `max`); `glm-5.3`, `glm-5.3-flash`, `gpt-5.6-luna`, and `kimi-k3` support `max`.
 
 Switching presets at runtime is a prose nudge, not a config edit: say "go cheap" or "use frontier for this" and Bernstein sets the active preset, which takes effect at the next plugin load. Partial overrides are possible via the `presets` config option.
 

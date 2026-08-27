@@ -1,26 +1,26 @@
 {
   "balanced": {
-    "bernstein": { "model": "opencode-go/ox-alpha-free", "variant": "max" },
-    "horowitz": { "model": "opencode-go/ox-alpha-free", "variant": "max" },
-    "nas": { "model": "opencode-go/ox-alpha-free", "variant": "max" },
-    "dylan": { "model": "opencode-go/ox-alpha-free", "variant": "max" },
-    "nirvana": { "model": "opencode-go/ox-alpha-free", "variant": "max" },
-    "band-members": { "model": "opencode-go/ox-alpha-free", "variant": "max" }
+    "bernstein":     { "model": "opencode-go/glm-5.3-flash",             "variant": "max" },
+    "horowitz":      { "model": "opencode-go/gpt-5.6-luna",              "variant": "max" },
+    "nas":           { "model": "opencode-go/muse-spark-1.2-contributor", "variant": "xhigh" },
+    "dylan":         { "model": "opencode-go/muse-spark-1.2-contributor", "variant": "xhigh" },
+    "nirvana":       { "model": "opencode-go/glm-5.3-flash",             "variant": "max" },
+    "band-members":  { "model": "opencode-go/muse-spark-1.2-contributor", "variant": "xhigh" }
   },
   "cheap": {
-    "bernstein": { "model": "opencode-go/ox-alpha-free", "variant": "max" },
-    "horowitz": { "model": "opencode-go/ox-alpha-free", "variant": "max" },
-    "nas": { "model": "opencode-go/ox-alpha-free", "variant": "max" },
-    "dylan": { "model": "opencode-go/ox-alpha-free", "variant": "max" },
-    "nirvana": { "model": "opencode-go/ox-alpha-free", "variant": "max" },
-    "band-members": { "model": "opencode-go/ox-alpha-free", "variant": "max" }
+    "bernstein":     { "model": "opencode-go/muse-spark-1.2-contributor", "variant": "xhigh" },
+    "horowitz":      { "model": "opencode-go/muse-spark-1.2-contributor", "variant": "xhigh" },
+    "nas":           { "model": "opencode-go/muse-spark-1.2-contributor", "variant": "xhigh" },
+    "dylan":         { "model": "opencode-go/muse-spark-1.2-contributor", "variant": "xhigh" },
+    "nirvana":       { "model": "opencode-go/muse-spark-1.2-contributor", "variant": "xhigh" },
+    "band-members":  { "model": "opencode-go/muse-spark-1.2-contributor", "variant": "xhigh" }
   },
   "frontier": {
-    "bernstein": { "model": "opencode-go/kimi-k3", "variant": "max" },
-    "horowitz": { "model": "opencode-go/kimi-k3", "variant": "max" },
-    "nas": { "model": "opencode-go/ox-alpha-free", "variant": "max" },
-    "dylan": { "model": "opencode-go/ox-alpha-free", "variant": "max" },
-    "nirvana": { "model": "opencode-go/kimi-k3", "variant": "max" },
-    "band-members": { "model": "opencode-go/ox-alpha-free", "variant": "max" }
+    "bernstein":     { "model": "opencode-go/glm-5.3",                   "variant": "max" },
+    "horowitz":      { "model": "opencode-go/kimi-k3",                  "variant": "max" },
+    "nas":           { "model": "opencode-go/muse-spark-1.2-contributor", "variant": "xhigh" },
+    "dylan":         { "model": "opencode-go/muse-spark-1.2-contributor", "variant": "xhigh" },
+    "nirvana":       { "model": "opencode-go/grok-4.6",                 "variant": "xhigh" },
+    "band-members":  { "model": "opencode-go/muse-spark-1.2-contributor", "variant": "xhigh" }
   }
 }

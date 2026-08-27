@@ -60,7 +60,7 @@ TGO is a hub-and-spoke orchestra with a single writer. **Bernstein**, the primar
 - Proportional routing classifier, delegation validator, structured report parser, metadata-only lifecycle validation, and a deterministic vague-request E2E fixture are implemented and tested. Tiny work keeps its minimal bypass; standard/heavy work requires the Five-part Spec, explicit boolean exit gate, and lifecycle metadata.
 - The disposable Beads CLI probe covers `bd init`, create, show, claim, close, invalid-command exit status, and cleanup. Setup captures subprocess exit code, stdout, and stderr. Primary setup is gated on an explicitly null `parentID`; missing identity is not treated as primary. The Background Job Board is read-only; board reads do not authorize Beads lifecycle writes.
 - Explicit-null primary gates and the read-only board clarification are documented and covered by tests. The implementation does **not** prove live plugin-mediated Beads lifecycle authorization or writes.
-- Balanced and cheap presets use `opencode-go/ox-alpha-free` (max) on every seat; frontier uses `opencode-go/kimi-k3` (max) on Bernstein/Horowitz/Nirvana and `opencode-go/ox-alpha-free` (max) on Nas/Dylan/band-members.
+- Balanced preset: Bernstein/Nirvana → `opencode-go/glm-5.3-flash` (max), Horowitz → `opencode-go/gpt-5.6-luna` (max), Dylan/Nas/band-members → `opencode-go/muse-spark-1.2-contributor` (xhigh). Cheap preset: Muse Spark (xhigh) on every seat. Frontier preset: Bernstein → `opencode-go/glm-5.3` (max), Horowitz → `opencode-go/kimi-k3` (max), Nirvana → `opencode-go/grok-4.6` (xhigh), Dylan/Nas/band-members → Muse Spark (xhigh). Muse Spark and Grok 4.6 cap at `xhigh`; the rest support `max`.
 
 ### Verified gates and limitations
 

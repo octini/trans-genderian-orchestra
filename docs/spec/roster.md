@@ -37,17 +37,17 @@ Per-role model routing via presets (see `docs/spec/features.md` §5): named seat
 
 | Seat | Balanced | Cheap | Frontier |
 |---|---|---|---|
-| Bernstein | `opencode-go/ox-alpha-free` (max) | `opencode-go/ox-alpha-free` (max) | `opencode-go/kimi-k3` (max) |
-| Horowitz | `opencode-go/ox-alpha-free` (max) | `opencode-go/ox-alpha-free` (max) | `opencode-go/kimi-k3` (max) |
-| Nas | `opencode-go/ox-alpha-free` (max) | `opencode-go/ox-alpha-free` (max) | `opencode-go/ox-alpha-free` (max) |
-| Dylan | `opencode-go/ox-alpha-free` (max) | `opencode-go/ox-alpha-free` (max) | `opencode-go/ox-alpha-free` (max) |
-| Nirvana synth | `opencode-go/ox-alpha-free` (max) | `opencode-go/ox-alpha-free` (max) | `opencode-go/kimi-k3` (max) |
-| Band members | `opencode-go/ox-alpha-free` (max) | `opencode-go/ox-alpha-free` (max) | `opencode-go/ox-alpha-free` (max) |
+| Bernstein | `opencode-go/glm-5.3-flash` (max) | `opencode-go/muse-spark-1.2-contributor` (xhigh) | `opencode-go/glm-5.3` (max) |
+| Horowitz | `opencode-go/gpt-5.6-luna` (max) | `opencode-go/muse-spark-1.2-contributor` (xhigh) | `opencode-go/kimi-k3` (max) |
+| Nas | `opencode-go/muse-spark-1.2-contributor` (xhigh) | `opencode-go/muse-spark-1.2-contributor` (xhigh) | `opencode-go/muse-spark-1.2-contributor` (xhigh) |
+| Dylan | `opencode-go/muse-spark-1.2-contributor` (xhigh) | `opencode-go/muse-spark-1.2-contributor` (xhigh) | `opencode-go/muse-spark-1.2-contributor` (xhigh) |
+| Nirvana synth | `opencode-go/glm-5.3-flash` (max) | `opencode-go/muse-spark-1.2-contributor` (xhigh) | `opencode-go/grok-4.6` (xhigh) |
+| Band members | `opencode-go/muse-spark-1.2-contributor` (xhigh) | `opencode-go/muse-spark-1.2-contributor` (xhigh) | `opencode-go/muse-spark-1.2-contributor` (xhigh) |
 
 **Rationale:**
-- **Balanced = ox-alpha-free on every seat** (max): all six balanced entries route to `opencode-go/ox-alpha-free` at effort `max`. Verified in `~/.cache/opencode/models.json`: ox-alpha-free supports `low/high/max`; kimi-k3 supports `max` (fallback to `high` if max unavailable, but max is available).
-- **Cheap = same as balanced**: all six cheap entries route to `opencode-go/ox-alpha-free` at effort `max`.
-- **Frontier = Kimi K3 on judgment seats, ox-alpha-free elsewhere — all max**: Bernstein/Horowitz/Nirvana → `opencode-go/kimi-k3` (max); Nas/Dylan/band-members → `opencode-go/ox-alpha-free` (max).
+- **Balanced = performance-tiered, all under cap** (max on judgment seats, xhigh on workhorses): Bernstein/Nirvana → `glm-5.3-flash` (max, best Go-fit agentic); Horowitz → `gpt-5.6-luna` (max, best Go-fit coder); Dylan/Nas/band-members → `muse-spark-1.2-contributor` (xhigh, 226,600/mo cap). Every seat fits its Go request cap. Verified in `~/.cache/opencode/models.json`: `glm-5.3-flash` and `gpt-5.6-luna` support `max`; Muse Spark tops out at `xhigh` (no `max`).
+- **Cheap = Muse Spark on every seat** (xhigh): all six cheap entries route to `muse-spark-1.2-contributor` at effort `xhigh`.
+- **Frontier = best-performance-period (light month)** — Bernstein → `glm-5.3` (max, best Go agentic); Horowitz → `kimi-k3` (max, best Go long-horizon coder); Nirvana → `grok-4.6` (xhigh, best knowledge-work synth); Dylan/Nas/band-members → `muse-spark-1.2-contributor` (xhigh). Kimi K3 and GLM-5.3 support `max`; Grok 4.6 tops out at `xhigh`. Frontier caps are tight (Grok 4.6 = 845, Kimi K3 = 490, GLM-5.3 = 1,080 req/mo).
 - **Nas = the eyes** (read-only researcher; vision delegation per model capability): Bernstein delegates vision tasks to Nas on demand — the slim Observer pattern, with **Nas read-only** (confirmed: slim's Observer is read-only, no write access needed). **Implemented (2026-08-11, tgo-dqa):** Bernstein's prompt carries the vision rule both ways — anything needing sight goes to Nas when his model lacks vision; when his model HAS vision (frontier Kimi K3), he reads images himself and only delegates vision work that's research/recon. Nas's prompt identifies him as "the eyes" so he accepts sight tasks in the structured report format.
 - Models move fast; these are the plan-as-of-today. The JSON schema + build step should tolerate model-name drift (presets are data, not code).
 
