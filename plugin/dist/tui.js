@@ -504,6 +504,16 @@ var GLYPH = {
   hooked: "◇"
 };
 var COLLAPSE_THRESHOLD = 2;
+function closedHiddenFooter(data) {
+  if (!data)
+    return;
+  if (data.error)
+    return;
+  const count = data.hiddenClosed ?? 0;
+  if (count <= 0)
+    return;
+  return `${count} closed hidden`;
+}
 function BeadsPanel(props) {
   const [expanded, setExpanded] = createSignal(true);
   const theme = () => props.api.theme.current;
@@ -511,7 +521,7 @@ function BeadsPanel(props) {
   const items = createMemo(() => props.data()?.items ?? []);
   const collapsible = createMemo(() => items().length > COLLAPSE_THRESHOLD);
   const visible = createMemo(() => collapsible() && !expanded() ? [] : items());
-  const hiddenClosed = createMemo(() => props.data()?.hiddenClosed ?? 0);
+  const footerText = createMemo(() => closedHiddenFooter(props.data()));
   const heading = createMemo(() => {
     const data = props.data();
     if (!data)
@@ -568,10 +578,10 @@ function BeadsPanel(props) {
             }, undefined, false, undefined, this)
           }, undefined, false, undefined, this),
           /* @__PURE__ */ jsxDEV(Show, {
-            when: hiddenClosed() > 0,
+            when: footerText() !== undefined,
             children: /* @__PURE__ */ jsxDEV("text", {
               fg: theme().textMuted,
-              children: `${hiddenClosed()} closed hidden`
+              children: footerText()
             }, undefined, false, undefined, this)
           }, undefined, false, undefined, this)
         ]
@@ -672,5 +682,6 @@ var tui_default = plugin;
 export {
   tui_default as default,
   createStore,
+  closedHiddenFooter,
   BeadsPanel
 };

@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import type { BdClient, Bead } from "../src/sidebar/bd";
 import { resolveScope } from "../src/sidebar/scope";
-import { createStore } from "../src/sidebar/tui";
+import { closedHiddenFooter, createStore } from "../src/sidebar/tui";
+import type { PanelData } from "../src/sidebar/scope";
 
 function mockBd(overrides: Partial<BdClient> = {}): BdClient {
   const client = {
@@ -193,5 +194,47 @@ describe("beads sidebar: hide closed by default", () => {
     await failingStore.refresh();
     expect(failingStore.data()?.hiddenClosed).toBe(0);
     expect(failingStore.data()?.error).toContain("boom");
+  });
+});
+
+describe("BeadsPanel rendered footer (closedHiddenFooter branch)", () => {
+  // Exercises the actual footer render branch exported by BeadsPanel — no filter mock,
+  // literal text asserted. BeadsPanel itself calls closedHiddenFooter via footerText memo.
+  test("renders literal '<N> closed hidden' with exact count when hiddenClosed > 0", () => {
+    const data: PanelData = {
+      items: [],
+      done: 3,
+      total: 5,
+      fallback: false,
+      hiddenClosed: 3,
+    };
+    expect(closedHiddenFooter(data)).toBe("3 closed hidden");
+    const data2: PanelData = { items: [], done: 1, total: 2, fallback: true, hiddenClosed: 1 };
+    expect(closedHiddenFooter(data2)).toBe("1 closed hidden");
+    // exact count matters — not "3 closed" without hidden, not "closed: 3"
+    expect(closedHiddenFooter({ items: [], done: 7, total: 10, fallback: false, hiddenClosed: 7 })).toBe("7 closed hidden");
+  });
+
+  test("does not render footer when hiddenClosed is 0", () => {
+    const data: PanelData = { items: [{ bead: { id: "a", title: "A" } as Bead, state: "open" }], done: 0, total: 1, fallback: false, hiddenClosed: 0 };
+    expect(closedHiddenFooter(data)).toBeUndefined();
+    expect(closedHiddenFooter({ items: [], done: 0, total: 0, fallback: false, hiddenClosed: 0 })).toBeUndefined();
+    // undefined data also yields no footer (panel omitted)
+    expect(closedHiddenFooter(undefined)).toBeUndefined();
+  });
+
+  test("does not render footer in error state (shows unavailable instead)", () => {
+    const errorData: PanelData = {
+      items: [],
+      done: 0,
+      total: 0,
+      fallback: false,
+      error: "bd spawn failed: ENOENT",
+      hiddenClosed: 3,
+    };
+    // even with hiddenClosed >0, error suppresses footer — panel shows error row instead
+    expect(closedHiddenFooter(errorData)).toBeUndefined();
+    const errorZero: PanelData = { items: [], done: 0, total: 0, fallback: false, error: "lock contention", hiddenClosed: 0 };
+    expect(closedHiddenFooter(errorZero)).toBeUndefined();
   });
 });
