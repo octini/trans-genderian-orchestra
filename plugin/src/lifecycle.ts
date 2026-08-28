@@ -110,6 +110,34 @@ export interface GateAwareClosureGate extends ClosureGate {
   gateCompensation?: { title: string; body: string; discoveredFrom: string; severity: string };
 }
 
+/** Create a typed blocked gate for evaluation failures — never silent proceed. */
+export function gateBlockedWithError(issueId: string, error: string): GateResultForLifecycle {
+  return {
+    passed: false,
+    blocked: true,
+    reasonCode: "GATE_BLOCKED_CRITICAL",
+    reason: `gate evaluation error: ${error}`,
+    findings: [{ axis: "correctness", severity: "CRITICAL", message: `gate evaluation error: ${error}`, source: "gate", code: "GATE_EVAL_ERROR" }],
+    compensation: { title: `Compensate ${issueId} gate error`, body: `Gate evaluation failed for ${issueId}: ${error}\nCreate with: bd create --deps discovered-from:${issueId}`, discoveredFrom: issueId, severity: "CRITICAL" },
+    skipped: false,
+  };
+}
+
+/**
+ * Enforcing consumer — gated closure is the authoritative close decision.
+ * When gate.blocked, result is canClose:false + closureBlocked:true with typed reason.
+ * Thread this result into the real close path, not just metadata.
+ */
+export function evaluateGatedClosure(
+  route: RouteClass,
+  lifecycle: LifecycleMetadata,
+  report: ParsedReport | undefined,
+  gate: GateResultForLifecycle | undefined,
+): GateAwareClosureGate {
+  const base = evaluateClosure(route, lifecycle, report);
+  return applyGateToClosure(base, gate);
+}
+
 /** Determine if exit gate should run — bail/abandon and non-complete skip the gate (taxonomy-aware). */
 export function shouldRunGate(report: ParsedReport | undefined): boolean {
   if (!report) return false;
@@ -119,7 +147,12 @@ export function shouldRunGate(report: ParsedReport | undefined): boolean {
   return true;
 }
 
-/** Merge gate result into closure — CRITICAL gate failure blocks close with typed reason. */
+/**
+ * Merge gate result into closure — CRITICAL gate failure blocks close with typed reason.
+ * This is the enforcing merge — the returned GateAwareClosureGate is the authoritative
+ * decision for whether close is allowed. Callers MUST use its canClose/closureBlocked
+ * to gate the actual `bd close` path, not just observe metadata.
+ */
 export function applyGateToClosure(closure: ClosureGate, gate: GateResultForLifecycle | undefined): GateAwareClosureGate {
   if (!gate || gate.skipped || !gate.blocked) {
     // Not blocked — preserve original closure but expose gate metadata when present

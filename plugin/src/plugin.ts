@@ -15,7 +15,7 @@ import { validateDelegationBoundary, validateDelegationPacket, verifyClaimObserv
 import { captureDelegationSession, probeSessionReuseCapability, persistAbortHandback, loadSessionMap } from "./session-reuse";
 import { ensureDefSnapshot, isValidBeadID, assertValidBeadID } from "./def-snapshot";
 import { authorizeLifecycleSession, evaluateClosure, verifyClaimObserved } from "./lifecycle";
-import { shouldRunGate, applyGateToClosure } from "./lifecycle";
+import { shouldRunGate, applyGateToClosure, evaluateGatedClosure, gateBlockedWithError } from "./lifecycle";
 import { runExitGate } from "./exitgate/gate";
 import { loadBeadsTui, renderBeadsTui } from "./tui";
 import { checkVersionDrift, fetchLatestVersion, PLUGIN_NPM_NAME, readLocalVersion } from "./version";
@@ -626,6 +626,7 @@ export const TgoPlugin: Plugin = async (
               // Exit gate: per-repo profile auto-runs at delegation close (taxonomy-aware).
               // Bail/abandon paths skip the gate; complete paths run it. CRITICAL blocks close.
               if (route !== "tiny" && shouldRunGate(report)) {
+                let issueIdForError: string | undefined;
                 try {
                   const repoRoot = directory ?? worktree ?? (project as unknown as { worktree?: string })?.worktree ?? ".";
                   const specFields = packet as Record<string, unknown>;
@@ -639,9 +640,11 @@ export const TgoPlugin: Plugin = async (
                   const issueId = typeof (lifecycle as Record<string, unknown>).issueId === "string" && String((lifecycle as Record<string, unknown>).issueId).trim().length > 0
                     ? String((lifecycle as Record<string, unknown>).issueId).trim()
                     : typeof specFields.issueId === "string" ? String(specFields.issueId).trim() : undefined;
+                  issueIdForError = issueId;
                   if (issueId) {
                     const gateResult = await runExitGate({ repoRoot, issueId, specText: specText || String(specFields.Objective ?? ""), report });
-                    const merged = applyGateToClosure(closureGate as unknown as import("./lifecycle").ClosureGate, {
+                    // Enforcing consumer: gate result gates the close path — blocked gate MUST produce canClose:false
+                    const merged = evaluateGatedClosure(route, lifecycle as unknown as import("./lifecycle").LifecycleMetadata, report, {
                       passed: gateResult.passed,
                       blocked: gateResult.blocked,
                       reasonCode: gateResult.reasonCode as unknown as import("./lifecycle").GateReasonCode,
@@ -658,7 +661,13 @@ export const TgoPlugin: Plugin = async (
                     }
                   }
                 } catch (e) {
-                  safeWarn(appLog, `exit gate evaluation failed: ${String(e)}`);
+                  const errMsg = String(e);
+                  // Gate failure = typed blocked-with-error, never silent proceed (F1)
+                  appLog("error", "exit gate evaluation failed — blocking close", { issueId: issueIdForError, error: errMsg });
+                  const blocked = gateBlockedWithError(String(issueIdForError ?? "unknown"), errMsg);
+                  const merged = evaluateGatedClosure(route, lifecycle as unknown as import("./lifecycle").LifecycleMetadata, report, blocked);
+                  (output.metadata as Record<string, unknown>).closureGate = merged;
+                  (output.metadata as Record<string, unknown>).exitGate = blocked;
                 }
               }
         }
