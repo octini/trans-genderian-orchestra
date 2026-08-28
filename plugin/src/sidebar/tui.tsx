@@ -111,7 +111,7 @@ export function createStore(bd: BdClient, kv: Kv) {
       // the panel vanish (indistinguishable from plugin-not-loaded), while an
       // error line tells the user bd is broken and that /bd-refresh retries.
       pollDelay = Math.min(pollDelay * 2, MAX_POLL_MS)
-      commit({ epic: undefined, items: [], done: 0, total: 0, fallback: false, error: String(err) })
+      commit({ epic: undefined, items: [], done: 0, total: 0, fallback: false, error: String(err), hiddenClosed: 0 })
     } finally {
       // Snapshot *after* querying, not before: some bd reads rewrite
       // `.beads/last-touched` themselves, and sampling first would make our own
@@ -164,6 +164,22 @@ const GLYPH: Record<BeadState, string> = {
 /** Rows longer than a couple of items collapse, matching the built-in panels. */
 const COLLAPSE_THRESHOLD = 2
 
+/**
+ * Footer text for the hidden-closed count.
+ *
+ * Returns the literal "N closed hidden" string when the panel should show it,
+ * otherwise undefined. Centralizes the footer render branch so tests can assert
+ * the literal output without mounting the full terminal renderer — the BeadsPanel
+ * itself calls this exact export.
+ */
+export function closedHiddenFooter(data: PanelData | undefined): string | undefined {
+  if (!data) return undefined
+  if (data.error) return undefined
+  const count = data.hiddenClosed ?? 0
+  if (count <= 0) return undefined
+  return `${count} closed hidden`
+}
+
 export function BeadsPanel(props: {
   api: TuiPluginApi
   data: () => PanelData | undefined
@@ -181,6 +197,7 @@ export function BeadsPanel(props: {
   const items = createMemo(() => props.data()?.items ?? [])
   const collapsible = createMemo(() => items().length > COLLAPSE_THRESHOLD)
   const visible = createMemo(() => (collapsible() && !expanded() ? [] : items()))
+  const footerText = createMemo(() => closedHiddenFooter(props.data()))
 
   const heading = createMemo(() => {
     const data = props.data()
@@ -215,6 +232,9 @@ export function BeadsPanel(props: {
               </box>
 
               <For each={visible()}>{(item) => <Row api={props.api} item={item} onSelect={props.onSelect} />}</For>
+              <Show when={footerText() !== undefined}>
+                <text fg={theme().textMuted}>{footerText()!}</text>
+              </Show>
             </box>
           }
         >

@@ -19,6 +19,8 @@ export type PanelData = {
   fallback: boolean
   /** Set when the refresh itself failed; the panel renders it instead of rows. */
   error?: string
+  /** Count of closed issues hidden from the rendered list (default-hidden behavior). */
+  hiddenClosed: number
 }
 
 export function focusKey(sessionID: string): string {
@@ -77,36 +79,49 @@ async function epicScope(bd: BdClient, epicID: string, ready: Set<string> | unde
   const children = (await bd.children(epicID)) ?? []
   if (children.length === 0) return undefined
 
-  const items = children
+  const all = children
     .filter((it) => it.id !== epicID)
     .sort(byID)
     .map((bead) => ({ bead, state: stateOf(bead, ready) }))
 
+  const hiddenClosed = all.filter((it) => it.state === "closed").length
+  const items = all.filter((it) => it.state !== "closed")
+
   return {
     epic,
     items,
-    done: items.filter((it) => it.state === "closed").length,
-    total: items.length,
+    done: hiddenClosed,
+    total: all.length,
     fallback: false,
+    hiddenClosed,
   }
 }
 
 async function workspaceScope(bd: BdClient, ready: Set<string> | undefined): Promise<PanelData | undefined> {
   const open = (await bd.list(["--all"])) ?? []
-  const items = open
+  const all = open
     .filter((it) => !CONTAINER_TYPES.has(it.issue_type ?? ""))
     .map((bead) => ({ bead, state: stateOf(bead, ready) }))
     .sort(byUrgency)
 
-  if (items.length === 0) return undefined
+  if (all.length === 0) return undefined
+
+  const hiddenClosed = all.filter((it) => it.state === "closed").length
+  const items = all.filter((it) => it.state !== "closed")
+
+  // If every bead is closed, keep the panel visible so the footer can report
+  // the hidden count; only return undefined when there is truly nothing.
+  if (items.length === 0 && hiddenClosed === 0) return undefined
 
   return {
     items,
     // Without an epic there is no meaningful denominator, so the header shows a
-    // count rather than a percentage.
-    done: items.filter((it) => it.state === "closed").length,
-    total: items.length,
+    // count rather than a percentage. Keep total as the pre-filter count so
+    // hiddenClosed stays exact without an extra derivation.
+    done: hiddenClosed,
+    total: all.length,
     fallback: true,
+    hiddenClosed,
   }
 }
 
