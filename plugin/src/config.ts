@@ -75,6 +75,10 @@ const terminationConfig = z.object({
   enabled: z.boolean().default(true),
 });
 
+const selfUpdateConfig = z.object({
+  enabled: z.boolean().default(true),
+});
+
 export const tgoConfigSchema = z.object({
   preset: z.enum(PRESET_NAMES).default("balanced"),
   presets: z
@@ -100,6 +104,7 @@ export const tgoConfigSchema = z.object({
   })),
   sessionReuse: sessionReuseConfig.optional().default(() => ({ enabled: true, maxContextTokens: 100000 })),
   termination: terminationConfig.optional().default(() => ({ enabled: true })),
+  selfUpdate: selfUpdateConfig.optional().default(() => ({ enabled: true })),
 });
 
 export type TgoConfig = z.infer<typeof tgoConfigSchema>;

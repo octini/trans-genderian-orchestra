@@ -2,6 +2,10 @@
 
 All notable changes to TGO, in reverse chronological order. Versions track `plugin/package.json`.
 
+## [0.2.1] - 2026-08-28
+
+- **Self-update on drift (tgo-5yu):** when npm's latest published version is newer than the running one, TGO refreshes its own plugin cache slot (`~/.cache/opencode/packages/<name>@latest`) in the background and logs `self-updated ... — restart opencode to activate`. Never downgrades; silent skip when offline; disable with `selfUpdate.enabled: false`. Works around the OpenCode `plugin --force` no-op (tgo-6m6 root cause: same-spec config patch noop + `Npm.add` existence fast-path).
+
 ## [0.2.0] - 2026-08-28
 
 - **Steps + watchdog retune (tgo-6fv):** seat steps caps raised — Dylan 100, Nas 60, Horowitz 40 (were 20); `watchdog.wallClockMs` 20m → 30m.

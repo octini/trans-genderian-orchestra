@@ -15,8 +15,9 @@ import { validateDelegationBoundary, validateDelegationPacket, verifyClaimObserv
 import { captureDelegationSession, probeSessionReuseCapability, persistAbortHandback } from "./session-reuse";
 import { authorizeLifecycleSession, evaluateClosure, verifyClaimObserved } from "./lifecycle";
 import { loadBeadsTui, renderBeadsTui } from "./tui";
-import { checkVersionDrift } from "./version";
+import { checkVersionDrift, fetchLatestVersion, PLUGIN_NPM_NAME, readLocalVersion } from "./version";
 import { parseCompletionSignal, terminationDecision, type CompletionSignal } from "./termination";
+import { selfUpdate } from "./self-update";
 // No runtime function re-exports here: opencode's legacy plugin loader calls
 // EVERY exported function as a plugin factory (input, options), so an entry
 // re-export like evaluateClosure gets invoked as one and throws inside the
@@ -61,6 +62,37 @@ export const TgoPlugin: Plugin = async (
         }
       })
       .catch(() => {});
+  }
+
+  if (config.selfUpdate?.enabled !== false) {
+    void (async () => {
+      try {
+        const runningVersion = (await readLocalVersion()) ?? "0.0.0";
+        await selfUpdate({
+          runningVersion,
+          pkgName: PLUGIN_NPM_NAME,
+          fetchLatest: () => fetchLatestVersion().then((v) => v ?? undefined),
+          spawn: async (args: string[]) => {
+            try {
+              const proc = Bun.spawn(args, {
+                stdout: "pipe",
+                stderr: "pipe",
+                env: BD_ENV as unknown as Record<string, string>,
+              });
+              const [stdout, stderr, exitCode] = await Promise.all([
+                new Response(proc.stdout).text(),
+                new Response(proc.stderr).text(),
+                proc.exited,
+              ]);
+              return { exitCode, stdout, stderr };
+            } catch (error) {
+              return { exitCode: 1, stdout: "", stderr: String(error) };
+            }
+          },
+          log: (level, msg) => appLog(level, msg),
+        });
+      } catch {}
+    })().catch(() => {});
   }
 
   const seatDir =

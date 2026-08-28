@@ -14351,6 +14351,9 @@ var sessionReuseConfig = exports_external.object({
 var terminationConfig = exports_external.object({
   enabled: exports_external.boolean().default(true)
 });
+var selfUpdateConfig = exports_external.object({
+  enabled: exports_external.boolean().default(true)
+});
 var tgoConfigSchema = exports_external.object({
   preset: exports_external.enum(PRESET_NAMES).default("balanced"),
   presets: exports_external.object({
@@ -14373,7 +14376,8 @@ var tgoConfigSchema = exports_external.object({
     stuckLoopMs: 5 * 60 * 1000
   })),
   sessionReuse: sessionReuseConfig.optional().default(() => ({ enabled: true, maxContextTokens: 1e5 })),
-  termination: terminationConfig.optional().default(() => ({ enabled: true }))
+  termination: terminationConfig.optional().default(() => ({ enabled: true })),
+  selfUpdate: selfUpdateConfig.optional().default(() => ({ enabled: true }))
 });
 function estimateTokens(text) {
   const normalized = text.replace(/\s+/g, " ").trim();
@@ -16801,9 +16805,344 @@ function parseCompletionSignal(text) {
 var and = (...cs) => (i) => cs.every((c) => c(i));
 var terminationDecision = and((i) => i.signal.complete, (i) => !i.exitGateRequired || i.signal.exitGate === true, (i) => i.toolCallsAfterCompletion >= 1);
 
-// src/plugin.ts
+// src/self-update.ts
+import * as fs8 from "node:fs/promises";
+import * as fsSync from "node:fs";
 import * as path9 from "node:path";
 import * as os2 from "node:os";
+var LOCK_STALE_MS = 120000;
+var LOCK_FILE = ".tgo-selfupdate.lock";
+function resolveCacheRoot(homeDir) {
+  const base = process.env.OPENCODE_TEST_HOME ?? process.env.XDG_CACHE_HOME ?? path9.join(homeDir ?? os2.homedir(), ".cache");
+  return path9.join(base, "opencode");
+}
+function slotDirs(cacheRoot, pkgName) {
+  const candidates = [
+    path9.join(cacheRoot, "packages", `${pkgName}@latest`),
+    path9.join(cacheRoot, "packages", pkgName)
+  ];
+  return candidates.filter((dir) => {
+    try {
+      return fsSync.existsSync(dir) && fsSync.statSync(dir).isDirectory();
+    } catch {
+      return false;
+    }
+  });
+}
+function parseSemver(v) {
+  if (typeof v !== "string")
+    return null;
+  let s = v.trim().replace(/^v/, "");
+  if (s.length === 0)
+    return null;
+  const plusIdx = s.indexOf("+");
+  if (plusIdx !== -1) {
+    const build = s.slice(plusIdx + 1);
+    if (build.length === 0)
+      return null;
+    const buildIds = build.split(".");
+    for (const id of buildIds) {
+      if (id.length === 0 || !/^[0-9A-Za-z-]+$/.test(id))
+        return null;
+    }
+    s = s.slice(0, plusIdx);
+  }
+  let coreStr;
+  let preStr = null;
+  const dashIdx = s.indexOf("-");
+  if (dashIdx !== -1) {
+    coreStr = s.slice(0, dashIdx);
+    preStr = s.slice(dashIdx + 1);
+    if (preStr.length === 0)
+      return null;
+  } else {
+    coreStr = s;
+  }
+  const coreParts = coreStr.split(".");
+  if (coreParts.length !== 3)
+    return null;
+  const nums = [];
+  for (const p of coreParts) {
+    if (!/^(0|[1-9]\d*)$/.test(p))
+      return null;
+    nums.push(parseInt(p, 10));
+  }
+  let prerelease = null;
+  if (preStr !== null) {
+    const ids = preStr.split(".");
+    for (const id of ids) {
+      if (id.length === 0 || !/^[0-9A-Za-z-]+$/.test(id))
+        return null;
+      if (/^[0-9]+$/.test(id) && !/^(0|[1-9]\d*)$/.test(id))
+        return null;
+    }
+    prerelease = ids;
+  }
+  return { major: nums[0], minor: nums[1], patch: nums[2], prerelease };
+}
+function semverGt(a, b) {
+  const pa = parseSemver(a);
+  const pb = parseSemver(b);
+  if (!pa || !pb)
+    return false;
+  if (pa.major !== pb.major)
+    return pa.major > pb.major;
+  if (pa.minor !== pb.minor)
+    return pa.minor > pb.minor;
+  if (pa.patch !== pb.patch)
+    return pa.patch > pb.patch;
+  const aPre = pa.prerelease;
+  const bPre = pb.prerelease;
+  if (aPre === null && bPre === null)
+    return false;
+  if (aPre === null && bPre !== null)
+    return true;
+  if (aPre !== null && bPre === null)
+    return false;
+  const aA = aPre;
+  const bA = bPre;
+  const len = Math.min(aA.length, bA.length);
+  for (let i = 0;i < len; i++) {
+    const aId = aA[i];
+    const bId = bA[i];
+    if (aId === bId)
+      continue;
+    const aIsNum = /^[0-9]+$/.test(aId);
+    const bIsNum = /^[0-9]+$/.test(bId);
+    if (aIsNum && bIsNum) {
+      return parseInt(aId, 10) > parseInt(bId, 10);
+    }
+    if (aIsNum && !bIsNum)
+      return false;
+    if (!aIsNum && bIsNum)
+      return true;
+    return aId > bId;
+  }
+  return aA.length > bA.length;
+}
+function shouldRefresh(runningVersion, latestVersion) {
+  return semverGt(latestVersion, runningVersion);
+}
+function buildInstallArgs(dir, pkgName) {
+  return ["npm", "install", "--prefix", dir, `${pkgName}@latest`, "--save-exact", "--ignore-scripts", "--no-audit", "--no-fund"];
+}
+async function recoverOrphans(dir) {
+  try {
+    const dirExists = await fs8.stat(dir).then(() => true).catch(() => false);
+    const backup = `${dir}.tgo-backup`;
+    const staging = `${dir}.tgo-staging`;
+    if (!dirExists) {
+      const backupExists = await fs8.stat(backup).then(() => true).catch(() => false);
+      if (backupExists) {
+        try {
+          await fs8.rename(backup, dir);
+        } catch {}
+      }
+      return;
+    }
+    await rmRf(staging);
+    await rmRf(backup);
+  } catch {}
+}
+async function rmRf(p) {
+  try {
+    await fs8.rm(p, { recursive: true, force: true });
+  } catch {}
+}
+async function copyDir(src, dest) {
+  const cp2 = fs8.cp;
+  if (typeof cp2 === "function") {
+    await cp2.call(fs8, src, dest, { recursive: true, force: true });
+    return;
+  }
+  await fs8.mkdir(dest, { recursive: true });
+  const entries = await fs8.readdir(src, { withFileTypes: true });
+  for (const e of entries) {
+    const s = path9.join(src, e.name);
+    const d = path9.join(dest, e.name);
+    if (e.isDirectory()) {
+      await copyDir(s, d);
+    } else if (e.isSymbolicLink()) {
+      const target = await fs8.readlink(s);
+      await fs8.symlink(target, d);
+    } else {
+      await fs8.copyFile(s, d);
+    }
+  }
+}
+async function selfUpdate(deps) {
+  try {
+    let latest;
+    try {
+      latest = await deps.fetchLatest();
+    } catch {
+      return;
+    }
+    if (!latest)
+      return;
+    if (typeof latest !== "string" || latest.trim().length === 0)
+      return;
+    if (!shouldRefresh(deps.runningVersion, latest))
+      return;
+    const cacheRoot = resolveCacheRoot(deps.homeDir);
+    const dirs = slotDirs(cacheRoot, deps.pkgName);
+    if (dirs.length === 0)
+      return;
+    const nowMs = deps.now ? deps.now().getTime() : Date.now();
+    for (const dir of dirs) {
+      try {
+        await recoverOrphans(dir);
+      } catch {}
+      const lockPath = path9.join(dir, LOCK_FILE);
+      const staging = `${dir}.tgo-staging`;
+      const backup = `${dir}.tgo-backup`;
+      let ownerToken = null;
+      let acquired = false;
+      try {
+        try {
+          await fs8.mkdir(dir, { recursive: true });
+        } catch {}
+        const token = `${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}`;
+        const tryAcquire = async () => {
+          let handle;
+          try {
+            handle = await fs8.open(lockPath, "wx");
+            try {
+              await handle.writeFile(token, "utf-8");
+            } catch {}
+            ownerToken = token;
+            acquired = true;
+            return true;
+          } catch (err) {
+            const code = err?.code;
+            if (code !== "EEXIST")
+              return false;
+            return false;
+          } finally {
+            if (handle) {
+              try {
+                await handle.close();
+              } catch {}
+            }
+          }
+        };
+        let ok = await tryAcquire();
+        if (!ok) {
+          try {
+            const stat3 = await fs8.stat(lockPath);
+            const age = nowMs - stat3.mtimeMs;
+            if (age > LOCK_STALE_MS) {
+              try {
+                await fs8.unlink(lockPath);
+              } catch {}
+              ok = await tryAcquire();
+              if (!ok)
+                continue;
+            } else {
+              continue;
+            }
+          } catch {
+            continue;
+          }
+        }
+        if (!acquired || !ownerToken)
+          continue;
+        let innerError = null;
+        let newVersionForLog = null;
+        try {
+          try {
+            await rmRf(staging);
+            await copyDir(dir, staging);
+          } catch (e) {
+            throw new Error(`self-update staging failed for ${dir}: ${String(e)}`);
+          }
+          const args = buildInstallArgs(staging, deps.pkgName);
+          let result;
+          try {
+            result = await deps.spawn(args);
+          } catch (e) {
+            throw new Error(`self-update spawn failed for ${dir}: ${String(e)}`);
+          }
+          if (result.exitCode !== 0) {
+            throw new Error(`self-update failed for ${dir}: exit ${result.exitCode} ${result.stderr || result.stdout}`.trim());
+          }
+          let newVersion = "";
+          try {
+            const pkgJsonPath = path9.join(staging, "node_modules", deps.pkgName, "package.json");
+            const raw = await fs8.readFile(pkgJsonPath, "utf-8");
+            const json2 = JSON.parse(raw);
+            newVersion = typeof json2.version === "string" ? json2.version : "";
+          } catch (e) {
+            throw new Error(`self-update verification failed for ${dir}: ${String(e)}`);
+          }
+          if (!newVersion) {
+            throw new Error(`self-update verification failed for ${dir}: missing version`);
+          }
+          if (!semverGt(newVersion, deps.runningVersion)) {
+            throw new Error(`self-update verification failed for ${dir}: installed ${newVersion} not > ${deps.runningVersion}`);
+          }
+          newVersionForLog = newVersion;
+          try {
+            await rmRf(backup);
+            await fs8.rename(dir, backup);
+            await fs8.rename(staging, dir);
+            await rmRf(backup);
+          } catch (e) {
+            try {
+              const backupExists = await fs8.stat(backup).then(() => true).catch(() => false);
+              const dirExists = await fs8.stat(dir).then(() => true).catch(() => false);
+              if (backupExists && !dirExists) {
+                try {
+                  await fs8.rename(backup, dir);
+                } catch {}
+              }
+              await rmRf(staging);
+            } catch {}
+            throw new Error(`self-update swap failed for ${dir}: ${String(e)}`);
+          }
+          try {
+            deps.log("info", `self-updated ${deps.pkgName} to ${newVersionForLog} — restart opencode to activate`);
+          } catch {}
+        } catch (e) {
+          innerError = e;
+          try {
+            const backupExists = await fs8.stat(backup).then(() => true).catch(() => false);
+            const dirExists = await fs8.stat(dir).then(() => true).catch(() => false);
+            if (backupExists && !dirExists) {
+              try {
+                await fs8.rename(backup, dir);
+              } catch {}
+            }
+            await rmRf(staging);
+          } catch {}
+          try {
+            const msg = String(e?.message ?? e);
+            if (msg.includes("self-update")) {
+              deps.log("warn", msg);
+            } else {
+              deps.log("warn", `self-update failed for ${dir}: ${String(e)}`);
+            }
+          } catch {}
+        }
+      } finally {
+        try {
+          if (ownerToken) {
+            const cur = await fs8.readFile(lockPath, "utf-8").catch(() => "");
+            if (cur === ownerToken) {
+              await fs8.unlink(lockPath).catch(() => {});
+            }
+          }
+        } catch {}
+      }
+    }
+  } catch {
+    return;
+  }
+}
+
+// src/plugin.ts
+import * as path10 from "node:path";
+import * as os3 from "node:os";
 var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => {
   const config2 = await loadTgoConfig(options);
   const appLog = (level, message, extra) => {
@@ -16820,7 +17159,37 @@ var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => 
       }
     }).catch(() => {});
   }
-  const seatDir = config2.agentDir ?? path9.join(os2.homedir(), ".config", "opencode", "agent");
+  if (config2.selfUpdate?.enabled !== false) {
+    (async () => {
+      try {
+        const runningVersion = await readLocalVersion() ?? "0.0.0";
+        await selfUpdate({
+          runningVersion,
+          pkgName: PLUGIN_NPM_NAME,
+          fetchLatest: () => fetchLatestVersion().then((v) => v ?? undefined),
+          spawn: async (args) => {
+            try {
+              const proc = Bun.spawn(args, {
+                stdout: "pipe",
+                stderr: "pipe",
+                env: BD_ENV
+              });
+              const [stdout, stderr, exitCode] = await Promise.all([
+                new Response(proc.stdout).text(),
+                new Response(proc.stderr).text(),
+                proc.exited
+              ]);
+              return { exitCode, stdout, stderr };
+            } catch (error51) {
+              return { exitCode: 1, stdout: "", stderr: String(error51) };
+            }
+          },
+          log: (level, msg) => appLog(level, msg)
+        });
+      } catch {}
+    })().catch(() => {});
+  }
+  const seatDir = config2.agentDir ?? path10.join(os3.homedir(), ".config", "opencode", "agent");
   try {
     const checked = await validateAgentDir(seatDir);
     if (checked > 0) {
@@ -16899,7 +17268,7 @@ var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => 
       try {
         const args = command.split(/\s+/);
         const proc = cwd ? $`${args}`.cwd(cwd) : $`${args}`;
-        const completed = await proc.env({ ...process.env, BD_NON_INTERACTIVE: "1", HOME: os2.homedir() }).nothrow();
+        const completed = await proc.env({ ...process.env, BD_NON_INTERACTIVE: "1", HOME: os3.homedir() }).nothrow();
         return {
           exitCode: completed.exitCode,
           stdout: completed.stdout.toString(),
@@ -17032,7 +17401,7 @@ var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => 
       const nextPermission = preapproveExternalDirectory(input.permission, worktreeRoot);
       if (nextPermission && Object.keys(nextPermission).length > 0) {
         input.permission = nextPermission;
-        const parent = worktreeRoot ? path9.dirname(worktreeRoot) : undefined;
+        const parent = worktreeRoot ? path10.dirname(worktreeRoot) : undefined;
         appLog("info", `pre-approved external_directory for worktree family ${parent}/*`, {
           worktreeRoot,
           projectWorktree: project?.worktree ?? null,

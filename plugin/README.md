@@ -134,6 +134,7 @@ Put options in the second element of the plugin tuple: `["trans-genderian-orches
 | `checkVersion` | Whether to do that gentle npm drift check on startup. | `true` |
 | `sessionReuse` | `{ enabled, maxContextTokens }` — continues prior delegation sessions via task_id when the stored session is under the token budget. | `true`, 100000 |
 | `termination` | `{ enabled }` — stops a delegated session after it declares STATUS: complete with its exit gate satisfied and then makes a residual tool call. | `true` |
+| `selfUpdate` | `{ enabled }` — refreshes TGO's own plugin cache slot when a newer version is on npm; activates on next restart. | `true` |
 | `watchdog` | `{ enabled, wallClockMs, idleMs, checkMs, stuckLoopTools, stuckLoopMs }` — aborts a delegated session that’s hung or gone silent and asks Bernstein to re-dispatch. stuck-loop = <3 distinct tool signatures across the last 20 tools within 5m (read-only seats no longer false-trip). | `true`, 30m, 15m, 10s, stuckLoopTools 20, stuckLoopMs 5m |
 
 The JSON schema is at `plugin/schema/tgo.config.schema.json`.
@@ -180,6 +181,12 @@ Autonomy is a mode, not the default. “Keep going” is opt-in and bounded — 
 ## Where to read next
 
 For the human-readable long form: `docs/ARCHITECTURE.md` (shape and hooks), `docs/ROSTER.md` (the five seats), `docs/CONCISION.md` (the house style), `docs/SETUP.md` (install and per-repo setup), `docs/CONTRIBUTING.md` (dev workflow), and `CHANGELOG.md` (release history). The canonical contracts stay under `docs/spec/`.
+
+## Troubleshooting
+
+### Updating TGO
+
+Normally automatic via self-update (activates on restart) — when npm has a newer version, TGO refreshes its own plugin cache slot in the background and the update activates on next restart. If a slot is ever stuck, manual refresh is `rm -rf ~/.cache/opencode/packages/trans-genderian-orchestra*` then restart — `opencode plugin --force -g` is a no-op for same-spec entries (upstream behavior).
 
 ## Developing on TGO
 

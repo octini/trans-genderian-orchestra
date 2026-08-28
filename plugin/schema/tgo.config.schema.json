@@ -145,6 +145,17 @@
       },
       "additionalProperties": false
     },
+    "selfUpdate": {
+      "description": "Self-update settings.",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true
+        }
+      },
+      "additionalProperties": false
+    },
     "presets": {
       "description": "Partial override of the built-in seat→model map. Missing presets fall back to built-ins. Model IDs are free-form strings.",
       "type": "object",
