@@ -3,7 +3,7 @@ import { isDeadHeartbeat, DEFAULT_RUN_HEARTBEAT_THRESHOLD_MS, detectDeadHeartbea
 import * as os from "node:os";
 import * as path from "node:path";
 import { mkdtempSync, rmSync } from "node:fs";
-import { appendRunEvent } from "../src/runs";
+import { appendRunEvent, hashArgs } from "../src/runs";
 
 describe("watchdog dead-heartbeat helper", () => {
   test("isDeadHeartbeat respects threshold and terminal status", () => {
@@ -23,10 +23,10 @@ describe("watchdog dead-heartbeat helper", () => {
     try {
       const now = Date.now();
       const threshold = 3000;
-      await appendRunEvent(dir, "tgo-wd-old.1", { ts: now - 5000, type: "heartbeat", seat: "dylan" });
-      await appendRunEvent(dir, "tgo-wd-fresh.1", { ts: now - 1000, type: "heartbeat", seat: "dylan" });
-      await appendRunEvent(dir, "tgo-wd-term.1", { ts: now - 10000, type: "heartbeat", seat: "dylan" });
-      await appendRunEvent(dir, "tgo-wd-term.1", { ts: now - 9000, type: "status", seat: "dylan", ok: true });
+      await appendRunEvent(dir, "tgo-wd-old.1", { ts: now - 5000, type: "heartbeat", seat: "dylan", tool: "heartbeat", argsHash: hashArgs({}), ok: true, issueId: "tgo-wd-old.1", note: "heartbeat" });
+      await appendRunEvent(dir, "tgo-wd-fresh.1", { ts: now - 1000, type: "heartbeat", seat: "dylan", tool: "heartbeat", argsHash: hashArgs({}), ok: true, issueId: "tgo-wd-fresh.1", note: "heartbeat" });
+      await appendRunEvent(dir, "tgo-wd-term.1", { ts: now - 10000, type: "heartbeat", seat: "dylan", tool: "heartbeat", argsHash: hashArgs({}), ok: true, issueId: "tgo-wd-term.1", note: "heartbeat" });
+      await appendRunEvent(dir, "tgo-wd-term.1", { ts: now - 9000, type: "status", seat: "dylan", tool: "task", argsHash: hashArgs({}), ok: true, issueId: "tgo-wd-term.1", note: "complete" });
       const hits = await detectDeadHeartbeatRuns(dir, { thresholdMs: threshold, now });
       expect(hits.find((h) => h.runId === "tgo-wd-old.1")).toBeDefined();
       expect(hits.find((h) => h.runId === "tgo-wd-fresh.1")).toBeUndefined();

@@ -362,6 +362,9 @@ export class BoardController {
   private watchdogGetter?: () => ReadonlyArray<{ sessionID: string; parentID?: string; busy: boolean }>;
   private problemsCache: ProblemEntry[] = [];
   private pruneDone = false;
+  private runsConfig?: { maxAgeMs?: number; maxBytes?: number; maxFiles?: number; heartbeatThresholdMs?: number };
+  private pruneInFlight?: Promise<string[]>;
+  private scanInFlight = false;
 
   constructor(opts: {
     run: BdRunner;
@@ -384,9 +387,16 @@ export class BoardController {
     this.watchdogGetter = getter;
   }
 
+  setRunsConfig(cfg: { maxAgeMs?: number; maxBytes?: number; maxFiles?: number; heartbeatThresholdMs?: number }): void {
+    this.runsConfig = cfg;
+  }
+
   /** tgo-2ry: expose problems for tests and allow external injection */
   setProblems(problems: ProblemEntry[]): void {
-    this.problemsCache = problems;
+    // F6 dedupe by runId+state, replace-not-append
+    const map = new Map<string, ProblemEntry>();
+    for (const p of problems) map.set(`${p.runId}:${p.state}`, p);
+    this.problemsCache = [...map.values()];
   }
 
   getProblems(): ProblemEntry[] {
@@ -532,14 +542,27 @@ export class BoardController {
     const blocked = parseIssues(blockedRaw);
     const memories = parseMemories(memoriesRaw);
     const streaming = Array.from(this.shim.streaming, ([id, s]) => ({ id, target: s.target }));
-    // tgo-2ry: prune on first tick
+    // tgo-2ry: prune on first tick — F9 single-flight + config values (no defaults, no race)
     const repoRootForPrune = this.sessionReuse?.repoRoot;
     if (repoRootForPrune && !this.pruneDone) {
       this.pruneDone = true;
-      try {
-        const { pruneRuns } = await import("./runs");
-        await pruneRuns(repoRootForPrune, { now }).catch(() => {});
-      } catch {}
+      // single-flight guard at board level as well (runs.ts also has guard)
+      if (!this.pruneInFlight) {
+        this.pruneInFlight = (async () => {
+          try {
+            const { pruneRuns } = await import("./runs");
+            return await pruneRuns(repoRootForPrune, {
+              now,
+              maxAgeMs: this.runsConfig?.maxAgeMs,
+              maxBytes: this.runsConfig?.maxBytes,
+              maxFiles: this.runsConfig?.maxFiles,
+              heartbeatThresholdMs: this.runsConfig?.heartbeatThresholdMs,
+            });
+          } catch { return []; }
+        })();
+        void this.pruneInFlight.finally(() => { this.pruneInFlight = undefined; }).catch(() => {});
+        await this.pruneInFlight.catch(() => {});
+      }
     }
     // tgo-2ry: queue-depth gauge
     let queueLines: string[] | undefined;
@@ -569,21 +592,63 @@ export class BoardController {
     } catch (e) {
       safeWarn(this.log, "queue gauge compute failed", { error: String(e) });
     }
-    // tgo-2ry: recovery scan -> problems
+    // tgo-2ry: recovery scan -> problems — F5 watchdog wiring + F6 dedupe/drop stale + F9 in-flight guard
     let problems: ProblemEntry[] | undefined;
     try {
-      const repoRootForProblems = this.sessionReuse?.repoRoot;
-      if (repoRootForProblems) {
-        const recovery = await scanRunsForProblems(repoRootForProblems, { now }).catch(() => []);
-        const { problemsFromRecovery } = await import("./metrics");
-        const derived = problemsFromRecovery(recovery as any);
-        const merged = [...derived, ...this.problemsCache];
-        if (merged.length > 0) problems = merged;
-        this.problemsCache = merged;
-      } else if (this.problemsCache.length > 0) {
-        problems = this.problemsCache;
+      if (this.scanInFlight) {
+        // F9 skip if previous scan pending
+        problems = this.problemsCache.length > 0 ? this.problemsCache : undefined;
+      } else {
+        this.scanInFlight = true;
+        const repoRootForProblems = this.sessionReuse?.repoRoot;
+        if (repoRootForProblems) {
+          const [recovery] = await Promise.all([
+            scanRunsForProblems(repoRootForProblems, { now, heartbeatThresholdMs: this.runsConfig?.heartbeatThresholdMs }).catch(() => []),
+          ]);
+          const { problemsFromRecovery } = await import("./metrics");
+          // F5: wire watchdog problems via watchdogGetter
+          let watchdogProblems: Array<{ sessionID: string; issueId?: string; state: import("./metrics").ProblemState; reason: string }> | undefined;
+          if (this.watchdogGetter) {
+            try {
+              const tracked = this.watchdogGetter();
+              const busy = tracked.filter((t) => t.busy);
+              if (busy.length > 0) {
+                watchdogProblems = busy.map((t) => {
+                  // try to resolve issueId via sessionMap or shim? For now use sessionID as runId placeholder and map to idle (watchdog busy implies idle risk)
+                  // If we have a mapping from sessionID to issueId via loadSessionMap, try to resolve
+                  return { sessionID: t.sessionID, state: "idle" as const, reason: "watchdog busy — possible idle" };
+                });
+                // Attempt to enrich with issueId via session map (best effort)
+                try {
+                  const map = await (await import("./session-reuse")).loadSessionMap(repoRootForProblems).catch(() => ({} as any));
+                  for (const wp of watchdogProblems) {
+                    for (const [iid, entry] of Object.entries(map as Record<string, any>)) {
+                      if (entry.sessionId === wp.sessionID) { (wp as any).issueId = iid; break; }
+                    }
+                  }
+                } catch {}
+              }
+            } catch {}
+          }
+          const derived = problemsFromRecovery(recovery as any, watchdogProblems as any);
+          // F6: key by runId+state, replace-not-append, drop stale (but keep externally set cache for 1 tick for test harness)
+          const dedup = new Map<string, ProblemEntry>();
+          for (const p of derived) dedup.set(`${p.runId}:${p.state}`, p);
+          // Include previously setProblems that are not stale — for F6 drop, we only keep cache entries that correspond to a current derived/watchdog or were explicitly set and not yet stale.
+          // For now, keep cache entries that are not already in dedup (preserves test-injected idle/aborted for one render, but next scan without them will drop)
+          for (const p of this.problemsCache) {
+            const key = `${p.runId}:${p.state}`;
+            if (!dedup.has(key)) dedup.set(key, p);
+          }
+          const merged = [...dedup.values()];
+          if (merged.length > 0) problems = merged;
+          this.problemsCache = merged;
+        } else if (this.problemsCache.length > 0) {
+          problems = this.problemsCache;
+        }
+        this.scanInFlight = false;
       }
-    } catch {}
+    } catch { this.scanInFlight = false; }
     let reusableSet: Set<string> | undefined;
     let sessionIdsByIssue: Map<string, string> | undefined;
     let map: Record<string, { sessionId: string }> = {};

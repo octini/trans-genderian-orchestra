@@ -5,7 +5,7 @@ import * as path from "node:path";
 import { mkdtempSync, rmSync } from "node:fs";
 import { BoardController, createShim, buildBoardText } from "../src/board";
 import { computeMetrics, type MetricsSnapshot } from "../src/metrics";
-import { appendRunEvent } from "../src/runs";
+import { appendRunEvent, hashArgs } from "../src/runs";
 
 function fakeRunner(overrides?: Record<string, string>) {
   const calls: string[] = [];
@@ -126,13 +126,13 @@ describe("board — queue and problems rendering", () => {
   test("BoardController problems section renders mixed states", async () => {
     const dir = mkdtempSync(path.join(os.tmpdir(), "tgo-board-prob-"));
     try {
-      // create runs that will be flagged as dead-heartbeat and suspended
+      // create runs that will be flagged as dead-heartbeat and suspended (contract v2)
       const now = Date.now();
-      await appendRunEvent(dir, "tgo-prob-stuck.1", { ts: now - 10 * 60 * 1000, type: "heartbeat", seat: "dylan" });
+      await appendRunEvent(dir, "tgo-prob-stuck.1", { ts: now - 10 * 60 * 1000, type: "heartbeat", seat: "dylan", tool: "heartbeat", argsHash: hashArgs({}), ok: true, issueId: "tgo-prob-stuck.1", note: "heartbeat" });
       const awaitPath = path.join(dir, ".tgo", "tgo-prob-await.1", "await.json");
       await fs.mkdir(path.dirname(awaitPath), { recursive: true });
       await fs.writeFile(awaitPath, "{}", "utf-8");
-      await appendRunEvent(dir, "tgo-prob-await.1", { ts: now, type: "step", seat: "dylan", tool: "task" });
+      await appendRunEvent(dir, "tgo-prob-await.1", { ts: now, type: "step", seat: "dylan", tool: "task", argsHash: hashArgs({}), ok: true, issueId: "tgo-prob-await.1", note: "s" });
 
       const shim = createShim();
       const run = fakeRunner({
