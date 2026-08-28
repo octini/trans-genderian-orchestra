@@ -14,6 +14,17 @@ import { applyPreset, readPresetNudge, resolveActivePreset } from "./presets";
 import { validateDelegationBoundary, validateDelegationPacket, verifyClaimObserved as verifyDelegationClaimObserved } from "./delegation";
 import { captureDelegationSession, probeSessionReuseCapability, persistAbortHandback, loadSessionMap } from "./session-reuse";
 import { ensureDefSnapshot, isValidBeadID, assertValidBeadID } from "./def-snapshot";
+import {
+  worktreeBranchForIssue,
+  worktreePathForIssue,
+  ensureWorktreeExists,
+  isPathInsideWorktree,
+  extractFilePathFromArgs,
+  shouldBlockOutsideWorktree,
+  isBashCommandOutsideWorktree,
+  buildWorktreeViolationMessage,
+  type Lane,
+} from "./worktree-lane";
 import { authorizeLifecycleSession, evaluateClosure, verifyClaimObserved } from "./lifecycle";
 import { shouldRunGate, applyGateToClosure, evaluateGatedClosure, gateBlockedWithError } from "./lifecycle";
 import { runExitGate } from "./exitgate/gate";
@@ -339,6 +350,75 @@ export const TgoPlugin: Plugin = async (
   const completionSignals = new Map<string, { signal: CompletionSignal; text: string; exitGateRequired: boolean }>();
   const terminationParentIds = new Map<string, string | undefined>();
 
+  // ── Worktree lane auto-enforcement (tgo-bh0) — additive, zero overhead when lane not set ──
+  const worktreeLaneBySession = new Map<string, { lane: Lane; issueId: string; worktreePath: string }>();
+  const pendingWorktreeLaneByIssue = new Map<string, { lane: Lane; issueId: string }>();
+
+  function rememberWorktreeLaneForDelegation(packet: Record<string, unknown>): void {
+    const laneRaw = packet.lane;
+    if (laneRaw === undefined) return;
+    if (laneRaw !== "worktree" && laneRaw !== "inline") return;
+    const lane = laneRaw as Lane;
+    if (lane !== "worktree") return;
+    const issueIdRaw = packet.issueId;
+    if (typeof issueIdRaw !== "string") return;
+    const issueId = issueIdRaw.trim();
+    if (!issueId || !isValidBeadID(issueId)) return;
+    pendingWorktreeLaneByIssue.set(issueId, { lane, issueId });
+  }
+
+  async function captureWorktreeLaneForChildSession(
+    childSessionId: string,
+    issueId: string,
+    repoRoot: string,
+  ): Promise<void> {
+    const pending = pendingWorktreeLaneByIssue.get(issueId);
+    if (!pending || pending.lane !== "worktree") return;
+    if (!isValidBeadID(issueId)) return;
+    const worktreePath = worktreePathForIssue(repoRoot, issueId);
+    worktreeLaneBySession.set(childSessionId, { lane: "worktree", issueId, worktreePath });
+    try {
+      await ensureWorktreeExists({ repoRoot, issueId, worktreePath, log: appLog as unknown as (level: "info" | "warn" | "error", message: string, extra?: Record<string, unknown>) => void });
+    } catch (e) {
+      safeWarn(appLog, `worktree lane after-capture ensure failed for ${issueId}: ${String(e)}`);
+    }
+    pendingWorktreeLaneByIssue.delete(issueId);
+  }
+
+  async function enforceWorktreeLaneBeforeHook(
+    input: { tool: string; sessionID: string; callID: string },
+    output: { args: unknown },
+  ): Promise<void> {
+    const entry = worktreeLaneBySession.get(input.sessionID);
+    if (!entry || entry.lane !== "worktree") return;
+    const repoRoot = directory ?? worktree ?? (project as unknown as { worktree?: string })?.worktree ?? ".";
+    const worktreePath = entry.worktreePath;
+    // Auto-create idempotently if missing (lazy)
+    try {
+      await ensureWorktreeExists({ repoRoot, issueId: entry.issueId, worktreePath, log: appLog as unknown as (level: "info" | "warn" | "error", message: string, extra?: Record<string, unknown>) => void });
+    } catch (e) {
+      safeWarn(appLog, `worktree lane ensure failed for ${entry.issueId}: ${String(e)}`);
+      // Continue to block check even if ensure failed — the worktree path is still the enforcement boundary
+    }
+    // Block mutating tool calls outside worktree with corrective error
+    const shouldBlock = shouldBlockOutsideWorktree({
+      tool: input.tool,
+      args: output.args,
+      worktreePath,
+      repoRoot,
+    });
+    if (shouldBlock.block) {
+      const msg = buildWorktreeViolationMessage({
+        sessionID: input.sessionID,
+        tool: input.tool,
+        target: shouldBlock.target,
+        worktreePath,
+        issueId: entry.issueId,
+      });
+      throw new Error(msg);
+    }
+  }
+
   // Suspend gate hydration + timer catch-up on plugin load (no daemon, best-effort catch-up)
   // Documented limit: WAIT timers fire on next launch, not mid-sleep (F3).
   // F3: single-flight guard — hydration must complete before watchdog first check; expired awaits transition to expired state.
@@ -575,6 +655,8 @@ export const TgoPlugin: Plugin = async (
           try { delegatedSessionIds.delete(deletedId); } catch {}
           try { completionSignals.delete(deletedId); } catch {}
           try { terminationParentIds.delete(deletedId); } catch {}
+          try { worktreeLaneBySession.delete(deletedId); } catch {}
+          // Also remove any pending issue that was mapped to this session? (pending is by issue, not session, so keep)
           // F3 cleanup mapping + heartbeat
           try {
             const runId = sessionToRunId.get(deletedId);
@@ -887,6 +969,12 @@ export const TgoPlugin: Plugin = async (
           }
         }
       } catch {}
+      // ── Worktree lane auto-enforcement (tgo-bh0) — zero overhead when lane not set ──
+      try {
+        await enforceWorktreeLaneBeforeHook(input, output as { args: unknown });
+      } catch (e) {
+        throw e;
+      }
       const args = output?.args;
       const delegation = input.tool === "task" ? validateDelegationBoundary(args) : undefined;
       if (delegation && !delegation.valid) {
@@ -991,6 +1079,14 @@ export const TgoPlugin: Plugin = async (
           throw e;
         }
       }
+      // ── Worktree lane: remember delegation lane for child session capture (additive) ──
+      try {
+        if (delegation?.valid && input.tool === "task") {
+          const rawArgs2 = output?.args as Record<string, unknown> | undefined;
+          const pkt2 = rawArgs2?.delegationPacket as Record<string, unknown> | undefined;
+          if (pkt2) rememberWorktreeLaneForDelegation(pkt2);
+        }
+      } catch {}
       // A tool is about to execute (bash, edit, etc.). While a foreground tool
       // runs the idle clock is paused so long-running commands don't false-trip
       // the cap. Background-intent calls (args.background === true — dev
@@ -1201,6 +1297,30 @@ export const TgoPlugin: Plugin = async (
         // After-hook is read-only for snapshots — write-once at start only (P1). Never touches def-snapshot.
         await captureDelegationSession({ tool: input.tool, input, output, repoRoot: directory ?? worktree ?? (project as unknown as { worktree?: string })?.worktree ?? ".", enabled: config.sessionReuse?.enabled !== false, log: appLog });
       }
+      // ── Worktree lane: capture lane for child session after delegation (additive) ──
+      try {
+        if (input.tool === "task") {
+          const repoRootWt = directory ?? worktree ?? (project as unknown as { worktree?: string })?.worktree ?? ".";
+          const argsRecWt = input.args as Record<string, unknown> | undefined;
+          const packetWt = argsRecWt?.delegationPacket as Record<string, unknown> | undefined;
+          if (packetWt && typeof packetWt.issueId === "string" && packetWt.lane === "worktree") {
+            const issueIdWt = (packetWt.issueId as string).trim();
+            if (issueIdWt && isValidBeadID(issueIdWt)) {
+              let childSidWt: string | undefined;
+              const metaWt = (output as unknown as { metadata?: unknown })?.metadata as Record<string, unknown> | undefined;
+              if (metaWt && typeof metaWt.sessionId === "string" && metaWt.sessionId.trim()) childSidWt = metaWt.sessionId.trim();
+              if (!childSidWt) {
+                const outTextWt = typeof (output as unknown as { output?: string })?.output === "string" ? (output as unknown as { output: string }).output : "";
+                const mWt = outTextWt.match(/ses_[A-Za-z0-9]+/);
+                if (mWt) childSidWt = mWt[0];
+              }
+              if (childSidWt && /^ses_[A-Za-z0-9]+$/.test(childSidWt)) {
+                await captureWorktreeLaneForChildSession(childSidWt, issueIdWt, repoRootWt);
+              }
+            }
+          }
+        }
+      } catch {}
       if (input.tool === "task" && typeof output?.output === "string") {
         const report = parseTaskReport(output.output);
         if (output && typeof output === "object") {
@@ -1362,6 +1482,9 @@ export const TgoPlugin: Plugin = async (
       heartbeatIntervals.clear();
       sessionToRunId.clear();
       runToolStarts.clear();
+      // worktree lane cleanup
+      try { worktreeLaneBySession.clear(); } catch {}
+      try { pendingWorktreeLaneByIssue.clear(); } catch {}
     },
   };
 };
