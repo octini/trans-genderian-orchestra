@@ -1,10 +1,14 @@
 import * as crypto from "node:crypto";
+import * as fs from "node:fs/promises";
+import * as path from "node:path";
 import { safeWarn } from "./config";
 import { readProgress } from "./progress";
 import { estimateSessionTokens, loadSessionMap, shouldReuseWithSnapshot } from "./session-reuse";
 import { readDefSnapshot } from "./def-snapshot";
 // Suspend gate badge — additive, no rewrite of existing board hints path
 import { readAwaitJson, getRequiredFields, isExpired } from "./suspend";
+import { computeMetrics, readMetrics, writeMetrics, renderQueueLine, buildProblemsSection, type ProblemEntry } from "./metrics";
+import { scanRunsForProblems } from "./runs";
 
 export const BOARD_SENTINEL_START = "<!-- tgo:board -->";
 export const BOARD_SENTINEL_END = "<!-- /tgo:board -->";
@@ -84,12 +88,24 @@ function line(issue: BdIssue): string {
   return `- ${issue.id} · ${prio}${epic} · ${clipTitle(issue.title)}`;
 }
 
+export function buildQueueSection(metricsSnapshot: import("./metrics").MetricsSnapshot | undefined, previousSnapshot?: import("./metrics").MetricsSnapshot | undefined): string | undefined {
+  const line = renderQueueLine(metricsSnapshot, previousSnapshot);
+  if (!line) return undefined;
+  return line;
+}
+
+export function buildProblemsText(problems: ProblemEntry[]): string | undefined {
+  return buildProblemsSection(problems);
+}
+
 export function buildBoardText(data: {
   inProgress: BdIssue[];
   ready: BdIssue[];
   blocked: BdIssue[];
   memories: Array<{ key: string; value: string }>;
   streaming: Array<{ id: string; target: string }>;
+  queueLines?: string[];
+  problems?: ProblemEntry[];
 }, maxListed = 6): string {
   const sections: string[] = ["## TGO JOB BOARD"];
 
@@ -126,6 +142,13 @@ export function buildBoardText(data: {
       ...data.streaming.map((s) => `- ${s.id} → ${s.target}`)
     );
   }
+  if (data.queueLines && data.queueLines.length > 0) {
+    sections.push(...data.queueLines);
+  }
+  if (data.problems && data.problems.length > 0) {
+    const probText = buildProblemsSection(data.problems);
+    if (probText) sections.push(probText);
+  }
 
   return sections.join("\n");
 }
@@ -156,6 +179,8 @@ export async function buildBoardTextWithHints(
     blocked: BdIssue[];
     memories: Array<{ key: string; value: string }>;
     streaming: Array<{ id: string; target: string }>;
+    queueLines?: string[];
+    problems?: ProblemEntry[];
   },
   reusableSet?: Set<string>,
   sessionIdsByIssue?: Map<string, string>,
@@ -221,6 +246,13 @@ export async function buildBoardTextWithHints(
       "STREAMING:",
       ...data.streaming.map((s) => `- ${s.id} → ${s.target}`)
     );
+  }
+  if (data.queueLines && data.queueLines.length > 0) {
+    sections.push(...data.queueLines);
+  }
+  if (data.problems && data.problems.length > 0) {
+    const probText = buildProblemsSection(data.problems);
+    if (probText) sections.push(probText);
   }
   return sections.join("\n");
 }
@@ -370,6 +402,15 @@ export class BoardController {
   private readonly sessionMessagesCache = new Map<string, { raw: any; at: number }>();
   private readonly sessionMessagesPending = new Map<string, Promise<any>>();
   private static readonly MAX_SESSION_MESSAGES_CACHE = 32;
+  // tgo-2ry: queue gauge and problems state — additive, no existing field removed
+  private previousMetrics?: import("./metrics").MetricsSnapshot;
+  private watchdogGetter?: () => ReadonlyArray<{ sessionID: string; parentID?: string; busy: boolean }>;
+  private watchdogProblemsGetter?: () => Array<{ sessionID: string; parentID?: string; state: "idle" | "stuck" | "aborted"; reason: string }>;
+  private problemsCache: ProblemEntry[] = [];
+  private pruneDone = false;
+  private runsConfig?: { maxAgeMs?: number; maxBytes?: number; maxFiles?: number; heartbeatThresholdMs?: number };
+  private pruneInFlight?: Promise<string[]>;
+  private scanInFlight = false;
 
   constructor(opts: {
     run: BdRunner;
@@ -377,12 +418,39 @@ export class BoardController {
     refreshMs?: number;
     sessionReuse?: SessionReuseDeps;
     log?: (level: "warn" | "info" | "error", message: string, extra?: Record<string, unknown>) => void;
+    watchdogGetter?: () => ReadonlyArray<{ sessionID: string; parentID?: string; busy: boolean }>;
   }) {
     this.run = opts.run;
     this.shim = opts.shim ?? createShim();
     this.refreshMs = opts.refreshMs ?? DEFAULT_BOARD_REFRESH_MS;
     this.sessionReuse = opts.sessionReuse;
     this.log = opts.log;
+    this.watchdogGetter = opts.watchdogGetter;
+  }
+
+  /** tgo-2ry: allow plugin to wire watchdog tracked state without rewriting board */
+  setWatchdogGetter(getter: () => ReadonlyArray<{ sessionID: string; parentID?: string; busy: boolean }>): void {
+    this.watchdogGetter = getter;
+  }
+
+  setWatchdogProblemsGetter(getter: () => Array<{ sessionID: string; parentID?: string; state: "idle" | "stuck" | "aborted"; reason: string }>): void {
+    this.watchdogProblemsGetter = getter;
+  }
+
+  setRunsConfig(cfg: { maxAgeMs?: number; maxBytes?: number; maxFiles?: number; heartbeatThresholdMs?: number }): void {
+    this.runsConfig = cfg;
+  }
+
+  /** tgo-2ry: expose problems for tests and allow external injection */
+  setProblems(problems: ProblemEntry[]): void {
+    // F6 dedupe by runId+state, replace-not-append
+    const map = new Map<string, ProblemEntry>();
+    for (const p of problems) map.set(`${p.runId}:${p.state}`, p);
+    this.problemsCache = [...map.values()];
+  }
+
+  getProblems(): ProblemEntry[] {
+    return this.problemsCache;
   }
 
   private async fetchSessionMessagesCached(sid: string): Promise<any> {
@@ -486,12 +554,14 @@ export class BoardController {
       blocked: BdIssue[];
       memories: Array<{ key: string; value: string }>;
       streaming: Array<{ id: string; target: string }>;
+      queueLines?: string[];
+      problems?: ProblemEntry[];
     },
     reusableSet?: Set<string>,
     sessionIdsByIssue?: Map<string, string>,
     maxListed = 6
   ): Promise<string> {
-    return buildBoardTextWithHints(data, reusableSet, sessionIdsByIssue, maxListed, this.sessionReuse?.repoRoot);
+    return buildBoardTextWithHints(data as any, reusableSet, sessionIdsByIssue, maxListed, this.sessionReuse?.repoRoot);
   }
 
   public async renderFor(sessionID: string): Promise<string | undefined> {
@@ -522,7 +592,103 @@ export class BoardController {
     const blocked = parseIssues(blockedRaw);
     const memories = parseMemories(memoriesRaw);
     const streaming = Array.from(this.shim.streaming, ([id, s]) => ({ id, target: s.target }));
-
+    // tgo-2ry: prune on first tick — F9 single-flight + config values (no defaults, no race)
+    const repoRootForPrune = this.sessionReuse?.repoRoot;
+    if (repoRootForPrune && !this.pruneDone) {
+      this.pruneDone = true;
+      // single-flight guard at board level as well (runs.ts also has guard)
+      if (!this.pruneInFlight) {
+        this.pruneInFlight = (async () => {
+          try {
+            const { pruneRuns } = await import("./runs");
+            return await pruneRuns(repoRootForPrune, {
+              now,
+              maxAgeMs: this.runsConfig?.maxAgeMs,
+              maxBytes: this.runsConfig?.maxBytes,
+              maxFiles: this.runsConfig?.maxFiles,
+              heartbeatThresholdMs: this.runsConfig?.heartbeatThresholdMs,
+            });
+          } catch { return []; }
+        })();
+        void this.pruneInFlight.finally(() => { this.pruneInFlight = undefined; }).catch(() => {});
+        await this.pruneInFlight.catch(() => {});
+      }
+    }
+    // tgo-2ry: queue-depth gauge
+    let queueLines: string[] | undefined;
+    let metricsSnapshot: import("./metrics").MetricsSnapshot | undefined;
+    try {
+      const repoRootForMetrics = this.sessionReuse?.repoRoot;
+      if (repoRootForMetrics) {
+        const watchdogTracked = this.watchdogGetter ? this.watchdogGetter() : undefined;
+        const previous = this.previousMetrics ?? (await readMetrics(repoRootForMetrics).catch(() => undefined));
+        const streamingWithStartedAt = Array.from(this.shim.streaming, ([id, s]) => ({ id, target: s.target, startedAt: s.startedAt }));
+        metricsSnapshot = computeMetrics({
+          ready,
+          blocked,
+          streaming: streamingWithStartedAt,
+          watchdogTracked,
+          shimAgents: this.shim.agents,
+          now,
+          previous,
+        });
+        await writeMetrics(repoRootForMetrics, metricsSnapshot).catch((e) => {
+          safeWarn(this.log, "metrics write failed", { error: String(e) });
+        });
+        this.previousMetrics = metricsSnapshot;
+        const ql = renderQueueLine(metricsSnapshot, previous);
+        if (ql) queueLines = ql.split("\n");
+      }
+    } catch (e) {
+      safeWarn(this.log, "queue gauge compute failed", { error: String(e) });
+    }
+    // tgo-2ry: recovery scan -> problems — F5 watchdog wiring + F6 dedupe/drop stale + F9 in-flight guard
+    let problems: ProblemEntry[] | undefined;
+    try {
+      if (this.scanInFlight) {
+        // F9 skip if previous scan pending
+        problems = this.problemsCache.length > 0 ? this.problemsCache : undefined;
+      } else {
+        this.scanInFlight = true;
+        const repoRootForProblems = this.sessionReuse?.repoRoot;
+        if (repoRootForProblems) {
+          const [recovery] = await Promise.all([
+            scanRunsForProblems(repoRootForProblems, { now, heartbeatThresholdMs: this.runsConfig?.heartbeatThresholdMs }).catch(() => []),
+          ]);
+          const { problemsFromRecovery } = await import("./metrics");
+          // F5: wire watchdog problems via watchdogGetter
+          let watchdogProblems: Array<{ sessionID: string; issueId?: string; state: import("./metrics").ProblemState; reason: string }> | undefined;
+          // F2: only flag actual watchdog problems (idle/stuck/aborted), not every busy
+          if (this.watchdogProblemsGetter) {
+            try {
+              const probs = this.watchdogProblemsGetter();
+              if (probs.length > 0) {
+                watchdogProblems = probs.map((p) => ({ sessionID: p.sessionID, issueId: undefined, state: p.state as import("./metrics").ProblemState, reason: `watchdog ${p.reason}` }));
+                try {
+                  const map = await (await import("./session-reuse")).loadSessionMap(repoRootForProblems).catch(() => ({} as any));
+                  for (const wp of watchdogProblems) {
+                    for (const [iid, entry] of Object.entries(map as Record<string, any>)) {
+                      if (entry.sessionId === wp.sessionID) { (wp as any).issueId = iid; break; }
+                    }
+                  }
+                } catch {}
+              }
+            } catch {}
+          }
+          const derived = problemsFromRecovery(recovery as any, watchdogProblems as any);
+          // F3 file-derived = full replacement each scan (no merge-back), watchdog recomputed fresh, union is cache
+          // F6 dedup by runId+state (replace-not-append) is handled via Map, stale dropped by not re-adding missing cache entries
+          const dedup = new Map<string, ProblemEntry>();
+          for (const p of derived) dedup.set(`${p.runId}:${p.state}`, p);
+          const merged = [...dedup.values()];
+          if (merged.length > 0) problems = merged;
+          this.problemsCache = merged;
+        } else if (this.problemsCache.length > 0) {
+          problems = this.problemsCache;
+        }
+        this.scanInFlight = false;
+      }
+    } catch { this.scanInFlight = false; }
     let reusableSet: Set<string> | undefined;
     let sessionIdsByIssue: Map<string, string> | undefined;
     let map: Record<string, { sessionId: string }> = {};
@@ -572,7 +738,7 @@ export class BoardController {
     }
 
     const inner = await this.buildBoardTextWithHints(
-      { inProgress, ready, blocked, memories, streaming },
+      { inProgress, ready, blocked, memories, streaming, queueLines, problems },
       reusableSet,
       sessionIdsByIssue
     );

@@ -15,6 +15,10 @@ import { type BdClient, type Bead, createBdClient } from "./bd"
 import { registerCommands, showBead } from "./commands"
 import { debug } from "./debug"
 import { type BeadState, focusKey, type PanelData, type PanelItem, resolveScope } from "./scope"
+import * as fs from "node:fs/promises"
+import * as path from "node:path"
+import { scanRunsForProblems } from "../runs"
+import { buildProblemsSection, type ProblemEntry } from "../metrics"
 
 /** How often we stat `.beads/last-touched` looking for changes. */
 const POLL_MS = 1_500
@@ -180,6 +184,83 @@ export function closedHiddenFooter(data: PanelData | undefined): string | undefi
   return `${count} closed hidden`
 }
 
+// ── tgo-2ry: problems view (additive, no rewrite of BeadsPanel) ──
+
+export type ProblemsData = {
+  problems: ProblemEntry[];
+  error?: string;
+};
+
+export function createProblemsStore(worktree: string) {
+  const [data, setData] = createSignal<ProblemsData | undefined>(undefined);
+  let owner: Owner | null = null;
+  let inFlight = false;
+  let disposed = false;
+  let pending = false;
+  function adopt(next: Owner | null) { if (next) owner = next; }
+  function commit(next: ProblemsData | undefined) {
+    if (disposed) return;
+    if (owner) runWithOwner(owner, () => setData(next));
+    else setData(next);
+  }
+  async function refresh() {
+    if (inFlight) { pending = true; return; }
+    inFlight = true;
+    try {
+      const flags = await scanRunsForProblems(worktree).catch(() => []);
+      const { problemsFromRecovery } = await import("../metrics");
+      const problems = problemsFromRecovery(flags as any);
+      commit({ problems });
+    } catch (err) {
+      commit({ problems: [], error: String(err) });
+    } finally {
+      inFlight = false;
+      if (pending) { pending = false; void refresh(); }
+    }
+  }
+  function start(): () => void {
+    void refresh();
+    const timer = setInterval(() => { if (!disposed) void refresh(); }, 3000);
+    return () => { disposed = true; clearInterval(timer); };
+  }
+  return { data, refresh, start, adopt };
+}
+
+export function ProblemsPanel(props: {
+  api: TuiPluginApi;
+  data: () => ProblemsData | undefined;
+  adopt: (owner: Owner | null) => void;
+}) {
+  props.adopt(getOwner());
+  const problems = createMemo(() => props.data()?.problems ?? []);
+  const hasProblems = createMemo(() => problems().length > 0);
+  const theme = () => props.api.theme.current;
+  return (
+    <Show when={hasProblems() || props.data()?.error}>
+      <box flexDirection="column" gap={0}>
+        <box flexDirection="row" gap={1}>
+          <text fg={theme().text}><b>Problems</b></text>
+          <Show when={props.data()?.error}>
+            <text fg={theme().error} wrapMode="none">{props.data()?.error ?? ""}</text>
+          </Show>
+        </box>
+        <For each={problems()}>{(item) => (
+          <box flexDirection="row" gap={1}>
+            <text fg={
+              item.state === "stuck" ? theme().error :
+              item.state === "aborted" ? theme().error :
+              item.state === "idle" ? theme().warning :
+              theme().textMuted
+            } wrapMode="word">
+              {`${item.runId} · ${item.state.toUpperCase()} — ${item.reason}`}
+            </text>
+          </box>
+        )}</For>
+      </box>
+    </Show>
+  );
+}
+
 export function BeadsPanel(props: {
   api: TuiPluginApi
   data: () => PanelData | undefined
@@ -303,12 +384,16 @@ const tui: TuiPlugin = async (api) => {
   // factory captured and whether a beads database exists there at all.
   debug(`init worktree=${api.state.path.worktree} enabled=${bd.enabled()}`)
   const store = createStore(bd, api.kv)
+  // tgo-2ry: problems store — additive, polls .tgo/runs for suspended/dead-heartbeat
+  const problemsStore = createProblemsStore(api.state.path.worktree)
 
   const stopPolling = store.start()
+  const stopProblemsPolling = problemsStore.start()
   const unregisterCommands = registerCommands(api, bd, store)
 
   api.lifecycle.onDispose(() => {
     stopPolling()
+    stopProblemsPolling()
     unregisterCommands()
   })
 
@@ -326,6 +411,17 @@ const tui: TuiPlugin = async (api) => {
             adopt={store.adopt}
             onSelect={(item) => void showBead(api, bd, item)}
           />
+        )
+      },
+    },
+  })
+  // tgo-2ry: separate problems section — additive, sits just after Beads (451) so merges don't collide
+  api.slots.register({
+    order: SIDEBAR_ORDER + 1,
+    slots: {
+      sidebar_content(_ctx, _value) {
+        return (
+          <ProblemsPanel api={api} data={problemsStore.data} adopt={problemsStore.adopt} />
         )
       },
     },

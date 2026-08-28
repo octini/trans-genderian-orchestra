@@ -36,6 +36,8 @@ import {
   formatSuspendBadge,
   isExpired,
 } from "./suspend";
+import { appendRunEvent, hashArgs, pruneRuns, scanRunsForProblems } from "./runs";
+import { computeMetrics, writeMetrics, readMetrics } from "./metrics";
 // No runtime function re-exports here: opencode's legacy plugin loader calls
 // EVERY exported function as a plugin factory (input, options), so an entry
 // re-export like evaluateClosure gets invoked as one and throws inside the
@@ -191,12 +193,79 @@ export const TgoPlugin: Plugin = async (
 
   const fit = new TaskFitController();
 
+  // F1/F3 maps before watchdog so its abort handler can capture them (avoid TDZ)
+  const runToolStarts = new Map<string, number>();
+  const sessionToRunId = new Map<string, string>();
+  const heartbeatIntervals = new Map<string, ReturnType<typeof setInterval>>();
+  function sanitizeCmdForRun(cmd: string): string { return cmd.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "").slice(0, 500); }
+  function extractCmd(tool: string, args: unknown): string | undefined {
+    if (!args || typeof args !== "object") return undefined;
+    const obj = args as Record<string, unknown>;
+    const lower = tool.toLowerCase();
+    if (lower.includes("bash")) {
+      const c = (obj.command as string) ?? (obj.cmd as string) ?? (obj.input as string);
+      if (typeof c === "string" && c.trim()) return sanitizeCmdForRun(c);
+    }
+    if (lower === "edit" || lower === "write" || lower === "multiedit") {
+      const p = (obj.filePath as string) ?? (obj.path as string) ?? (obj.target as string);
+      if (typeof p === "string" && p.trim()) return sanitizeCmdForRun(p);
+    }
+    return undefined;
+  }
+  function startHeartbeat(repoRoot: string, runId: string, seat: string): void {
+    if (heartbeatIntervals.has(runId)) return;
+    const interval = setInterval(() => {
+      void (async () => {
+        try {
+          await appendRunEvent(repoRoot, runId, {
+            ts: Date.now(),
+            type: "heartbeat",
+            seat,
+            tool: "heartbeat",
+            argsHash: hashArgs({}),
+            ok: true,
+            issueId: runId,
+            note: "heartbeat",
+          });
+        } catch {}
+      })();
+    }, 30_000);
+    if ((interval as any).unref) (interval as any).unref();
+    heartbeatIntervals.set(runId, interval);
+  }
+  function stopHeartbeat(runId: string): void {
+    const iv = heartbeatIntervals.get(runId);
+    if (iv) {
+      clearInterval(iv as any);
+      heartbeatIntervals.delete(runId);
+    }
+  }
+
   // Watchdog: abort delegated subagent sessions that exceed a wall-clock cap or
   // go silent past an idle cap, then inject a marker into the parent so the
   // orchestrator re-dispatches instead of trusting an empty result.
   const watchdog = new WatchdogController(config.watchdog, {
     log: appLog,
     abort: async (sessionID, reason) => {
+      // F2 ensure abort writes terminal status:aborted BEFORE deletion so scanner surfaces it
+      try {
+        const runId = sessionToRunId.get(sessionID);
+        if (runId) {
+          const seat = board.shimState.agents.get(sessionID) ?? "dylan";
+          const repoRoot2 = directory ?? worktree ?? (project as unknown as { worktree?: string })?.worktree ?? ".";
+          await appendRunEvent(repoRoot2, runId, {
+            ts: Date.now(),
+            type: "status",
+            seat,
+            tool: "task",
+            argsHash: hashArgs({ reason }),
+            ok: false,
+            issueId: runId,
+            note: "aborted",
+          });
+          try { stopHeartbeat(runId); } catch {}
+        }
+      } catch {}
       await client.session.abort({ path: { id: sessionID } });
       try {
         const repoRoot = directory ?? worktree ?? (project as unknown as { worktree?: string })?.worktree ?? ".";
@@ -227,6 +296,44 @@ export const TgoPlugin: Plugin = async (
       });
     },
   });
+
+  // tgo-2ry: wire watchdog → board gauge and run recovery scan on load (additive)
+  try {
+    board.setWatchdogGetter(() => watchdog.tracked as any);
+    board.setWatchdogProblemsGetter(() => (watchdog as any).getProblems?.() ?? []);
+    board.setRunsConfig({
+      maxAgeMs: (config as any).runs?.maxAgeMs,
+      maxBytes: (config as any).runs?.maxBytes,
+      maxFiles: (config as any).runs?.maxFiles,
+      heartbeatThresholdMs: (config as any).runs?.heartbeatThresholdMs,
+    });
+  } catch {}
+  void (async () => {
+    const repoRoot = directory ?? worktree ?? (project as unknown as { worktree?: string })?.worktree ?? ".";
+    try {
+      await pruneRuns(repoRoot, {
+        maxAgeMs: (config as any).runs?.maxAgeMs,
+        maxBytes: (config as any).runs?.maxBytes,
+        maxFiles: (config as any).runs?.maxFiles,
+        heartbeatThresholdMs: (config as any).runs?.heartbeatThresholdMs,
+        log: appLog,
+      });
+    } catch {}
+    try {
+      const flags = await scanRunsForProblems(repoRoot, {
+        heartbeatThresholdMs: (config as any).runs?.heartbeatThresholdMs,
+        log: appLog,
+      });
+      if (flags.length > 0) {
+        const { problemsFromRecovery } = await import("./metrics");
+        const problems = problemsFromRecovery(flags as any);
+        try { board.setProblems(problems as any); } catch {}
+        appLog("warn", `tgo: recovery scan flagged ${flags.length} runs`, { flags: flags as any });
+      }
+    } catch (e) {
+      safeWarn(appLog, `recovery scan failed: ${String(e)}`);
+    }
+  })();
 
   const delegatedSessionIds = new Set<string>();
   const completionSignals = new Map<string, { signal: CompletionSignal; text: string; exitGateRequired: boolean }>();
@@ -447,6 +554,13 @@ export const TgoPlugin: Plugin = async (
           parentID: info.parentID ?? null,
         });
         watchdog.noteSessionCreated(info);
+        // F1 seed child sessions at creation — resolve runId from parent's current mapping
+        try {
+          if (info.id && info.parentID) {
+            const parentRunId = sessionToRunId.get(info.parentID);
+            if (parentRunId) sessionToRunId.set(info.id, parentRunId);
+          }
+        } catch {}
         try {
           if (info.id && info.parentID && info.parentID !== "") delegatedSessionIds.add(info.id);
         } catch {}
@@ -458,14 +572,14 @@ export const TgoPlugin: Plugin = async (
         const deletedInfo = (event.properties as { info?: { id?: string }; sessionID?: string; id?: string })?.info;
         const deletedId = deletedInfo?.id ?? (event.properties as { sessionID?: string })?.sessionID ?? (event.properties as { id?: string })?.id;
         if (deletedId) {
+          try { delegatedSessionIds.delete(deletedId); } catch {}
+          try { completionSignals.delete(deletedId); } catch {}
+          try { terminationParentIds.delete(deletedId); } catch {}
+          // F3 cleanup mapping + heartbeat
           try {
-            delegatedSessionIds.delete(deletedId);
-          } catch {}
-          try {
-            completionSignals.delete(deletedId);
-          } catch {}
-          try {
-            terminationParentIds.delete(deletedId);
+            const runId = sessionToRunId.get(deletedId);
+            sessionToRunId.delete(deletedId);
+            if (runId) stopHeartbeat(runId);
           } catch {}
           // F3: suspended-state lifecycle — cleanup watchdog and orphaned await.json
           try {
@@ -887,6 +1001,77 @@ export const TgoPlugin: Plugin = async (
         typeof output.args === "object" &&
         (output.args as Record<string, unknown>).background === true;
       watchdog.noteToolStart(input.sessionID, background, input.tool, output?.args);
+      // tgo-2ry: append-only run snapshot — step event (writer) contract v2
+      void (async () => {
+        try {
+          const repoRoot = directory ?? worktree ?? (project as unknown as { worktree?: string })?.worktree ?? ".";
+          let runId: string | undefined;
+          let incomingRunId: string | undefined;
+          try {
+            const rawArgs = output?.args as Record<string, unknown> | undefined;
+            const packet = rawArgs?.delegationPacket as Record<string, unknown> | undefined;
+            if (packet && typeof packet.issueId === "string" && isValidBeadID((packet.issueId as string).trim())) {
+              incomingRunId = (packet.issueId as string).trim();
+            }
+          } catch {}
+          if (incomingRunId) {
+            runId = incomingRunId;
+            sessionToRunId.set(input.sessionID, runId);
+          } else {
+            // Fall back to existing mapping ONLY when packet carries no issueId (non-delegation tool calls)
+            if (sessionToRunId.has(input.sessionID)) runId = sessionToRunId.get(input.sessionID)!;
+            if (!runId) {
+              try {
+                const map = await loadSessionMap(repoRoot);
+                for (const [iid, entry] of Object.entries(map)) {
+                  if (entry.sessionId === input.sessionID) { runId = iid; break; }
+                }
+              } catch {}
+            }
+            if (!runId || !isValidBeadID(runId)) return;
+            if (input.tool === "task") {
+              sessionToRunId.set(input.sessionID, runId);
+            } else if (!sessionToRunId.has(input.sessionID)) {
+              sessionToRunId.set(input.sessionID, runId);
+            }
+          }
+          if (!runId || !isValidBeadID(runId)) return;
+          const seat = board.shimState.agents.get(input.sessionID) ?? "dylan";
+          const argsHash = hashArgs(output?.args);
+          const ts = Date.now();
+          const cmd = extractCmd(input.tool, output?.args);
+          runToolStarts.set(`${runId}:${input.tool}:${ts}`, ts);
+          runToolStarts.set(`${runId}:${input.tool}:last`, ts);
+          await appendRunEvent(repoRoot, runId, {
+            ts,
+            type: "step",
+            seat,
+            tool: input.tool,
+            argsHash,
+            ok: true,
+            issueId: runId,
+            note: `start ${input.tool}`,
+            ...(cmd ? { cmd } : {}),
+          });
+          // F2 heartbeat: required tool/ok/issueId
+          try {
+            await appendRunEvent(repoRoot, runId, {
+              ts,
+              type: "heartbeat",
+              seat,
+              tool: "heartbeat",
+              argsHash: hashArgs({}),
+              ok: true,
+              issueId: runId,
+              note: "heartbeat",
+            });
+          } catch {}
+          // F3 periodic heartbeat while delegation active (30s)
+          if (input.tool === "task") {
+            try { startHeartbeat(repoRoot, runId, seat); } catch {}
+          }
+        } catch {}
+      })();
     },
 
     "tool.execute.after": async (input, output) => {
@@ -897,6 +1082,121 @@ export const TgoPlugin: Plugin = async (
       const isProgress = input.tool === "edit";
       watchdog.noteToolEnd(input.sessionID, background, isProgress);
       watchdog.noteActivity(input.sessionID);
+      // tgo-2ry: run snapshot — step completion (contract v2) + terminal status + session mapping + periodic heartbeat
+      void (async () => {
+        try {
+          const repoRoot = directory ?? worktree ?? (project as unknown as { worktree?: string })?.worktree ?? ".";
+          let runId: string | undefined;
+          if (sessionToRunId.has(input.sessionID)) runId = sessionToRunId.get(input.sessionID)!;
+          if (!runId) {
+            try {
+              const argsRec = input.args as Record<string, unknown> | undefined;
+              const packet = argsRec?.delegationPacket as Record<string, unknown> | undefined;
+              if (packet && typeof packet.issueId === "string" && isValidBeadID((packet.issueId as string).trim())) {
+                runId = (packet.issueId as string).trim();
+              }
+            } catch {}
+          }
+          if (!runId) {
+            try {
+              const map = await loadSessionMap(repoRoot);
+              for (const [iid, entry] of Object.entries(map)) {
+                if (entry.sessionId === input.sessionID) { runId = iid; break; }
+              }
+            } catch {}
+          }
+          if (!runId || !isValidBeadID(runId)) return;
+          // F1 per-dispatch for parent task
+          if (input.tool === "task") {
+            sessionToRunId.set(input.sessionID, runId);
+          } else if (!sessionToRunId.has(input.sessionID)) {
+            sessionToRunId.set(input.sessionID, runId);
+          }
+          const seat = board.shimState.agents.get(input.sessionID) ?? "dylan";
+          const lastKey = `${runId}:${input.tool}:last`;
+          const startTs = runToolStarts.get(lastKey);
+          const nowTs = Date.now();
+          const durationMs = startTs ? nowTs - startTs : undefined;
+          if (startTs) runToolStarts.delete(lastKey);
+          const cmd = extractCmd(input.tool, input.args);
+          const argsHash = hashArgs(input.args);
+          // F1: tool completions are "step" (not status)
+          const okStep = !(output as any)?.error;
+          await appendRunEvent(repoRoot, runId, {
+            ts: nowTs,
+            type: "step",
+            seat,
+            tool: input.tool,
+            argsHash,
+            ok: okStep,
+            issueId: runId,
+            durationMs,
+            note: `end ${input.tool}`,
+            ...(cmd ? { cmd } : {}),
+          });
+          // F3: if this is a task delegation, capture child sessionId → runId mapping and handle terminal status + heartbeat lifecycle
+          if (input.tool === "task") {
+            // capture child sessionId from output (same logic as captureDelegationSession)
+            let childSid: string | undefined;
+            try {
+              const meta = (output as any)?.metadata as Record<string, unknown> | undefined;
+              if (meta && typeof meta.sessionId === "string" && meta.sessionId.trim()) childSid = meta.sessionId.trim();
+            } catch {}
+            if (!childSid) {
+              try {
+                const outText = typeof (output as any)?.output === "string" ? (output as any).output as string : "";
+                const m = outText.match(/ses_[A-Za-z0-9]+/);
+                if (m) childSid = m[0];
+              } catch {}
+            }
+            if (childSid && /^ses_[A-Za-z0-9]+$/.test(childSid)) {
+              sessionToRunId.set(childSid, runId);
+              // start periodic heartbeat for delegation (cleared on terminal)
+              try { startHeartbeat(repoRoot, runId, seat); } catch {}
+            }
+            // F1 terminal status: emit ONCE with complete|failed|aborted
+            try {
+              const outText = typeof (output as any)?.output === "string" ? (output as any).output as string : "";
+              let terminal: "complete" | "failed" | "aborted" = "complete";
+              let okTerminal = true;
+              if (outText) {
+                try {
+                  const report = parseTaskReport(outText);
+                  if (!report.valid) {
+                    terminal = "failed";
+                    okTerminal = false;
+                  } else if ((report as any).status === "failed" || (report as any).status === "tripwire") {
+                    terminal = "failed";
+                    okTerminal = false;
+                  } else if ((report as any).status === "bail") {
+                    terminal = "aborted";
+                    okTerminal = false;
+                  } else if ((report as any).watchdogAborted) {
+                    terminal = "aborted";
+                    okTerminal = false;
+                  }
+                } catch { terminal = okStep ? "complete" : "failed"; okTerminal = okStep; }
+              } else {
+                terminal = okStep ? "complete" : "failed";
+                okTerminal = okStep;
+              }
+              await appendRunEvent(repoRoot, runId, {
+                ts: Date.now(),
+                type: "status",
+                seat,
+                tool: "task",
+                argsHash: hashArgs(input.args),
+                ok: okTerminal,
+                issueId: runId,
+                note: terminal,
+                ...(cmd ? { cmd } : {}),
+              });
+              // clear heartbeat on terminal
+              stopHeartbeat(runId);
+            } catch {}
+          }
+        } catch {}
+      })();
       if (reuseCapability.supported) {
         // After-hook is read-only for snapshots — write-once at start only (P1). Never touches def-snapshot.
         await captureDelegationSession({ tool: input.tool, input, output, repoRoot: directory ?? worktree ?? (project as unknown as { worktree?: string })?.worktree ?? ".", enabled: config.sessionReuse?.enabled !== false, log: appLog });
@@ -1057,6 +1357,11 @@ export const TgoPlugin: Plugin = async (
     dispose: async () => {
       watchdog.dispose();
       styleReinforcement.reset();
+      // F3 clear all heartbeats
+      for (const iv of heartbeatIntervals.values()) try { clearInterval(iv as any); } catch {}
+      heartbeatIntervals.clear();
+      sessionToRunId.clear();
+      runToolStarts.clear();
     },
   };
 };
