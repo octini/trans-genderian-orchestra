@@ -12,7 +12,15 @@
  * loader and makes per-worktree overrides harder to version.
  *
  * Profile is deterministic, no network, no LLM. Blacklist patterns are regex
- * strings evaluated locally against run-log `note` fields.
+ * strings evaluated locally against run-log `tool+cmd+note` (contract v2: cmd holds
+ * the actual bash/edit target, truncated ~500, control chars stripped).
+ *
+ * F4 ReDoS mitigation: blacklist matching is capped — pattern length max 200 chars
+ * (longer patterns are ignored) and haystack truncated to 500 chars before RegExp.test.
+ * This keeps the hot path deterministic and avoids unbounded backtracking on
+ * untrusted config. Alternative considered was pure normalized substring matching
+ * (lowercase, collapsed whitespace) which would lose regex expressiveness; the capped
+ * regex approach preserves existing patterns while bounding worst-case.
  */
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
@@ -83,11 +91,11 @@ function toGateProfile(raw: unknown): GateProfile | undefined {
   let blacklist: string[];
   if (Array.isArray(raw.blacklist)) {
     const filtered = raw.blacklist.filter((s) => typeof s === "string" && (s as string).trim().length > 0) as string[];
-    // validate each compiles
+    // validate each compiles and cap length ≤200 (F4 ReDoS)
     const valid: string[] = [];
     for (const p of filtered) {
+      if (p.length > 200) continue; // cap pattern length — ignore overlong patterns
       try {
-        // test compile case-insensitive
         new RegExp(p, "i");
         valid.push(p);
       } catch {
@@ -95,8 +103,6 @@ function toGateProfile(raw: unknown): GateProfile | undefined {
       }
     }
     blacklist = valid.length > 0 ? valid : [...DEFAULT_GATE_PROFILE.blacklist];
-    // if raw had explicit empty array, treat as explicit disable? But spec says ship safe defaults.
-    // An explicit empty blacklist means "no blacklist" — honour it only if raw.blacklist is empty array.
     if (Array.isArray(raw.blacklist) && raw.blacklist.length === 0) blacklist = [];
   } else {
     blacklist = [...DEFAULT_GATE_PROFILE.blacklist];
@@ -156,10 +162,17 @@ export function parseGateProfile(raw: unknown): GateProfile {
   return { ...DEFAULT_GATE_PROFILE, blacklist: [...DEFAULT_GATE_PROFILE.blacklist] };
 }
 
-/** Compile blacklist patterns to regexes (case-insensitive). Invalid patterns already filtered. */
+/**
+ * Compile blacklist patterns to regexes (case-insensitive) with ReDoS caps.
+ * - Pattern capped 200 chars (longer ignored in toGateProfile, double-check here)
+ * - Haystack must be truncated to 500 chars before test (caller responsibility)
+ * Documented choice: capped regex preserves expressiveness while bounding backtracking;
+ * pure substring alternative would be lossy for existing patterns like "rm\\s+-rf".
+ */
 export function compileBlacklist(blacklist: string[]): RegExp[] {
   const out: RegExp[] = [];
   for (const p of blacklist) {
+    if (p.length > 200) continue;
     try {
       out.push(new RegExp(p, "i"));
     } catch {}
