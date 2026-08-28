@@ -392,7 +392,7 @@ describe("snapshot write/read round-trip", () => {
     try {
       const issueId = "tgo-concurrent";
       const N = 12;
-      // Deterministic fault injection: delay winner's write after open so losers must poll FINAL path (no tmp file, no empty read)
+      // Deterministic fault injection: delay between tmp write and link so losers must poll FINAL path (no empty/partial read)
       __setDefSnapshotWriteDelayForTest(150);
       try {
         const promises = Array.from({ length: N }, (_, i) =>
@@ -411,7 +411,7 @@ describe("snapshot write/read round-trip", () => {
         expect(written).toBe(1);
         const reused = results.filter((r) => r.reused).length;
         expect(reused).toBe(N - 1);
-        // zero empty/divergent reads — all losers converged to winner's hash
+        // zero empty/divergent reads — all losers converged to winner's hash with full content
         const winner = results.find((r) => r.written)!;
         expect(winner).toBeDefined();
         const winnerHash = winner.snapshot.promptHash;
@@ -422,14 +422,21 @@ describe("snapshot write/read round-trip", () => {
           expect(r.snapshot.model).toBe(winner.snapshot.model);
           expect(r.snapshot.preset).toBe(winner.snapshot.preset);
           expect(r.snapshot.seatFrontmatterHash).toBe(winner.snapshot.seatFrontmatterHash);
+          // never empty/partial — snapshot must be fully populated
+          expect(r.snapshot.promptHash.length).toBeGreaterThan(0);
+          expect(r.snapshot.model.length).toBeGreaterThan(0);
+          expect(JSON.stringify(r.snapshot).length).toBeGreaterThan(0);
         }
         expect(emptyReads).toBe(0);
         const loaded = await readDefSnapshot(dir, issueId);
         expect(loaded).toBeDefined();
         expect(loaded?.promptHash).toBe(winnerHash);
-        // file is valid JSON, no corruption, no tmp left behind
+        // file is valid JSON, full content, no corruption, no tmp left behind
         const raw = await fs.readFile(defSnapshotPath(dir, issueId), "utf-8");
+        expect(raw.length).toBeGreaterThan(0);
         expect(() => JSON.parse(raw)).not.toThrow();
+        const parsed = JSON.parse(raw) as { promptHash: string };
+        expect(parsed.promptHash).toBe(winnerHash);
         const tgoDir = path.join(dir, ".tgo", issueId);
         const files = await fs.readdir(tgoDir);
         expect(files.some((f) => f.includes(".tmp"))).toBe(false);

@@ -122,35 +122,36 @@ export async function writeDefSnapshot(
   try { await fs.mkdir(dir, { recursive: true }); } catch {}
 
   if (!opts?.useLatestDefinitions) {
-    // write-once via exclusive create — no tmp+rename; close makes content fully visible atomically
+    // write-once via tmp+link — final appears atomically WITH FULL CONTENT, never empty/partial
+    const content = JSON.stringify(snapshot, null, 2);
+    const tmp = path.join(dir, `.def-snapshot-${hashString(content)}-${process.pid}-${Math.random().toString(36).slice(2)}.tmp`);
     try {
-      const fh = await fs.open(target, "wx");
-      // Fault injection for deterministic concurrency test: delay first successful winner's write after open
+      await fs.writeFile(tmp, content, "utf-8");
+      // Fault injection for deterministic concurrency test: delay between tmp write and link
       if (__defSnapshotFaultDelayMs > 0 && !__defSnapshotFaultFired) {
         __defSnapshotFaultFired = true;
         await new Promise((r) => setTimeout(r, __defSnapshotFaultDelayMs));
       }
-      try {
-        await fh.writeFile(JSON.stringify(snapshot, null, 2), "utf-8");
-      } finally {
-        await fh.close();
-      }
+      await fs.link(tmp, target);
+      try { await fs.unlink(tmp); } catch {}
       return true;
     } catch (e) {
+      try { await fs.unlink(tmp); } catch {}
       const code = (e as NodeJS.ErrnoException)?.code;
       if (code === "EEXIST") return false;
       if (code === "ENOENT") {
         try { await fs.mkdir(dir, { recursive: true }); } catch {}
+        // One retry with fresh tmp after ensuring dir exists
+        const retryTmp = path.join(dir, `.def-snapshot-${hashString(content)}-${process.pid}-${Math.random().toString(36).slice(2)}.tmp`);
         try {
-          const fh2 = await fs.open(target, "wx");
-          try {
-            await fh2.writeFile(JSON.stringify(snapshot, null, 2), "utf-8");
-          } finally {
-            await fh2.close();
-          }
+          await fs.writeFile(retryTmp, content, "utf-8");
+          await fs.link(retryTmp, target);
+          try { await fs.unlink(retryTmp); } catch {}
           return true;
         } catch (e2) {
-          if ((e2 as NodeJS.ErrnoException)?.code === "EEXIST") return false;
+          try { await fs.unlink(retryTmp); } catch {}
+          const code2 = (e2 as NodeJS.ErrnoException)?.code;
+          if (code2 === "EEXIST") return false;
           throw e2;
         }
       }
