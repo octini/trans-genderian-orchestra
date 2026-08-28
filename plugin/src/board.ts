@@ -130,6 +130,21 @@ export function buildBoardText(data: {
   return sections.join("\n");
 }
 
+// F5: extracted badge helper — both render paths call this (buildBoardTextWithHints and fallback renderBoard)
+export async function getSuspendBadge(issueId: string, repoRoot: string): Promise<string | undefined> {
+  try {
+    const rec = await readAwaitJson(repoRoot, issueId);
+    if (!rec) return undefined;
+    const fields = getRequiredFields(rec.resumeSchema);
+    const fieldsStr = fields.length > 0 ? fields.join(", ") : "response";
+    let badge = `⏸ awaiting human: ${rec.reason} — reply with: ${fieldsStr}`;
+    if (rec.until && isExpired(rec)) badge += ` (timer expired ${rec.until})`;
+    return badge;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function buildBoardTextWithHints(
   data: {
     inProgress: BdIssue[];
@@ -171,20 +186,10 @@ export async function buildBoardTextWithHints(
           if (p !== undefined) inProgressLines.push(`progress: .tgo/${issue.id}/progress.md`);
         } catch {}
       }
-      // Suspend badge: durable wait gate — derived from resumeSchema required fields
+      // Suspend badge via shared helper (F5: both paths)
       if (repoRoot) {
-        try {
-          const awaitRec = await readAwaitJson(repoRoot, issue.id);
-          if (awaitRec) {
-            const fields = getRequiredFields(awaitRec.resumeSchema);
-            const fieldsStr = fields.length > 0 ? fields.join(", ") : "response";
-            let badge = `⏸ awaiting human: ${awaitRec.reason} — reply with: ${fieldsStr}`;
-            if (awaitRec.until && isExpired(awaitRec)) {
-              badge += ` (timer expired ${awaitRec.until})`;
-            }
-            inProgressLines.push(badge);
-          }
-        } catch {}
+        const badge = await getSuspendBadge(issue.id, repoRoot);
+        if (badge) inProgressLines.push(badge);
       }
     }
     sections.push("IN PROGRESS:", ...inProgressLines);
@@ -218,7 +223,8 @@ export async function buildBoardTextWithHints(
 
 export async function renderBoard(
   run: BdRunner,
-  shim: BoardShim
+  shim: BoardShim,
+  repoRoot?: string
 ): Promise<string | undefined> {
   const [inProgress, ready, blocked, memories] = await Promise.all([
     run("bd list --status in_progress --json"),
@@ -228,6 +234,24 @@ export async function renderBoard(
   ]);
 
   if (!inProgress && !ready && !blocked && !memories) return undefined;
+
+  // F5: fallback path now also renders suspend badges via shared helper when repoRoot available
+  if (repoRoot) {
+    const text = await buildBoardTextWithHints(
+      {
+        inProgress: parseIssues(inProgress),
+        ready: parseIssues(ready),
+        blocked: parseIssues(blocked),
+        memories: parseMemories(memories),
+        streaming: Array.from(shim.streaming, ([id, s]) => ({ id, target: s.target })),
+      },
+      undefined,
+      undefined,
+      6,
+      repoRoot
+    );
+    return `${BOARD_SENTINEL_START}\n${text}\n${BOARD_SENTINEL_END}`;
+  }
 
   const text = buildBoardText({
     inProgress: parseIssues(inProgress),
@@ -477,7 +501,7 @@ export class BoardController {
       this.sessionReuse!.enabled !== false;
 
     if (!reuseActive) {
-      const text = await renderBoard(this.run, this.shim);
+      const text = await renderBoard(this.run, this.shim, this.sessionReuse?.repoRoot);
       if (text) this.renderCache.set(sessionID, { text, at: now });
       return text;
     }

@@ -191,6 +191,11 @@ export class WatchdogController {
   // idle/stuck aborts are suppressed; wall-clock still applies only if explicitly desired,
   // but per spec suspended sessions are excluded from idle/stuck (and wall-clock) aborts.
   private readonly suspended = new Set<string>();
+  // Hydration single-flight guard — F3: hydration races watchdog timer. Until hydration completes,
+  // check() is deferred to avoid false aborts of suspended sessions before the set is populated.
+  // Default false for direct usage (tests); plugin sets true during hydration window.
+  private hydrationPending = false;
+  private hydrationPromise: Promise<void> | null = null;
 
   constructor(config: WatchdogConfig, deps: WatchdogDeps) {
     this.config = config;
@@ -352,12 +357,27 @@ export class WatchdogController {
     return this.suspended.has(sessionID);
   }
 
+  // Hydration single-flight + ordered vs timer (F3)
+  setHydrationPending(pending: boolean): void {
+    this.hydrationPending = pending;
+  }
+
+  markHydrationDone(): void {
+    this.hydrationPending = false;
+  }
+
   // Hydrate from await.json scan — called on plugin load to survive restart.
   // Accepts pre-resolved sessionIds for each suspended issue.
+  // Idempotent: multiple calls are safe, single-flight guard ensures ordering vs timer.
   hydrateSuspended(sessionIds: string[]): void {
     for (const id of sessionIds) {
       if (id) this.suspended.add(id);
     }
+  }
+
+  // For testing: allow awaiting hydration completion
+  async awaitHydration(): Promise<void> {
+    if (this.hydrationPromise) await this.hydrationPromise;
   }
 
   get size(): number {
@@ -407,6 +427,11 @@ export class WatchdogController {
   }
 
   async check(): Promise<void> {
+    // F3: hydration single-flight — defer checks until hydration completes to avoid false aborts
+    if (this.hydrationPending) {
+      // Do not abort while hydration is pending; the suspended set is not yet populated
+      return;
+    }
     const now = this.awakeNow();
     for (const tracked of this.sessions.values()) {
       if (tracked.aborted) continue;

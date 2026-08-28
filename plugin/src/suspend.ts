@@ -282,6 +282,7 @@ export async function isSuspended(repoRoot: string, issueId: string): Promise<bo
 }
 
 // High-level suspend: writes await.json + appends progress blocker
+// F2: validates suspendPayload against suspendSchema and requires resumeSchema non-null BEFORE any file write
 export async function suspend(opts: {
   repoRoot: string;
   issueId: string;
@@ -294,6 +295,18 @@ export async function suspend(opts: {
   sessionId?: string;
 }): Promise<{ written: boolean; record: AwaitRecord }> {
   assertValidBeadID(opts.issueId);
+  // F2: resumeSchema required non-null — reject before any file write
+  if (!opts.resumeSchema || typeof opts.resumeSchema !== "object" || Array.isArray(opts.resumeSchema)) {
+    throw new Error("suspend: resumeSchema is required and must be a non-null object");
+  }
+  if (!opts.suspendSchema || typeof opts.suspendSchema !== "object" || Array.isArray(opts.suspendSchema)) {
+    throw new Error("suspend: suspendSchema is required and must be a non-null object");
+  }
+  // F2: validate suspendPayload against suspendSchema at suspend time
+  const payloadValidation = validateAgainstSchema(opts.suspendPayload, opts.suspendSchema);
+  if (!payloadValidation.valid) {
+    throw new Error(`suspend: suspendPayload does not match suspendSchema: ${payloadValidation.errors.join("; ")}`);
+  }
   const record: AwaitRecord = {
     issueId: opts.issueId,
     suspendSchema: opts.suspendSchema,
@@ -364,22 +377,37 @@ export async function tryProseResume(opts: {
     return { success: false, errors: validation.errors, record };
   }
 
-  // Validation passed — attempt atomic clear. Concurrent winners converge: only one unlink succeeds.
+  // Validation passed — attempt atomic clear. Concurrent winners converge: only one rename succeeds.
+  // F4: capture old file's createdAt before rename to handle new suspend between rename and unlink
+  const oldCreatedAt = record.createdAt;
+  const oldBadge = formatSuspendBlocker(record);
+  const oldPrefix = `⏸ awaiting human: ${record.reason}`;
   const cleared = await clearAwaitJson(opts.repoRoot, opts.issueId);
   if (!cleared) {
     // Another concurrent resume already cleared it — treat as already resumed (converged)
     return { success: false, errors: [`already resumed for ${opts.issueId}`], record };
   }
 
-  // Remove blocker line on success — best effort, filter by badge prefix
-  const badge = formatSuspendBlocker(record);
-  const prefix = `⏸ awaiting human: ${record.reason}`;
+  // F4: verify-then-clear — only clear blocker/watchdog state if current await is NOT a newer suspend
+  let isNewerSuspend = false;
   try {
-    await updateProgress(opts.repoRoot, opts.issueId, (parts) => {
-      const filtered = parts.blockers.filter((b) => b !== badge && !b.startsWith(prefix));
-      return { ...parts, blockers: filtered };
-    });
+    const current = await readAwaitJson(opts.repoRoot, opts.issueId);
+    if (current && current.createdAt !== oldCreatedAt) {
+      isNewerSuspend = true;
+    }
   } catch {}
+  if (!isNewerSuspend) {
+    // Remove blocker line on success — best effort, filter by exact badge/prefix only for old
+    try {
+      await updateProgress(opts.repoRoot, opts.issueId, (parts) => {
+        const filtered = parts.blockers.filter((b) => b !== oldBadge && !b.startsWith(oldPrefix));
+        return { ...parts, blockers: filtered };
+      });
+    } catch {}
+  } else {
+    // Newer suspend exists — do not clear its blocker; keep new await's blocker intact
+    // The old blocker (if same prefix) would be incorrectly removed, so we skip
+  }
 
   return { success: true, record };
 }
