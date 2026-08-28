@@ -1,5 +1,5 @@
 import { tool, type Plugin, type PluginInput } from "@opencode-ai/plugin";
-import { loadTgoConfig, validateAgentDir, BD_ENV, type TgoConfig } from "./config";
+import { loadTgoConfig, validateAgentDir, BD_ENV, safeWarn, type TgoConfig } from "./config";
 import { BoardController, type BoardMessage } from "./board";
 import { ConcisionController } from "./concision";
 import { StyleReinforcementController } from "./style-reinforcement";
@@ -18,6 +18,7 @@ import { loadBeadsTui, renderBeadsTui } from "./tui";
 import { checkVersionDrift, fetchLatestVersion, PLUGIN_NPM_NAME, readLocalVersion } from "./version";
 import { parseCompletionSignal, terminationDecision, type CompletionSignal } from "./termination";
 import { selfUpdate } from "./self-update";
+import { reconcileSeats } from "./seat-sync";
 // No runtime function re-exports here: opencode's legacy plugin loader calls
 // EVERY exported function as a plugin factory (input, options), so an entry
 // re-export like evaluateClosure gets invoked as one and throws inside the
@@ -27,6 +28,7 @@ export type { DelegationPacket, DelegationValidation } from "./delegation";
 export type { ClosureGate, LifecycleMetadata } from "./lifecycle";
 import * as path from "node:path";
 import * as os from "node:os";
+import { fileURLToPath } from "node:url";
 
 export const TgoPlugin: Plugin = async (
   { client, $, project, directory, worktree }: PluginInput,
@@ -103,6 +105,25 @@ export const TgoPlugin: Plugin = async (
 
   const seatDir =
     config.agentDir ?? path.join(os.homedir(), ".config", "opencode", "agent");
+  // seat frontmatter reconciliation: self-update swaps code slot but never revisits installed agents — repair drift at load (always on)
+  void (async () => {
+    try {
+      const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+      const assetsAgentsDir = path.join(packageRoot, "assets", "agents");
+      const summary = await reconcileSeats(assetsAgentsDir, seatDir, appLog);
+      if (summary.length > 0) {
+        let version = "unknown";
+        try {
+          version = (await readLocalVersion()) ?? "unknown";
+        } catch {}
+        appLog("warn", `tgo: seat frontmatter refreshed to match ${version}: ${summary.join(", ")}`);
+      }
+    } catch (err) {
+      safeWarn(appLog, "tgo: seat sync failed", { error: String(err) });
+    }
+  })().catch((err) => {
+    safeWarn(appLog, "tgo: seat sync failed", { error: String(err) });
+  });
   // Load-time budget re-check. Warn, never throw: a throwing factory makes
   // opencode silently drop the entire plugin (verified headless, 1.18.13), so
   // an oversized hand-edited seat must not take TGO down. install/validate
