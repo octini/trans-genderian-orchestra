@@ -566,10 +566,7 @@ export const TgoPlugin: Plugin = async (
           }
         } catch (e) {
           safeWarn(appLog, `def-snapshot capture failed: ${String(e)}`);
-          // Re-throw typed host-authoritative resolution failures so caller sees typed error before dispatch
-          if (String(e).includes("invalid issueId") || String(e).includes("useLatestDefinitions abort failed") || String(e).includes("host-authoritative") || String(e).includes("model resolution failed") || String(e).includes("preset resolution failed") || String(e).includes("seat resolution failed")) {
-            throw e;
-          }
+          throw e;
         }
       }
       // A tool is about to execute (bash, edit, etc.). While a foreground tool
