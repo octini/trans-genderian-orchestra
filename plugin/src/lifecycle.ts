@@ -59,11 +59,42 @@ export function verifyClaimObserved(lifecycle: LifecycleMetadata): boolean {
   );
 }
 
+function deriveRecoveryFromTaxonomy(report: ParsedReport | undefined): RecoveryAction {
+  if (!report) return "retry";
+  // Precedence: watchdog and contradictions are authoritative (from report.ts)
+  if (report.watchdogAborted) return "reroute";
+  if (report.contradictions.length > 0) return "escalate";
+  // Terminal taxonomy outranks GAPS clarification — human already decided
+  switch (report.taxonomy.status) {
+    case "bail":
+      return "abandon";
+    case "tripwire":
+      return "fix-plan";
+    default:
+      break;
+  }
+  // GAPS clarification remains the route for complete/failed reports
+  const gapsNeedsClarification = report.fields.GAPS && /clarif(?:y|ication)|ambiguous|unclear|need(?:s)? user/i.test(report.fields.GAPS);
+  if (gapsNeedsClarification) {
+    return "user-clarification";
+  }
+  // Taxonomy routing — consumes discriminated union {status, retryable}
+  switch (report.taxonomy.status) {
+    case "failed":
+      return report.taxonomy.retryable ? "retry" : "escalate";
+    case "complete":
+      return "retry";
+    default:
+      return report.recovery ?? "retry";
+  }
+}
+
 /**
  * Validate closure metadata; this does not verify or mutate a Beads issue.
- * Recovery derives from report.recovery (watchdog→reroute, blocked/escalate, else retry/user-clarification)
- * and no live bd calls are made (metadata-only): canClose/closureBlocked/recovery are diagnostics for Bernstein,
- * not bd close/reopen/recover invocations. Plugin never calls bd close/reopen/create as recovery.
+ * Recovery derives from taxonomy {status, retryable} with precedence:
+ * watchdog→reroute, contradictions→escalate, bail→abandon (never reroute),
+ * tripwire→fix-plan (never retry), GAPS clarification→user-clarification (for failed/complete),
+ * failed+retryable→retry, failed+!retryable→escalate, complete→success. No live bd calls (metadata-only).
  */
 export function evaluateClosure(
   route: RouteClass,
@@ -72,10 +103,11 @@ export function evaluateClosure(
 ): ClosureGate {
   if (route === "tiny") {
     const safe = report?.completionSafe === true;
+    const recovery = deriveRecoveryFromTaxonomy(report);
     return {
       canClose: safe,
        closureBlocked: !safe,
-      recovery: safe ? undefined : report?.recovery ?? "retry",
+      recovery: safe ? undefined : recovery,
       missing: safe ? [] : ["parsed completion-safe report"],
       diagnostics: safe ? [] : ["Tiny work needs a parsed completion-safe report."],
     };
@@ -105,7 +137,7 @@ export function evaluateClosure(
   }
   if (missing.length) diagnostics.push(`Keep issue ${typeof lifecycle.issueId === "string" ? lifecycle.issueId : "open"}; satisfy: ${missing.join(", ")}.`);
   else if (report?.completionSafe !== true) diagnostics.push(`Keep issue ${typeof lifecycle.issueId === "string" ? lifecycle.issueId : "open"} open; satisfy: completion-safe report.`);
-  const recovery = report?.recovery ?? "retry";
+  const recovery = deriveRecoveryFromTaxonomy(report);
   return {
     canClose: missing.length === 0 && report?.completionSafe === true,
      closureBlocked: missing.length !== 0 || report?.completionSafe !== true,

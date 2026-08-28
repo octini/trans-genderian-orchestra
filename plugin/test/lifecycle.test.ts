@@ -162,13 +162,13 @@ describe("closure metadata validation", () => {
     expect(retryGate.diagnostics.join(" ")).toContain("Keep issue");
 
     const escalateReport = parseTaskReport("STATUS: escalate\nCHANGES: x\nVERIFIED: exit gate: true\nGAPS: need escalate");
-    expect(escalateReport.recovery).toBe("escalate");
+    expect(escalateReport.recovery).toBe("fix-plan");
     const escalateGate = evaluateClosure("standard", lifecycle, escalateReport);
-    expect(escalateGate.recovery).toBe("escalate");
+    expect(escalateGate.recovery).toBe("fix-plan");
 
     const clarificationReport = parseTaskReport("STATUS: blocked\nCHANGES: x\nVERIFIED: exit gate: true\nGAPS: need user clarification — ambiguous spec");
-    // blocked status maps to escalate, but GAPS user-clarification also triggers that path; ensure either is actionable
-    expect(["escalate", "user-clarification"]).toContain(clarificationReport.recovery);
+    // blocked maps to tripwire (fix-plan) which outranks GAPS clarification
+    expect(clarificationReport.recovery).toBe("fix-plan");
     // explicit user-clarification via GAPS
     const userClarReport = parseTaskReport("STATUS: partial\nCHANGES: x\nVERIFIED: exit gate: true\nGAPS: need user clarification");
     expect(userClarReport.recovery).toBe("user-clarification");
