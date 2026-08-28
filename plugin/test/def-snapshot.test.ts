@@ -113,10 +113,16 @@ describe("hash vector pinned", () => {
     expect(delimiterInObjective).not.toBe(baseHash);
     expect(splitAcross).not.toBe(baseHash);
     expect(delimiterInObjective).not.toBe(splitAcross);
-    // boundary collision: "ab"+"c" vs "a"+"bc" would collide with naive join — length-prefix prevents it
-    const boundaryA = hashFivePartPacket({ Objective: "ab", Files: ["a.ts"], Interfaces: "c", Constraints: "C", Verification: "V" });
-    const boundaryB = hashFivePartPacket({ Objective: "a", Files: ["a.ts"], Interfaces: "bc", Constraints: "C", Verification: "V" });
-    expect(boundaryA).not.toBe(boundaryB);
+    // boundary collision: EXACT vectors that collide under old "\n---\n" join but distinct under length-prefix
+    const sectionsX = ["a", "b\n---\nc", "", "", ""];
+    const sectionsY = ["a\n---\nb", "c", "", "", ""];
+    const oldJoin = (arr: string[]) => arr.join("\n---\n");
+    const newCanonical = (arr: string[]) => arr.map((s) => `${s.length}:${s}`).join("");
+    expect(oldJoin(sectionsX)).toBe(oldJoin(sectionsY));
+    expect(newCanonical(sectionsX)).not.toBe(newCanonical(sectionsY));
+    const hashX = hashFivePartPacket({ Objective: sectionsX[0], Files: sectionsX[1], Interfaces: sectionsX[2], Constraints: sectionsX[3], Verification: sectionsX[4] });
+    const hashY = hashFivePartPacket({ Objective: sectionsY[0], Files: sectionsY[1], Interfaces: sectionsY[2], Constraints: sectionsY[3], Verification: sectionsY[4] });
+    expect(hashX).not.toBe(hashY);
   });
 });
 
