@@ -3,7 +3,9 @@
  *
  * Contract v2 (sibling writer adapts separately — reader side here):
  * .tgo/runs/<runId>.jsonl — append-only, one JSON per line:
- * {"ts", "type":"step"|"heartbeat"|"status", "seat", "tool", "argsHash", "ok", "durationMs", "note", "cmd"?, "issueId"?}
+ * {"ts", "type":"step"|"heartbeat"|"status", "seat", "tool", "argsHash", "ok", "durationMs"?, "note"?, "cmd"?, "issueId"}
+ * Required on ALL lines: ts, type, seat, tool, argsHash, ok, issueId (strict types — wrong type → line ignored, no coercion)
+ * Optional on ALL lines: durationMs → 0, note → "", cmd → undefined (missing/wrong-typed → default, not rejection)
  * - tool REQUIRED non-empty on ALL lines (heartbeats use tool:"heartbeat")
  * - ok REQUIRED boolean on ALL lines (no coercion — "ok":"false" is ignored)
  * - issueId REQUIRED valid bead ID on ALL lines
@@ -58,10 +60,12 @@ function parseEntry(line: string, lineNo: number): RunLogEntry | undefined {
   try {
     const obj = JSON.parse(trimmed) as Record<string, unknown>;
     if (!isRecord(obj)) return undefined;
-    // Strict required-field validation — lines failing are IGNORED (not coerced)
+    // Strict required-field validation — lines failing are IGNORED (no coercion)
+    // Required: ts, type, seat, tool, argsHash, ok, issueId — wrong type → line ignored
+    // Optional: durationMs, note, cmd — missing/wrong type → default (0, "", undefined), not line rejection (F2)
     const tsRaw = obj.ts;
-    const ts = typeof tsRaw === "number" ? tsRaw : Number(tsRaw);
-    if (!Number.isFinite(ts)) return undefined;
+    if (typeof tsRaw !== "number" || !Number.isFinite(tsRaw)) return undefined;
+    const ts = tsRaw;
     const type = obj.type;
     if (type !== "step" && type !== "heartbeat" && type !== "status") return undefined;
     const seat = obj.seat;
@@ -70,8 +74,6 @@ function parseEntry(line: string, lineNo: number): RunLogEntry | undefined {
     if (typeof tool !== "string" || tool.trim().length === 0) return undefined;
     // Heartbeats must use tool:"heartbeat" per contract v2 — enforce, but if reader sees heartbeat with other tool, treat as invalid and ignore
     if (type === "heartbeat" && tool !== "heartbeat") {
-      // Still allow but could be considered malformed; for strictness, ignore heartbeat with non-heartbeat tool
-      // However contract says heartbeats use tool:"heartbeat", so we enforce: if type heartbeat and tool != heartbeat → ignore
       return undefined;
     }
     const argsHash = obj.argsHash;
@@ -80,21 +82,23 @@ function parseEntry(line: string, lineNo: number): RunLogEntry | undefined {
     if (typeof okRaw !== "boolean") return undefined; // no coercion: "ok":"false" must NOT become true → ignore line
     const ok = okRaw;
     const durationMsRaw = obj.durationMs;
-    const durationMs = typeof durationMsRaw === "number" ? durationMsRaw : Number(durationMsRaw);
-    if (!Number.isFinite(durationMs)) return undefined;
-    const note = obj.note;
-    if (typeof note !== "string") return undefined;
+    let durationMs: number;
+    if (durationMsRaw === undefined) durationMs = 0;
+    else if (typeof durationMsRaw === "number" && Number.isFinite(durationMsRaw)) durationMs = durationMsRaw;
+    else durationMs = 0; // wrong-typed optional → default, not rejection
+    const noteRaw = obj.note;
+    let note: string;
+    if (noteRaw === undefined) note = "";
+    else if (typeof noteRaw === "string") note = noteRaw;
+    else note = ""; // wrong-typed optional → default
     const issueIdRaw = obj.issueId;
     if (typeof issueIdRaw !== "string" || !isValidBeadID(issueIdRaw)) return undefined;
     const issueId = issueIdRaw;
-    // cmd optional: if present must be string, control chars stripped, truncated ~500 (writer does, reader just validates string type)
+    // cmd optional: wrong-typed → default undefined (not line rejection)
     let cmd: string | undefined;
-    if ("cmd" in obj) {
-      if (obj.cmd !== undefined && obj.cmd !== null) {
-        if (typeof obj.cmd !== "string") return undefined;
-        // control chars stripped and truncated already by writer; reader just stores as-is but caps for matching later
-        cmd = obj.cmd;
-      }
+    if ("cmd" in obj && obj.cmd !== undefined && obj.cmd !== null) {
+      if (typeof obj.cmd === "string") cmd = obj.cmd;
+      else cmd = undefined;
     }
     return {
       ts,
