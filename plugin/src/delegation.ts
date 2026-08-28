@@ -233,6 +233,17 @@ export function validateDelegationPacket(
   };
 }
 
+// tgo-dw5: manifest scope helpers — additive, clearly-named (hook path crowded)
+export function isFileInManifestScope(file: string, scope: readonly string[]): boolean {
+  return scope.includes(file);
+}
+export function filterFilesByManifestScope(files: string[], scope: readonly string[]): { kept: string[]; stripped: string[] } {
+  const scopeSet = new Set(scope);
+  const kept = files.filter((f) => scopeSet.has(f));
+  const stripped = files.filter((f) => !scopeSet.has(f));
+  return { kept, stripped };
+}
+
 /** Validate structured task arguments at the plugin's task boundary. */
 export function validateDelegationBoundary(args: unknown): DelegationValidation | undefined {
   if (!args || typeof args !== "object") return undefined;
