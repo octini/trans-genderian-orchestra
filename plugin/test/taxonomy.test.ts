@@ -22,18 +22,18 @@ function reportFor(status: TaskStatus, retryable: boolean, opts: { withGapsClari
 describe("task taxonomy parsing — status × retryable → recovery", () => {
   const table: Array<[TaskStatus, boolean, string]> = [
     ["complete", false, "retry"], // complete valid -> retry fallback but completionSafe true; gate will allow close
-    ["bail", false, "escalate"],
-    ["bail", true, "escalate"], // bail never retry/reroute regardless of retryable
+    ["bail", false, "abandon"],
+    ["bail", true, "abandon"], // bail never retry/reroute regardless of retryable — terminal
     ["failed", true, "retry"],
     ["failed", false, "escalate"],
-    ["tripwire", false, "escalate"],
-    ["tripwire", true, "escalate"], // tripwire never plain retry even if retryable true
+    ["tripwire", false, "fix-plan"],
+    ["tripwire", true, "fix-plan"], // tripwire never plain retry even if retryable true — fix-plan
   ];
   test.each(table)("parse %s retryable=%s → recovery %s", (status, retryable, expectedRecovery) => {
     const raw = reportFor(status, retryable);
     const parsed = parseTaskReport(raw);
-    expect(parsed.taskStatus).toBe(status);
-    expect(parsed.retryable).toBe(retryable);
+    expect(parsed.taxonomy.status).toBe(status);
+    expect(parsed.taxonomy.retryable).toBe(retryable);
     expect(parsed.taxonomy).toEqual({ status, retryable });
     expect(parsed.recovery).toBe(expectedRecovery);
     // discriminated union sanity: taxonomy.status discriminates
@@ -50,14 +50,15 @@ describe("task taxonomy parsing — status × retryable → recovery", () => {
     expect(gate.recovery).toBeUndefined();
   });
 
-  test("bail → no-reroute terminal (escalate, never reroute/retry)", () => {
+  test("bail → no-reroute terminal (abandon, never reroute/retry)", () => {
     const parsed = parseTaskReport(reportFor("bail", false));
-    expect(parsed.recovery).toBe("escalate");
+    expect(parsed.recovery).toBe("abandon");
     expect(parsed.recovery).not.toBe("reroute");
     expect(parsed.recovery).not.toBe("retry");
+    expect(parsed.recovery).not.toBe("escalate");
     const gate = evaluateClosure("standard", baseLifecycle, parsed);
     expect(gate.canClose).toBe(false);
-    expect(gate.recovery).toBe("escalate");
+    expect(gate.recovery).toBe("abandon");
     expect(gate.recovery).not.toBe("reroute");
   });
 
@@ -75,18 +76,61 @@ describe("task taxonomy parsing — status × retryable → recovery", () => {
     expect(gate.recovery).toBe("escalate");
   });
 
-  test("tripwire → plan-fix/escalate never plain retry", () => {
+  test("tripwire → fix-plan never plain retry", () => {
     const parsed = parseTaskReport(reportFor("tripwire", false));
-    expect(parsed.recovery).toBe("escalate");
+    expect(parsed.recovery).toBe("fix-plan");
     expect(parsed.recovery).not.toBe("retry");
+    expect(parsed.recovery).not.toBe("escalate");
     const gate = evaluateClosure("standard", baseLifecycle, parsed);
-    expect(gate.recovery).toBe("escalate");
+    expect(gate.recovery).toBe("fix-plan");
     expect(gate.recovery).not.toBe("retry");
-    // even when retryable true, tripwire stays escalate
+    // even when retryable true, tripwire stays fix-plan
     const parsedRetryable = parseTaskReport(`STATUS: tripwire\nCHANGES: x\nVERIFIED: exit gate: true\nGAPS: scope violation\nRETRYABLE: true`);
-    expect(parsedRetryable.taskStatus).toBe("tripwire");
-    expect(parsedRetryable.recovery).toBe("escalate");
+    expect(parsedRetryable.taxonomy.status).toBe("tripwire");
+    expect(parsedRetryable.recovery).toBe("fix-plan");
     expect(parsedRetryable.recovery).not.toBe("retry");
+  });
+});
+
+describe("GAPS clarification precedence with terminal taxonomy", () => {
+  test("bail + GAPS clarification → terminal abandon outranks clarification", () => {
+    const raw = `STATUS: bail\nCHANGES: x\nVERIFIED: exit gate: true\nGAPS: need user clarification — human said stop`;
+    const parsed = parseTaskReport(raw);
+    expect(parsed.taxonomy.status).toBe("bail");
+    expect(parsed.recovery).toBe("abandon");
+    expect(parsed.recovery).not.toBe("user-clarification");
+    const gate = evaluateClosure("standard", baseLifecycle, parsed);
+    expect(gate.recovery).toBe("abandon");
+  });
+
+  test("tripwire + GAPS clarification → fix-plan outranks clarification", () => {
+    const raw = `STATUS: tripwire\nCHANGES: x\nVERIFIED: exit gate: true\nGAPS: need user clarification but also scope violation`;
+    const parsed = parseTaskReport(raw);
+    expect(parsed.taxonomy.status).toBe("tripwire");
+    expect(parsed.recovery).toBe("fix-plan");
+    expect(parsed.recovery).not.toBe("user-clarification");
+  });
+
+  test("failed + GAPS clarification → user-clarification (non-terminal)", () => {
+    const raw = `STATUS: failed\nCHANGES: x\nVERIFIED: exit gate: true\nGAPS: need user clarification\nRETRYABLE: true`;
+    const parsed = parseTaskReport(raw);
+    expect(parsed.taxonomy.status).toBe("failed");
+    expect(parsed.recovery).toBe("user-clarification");
+  });
+
+  test("complete + GAPS clarification → contradiction takes precedence (completed status with non-empty GAPS is contradiction)", () => {
+    // complete with GAPS clarification is first a contradiction (complete must have GAPS none)
+    const raw = `STATUS: complete\nCHANGES: x\nVERIFIED: exit gate: true\nGAPS: need user clarification`;
+    const parsed = parseTaskReport(raw);
+    expect(parsed.taxonomy.status).toBe("complete");
+    // contradictions outrank GAPS
+    expect(parsed.contradictions.length).toBeGreaterThan(0);
+    expect(parsed.recovery).toBe("escalate");
+  });
+
+  test("failed with no GAPS clarification → taxonomy routing", () => {
+    const parsed = parseTaskReport(reportFor("failed", true));
+    expect(parsed.recovery).toBe("retry");
   });
 });
 
@@ -94,8 +138,8 @@ describe("absent-field default", () => {
   test("missing TASK_STATUS/STATUS defaults to failed retryable true", () => {
     const raw = "CHANGES: x\nVERIFIED: exit gate: true\nGAPS: none";
     const parsed = parseTaskReport(raw);
-    expect(parsed.taskStatus).toBe("failed");
-    expect(parsed.retryable).toBe(true);
+    expect(parsed.taxonomy.status).toBe("failed");
+    expect(parsed.taxonomy.retryable).toBe(true);
     expect(parsed.taxonomy).toEqual({ status: "failed", retryable: true });
     expect(parsed.missing).toContain("STATUS");
     expect(parsed.valid).toBe(false);
@@ -109,38 +153,44 @@ describe("absent-field default", () => {
     // legacy partial → mapped to failed retryable
     const legacyPartial = parseTaskReport("STATUS: partial\nCHANGES: x\nVERIFIED: exit gate: true\nGAPS: todo");
     expect(legacyPartial.status).toBe("partial");
-    expect(legacyPartial.taskStatus).toBe("failed");
-    expect(legacyPartial.retryable).toBe(true);
+    expect(legacyPartial.taxonomy.status).toBe("failed");
+    expect(legacyPartial.taxonomy.retryable).toBe(true);
     expect(legacyPartial.recovery).toBe("retry");
     expect(legacyPartial.valid).toBe(true);
 
     // legacy blocked → mapped to tripwire
     const legacyBlocked = parseTaskReport("STATUS: blocked\nCHANGES: x\nVERIFIED: exit gate: true\nGAPS: blocked");
     expect(legacyBlocked.status).toBe("blocked");
-    expect(legacyBlocked.taskStatus).toBe("tripwire");
-    expect(legacyBlocked.recovery).toBe("escalate");
+    expect(legacyBlocked.taxonomy.status).toBe("tripwire");
+    expect(legacyBlocked.recovery).toBe("fix-plan");
 
     // legacy complete → still complete
     const legacyComplete = parseTaskReport("STATUS: complete\nCHANGES: x\nVERIFIED: exit gate: true\nGAPS: none");
     expect(legacyComplete.status).toBe("complete");
-    expect(legacyComplete.taskStatus).toBe("complete");
+    expect(legacyComplete.taxonomy.status).toBe("complete");
     expect(legacyComplete.completionSafe).toBe(true);
   });
 
-  test("explicit TASK_STATUS field overrides STATUS", () => {
+  test("explicit TASK_STATUS field overrides STATUS but conflicting statuses become contradiction", () => {
     const raw = "STATUS: complete\nTASK_STATUS: bail\nCHANGES: x\nVERIFIED: exit gate: true\nGAPS: human rejected";
     const parsed = parseTaskReport(raw);
     expect(parsed.status).toBe("complete");
-    expect(parsed.taskStatus).toBe("bail");
+    expect(parsed.taxonomy.status).toBe("bail");
+    // conflicting statuses should produce contradiction
+    expect(parsed.contradictions.length).toBeGreaterThan(0);
+    expect(parsed.contradictions.join(" ")).toContain("STATUS");
+    expect(parsed.contradictions.join(" ")).toContain("TASK_STATUS");
+    expect(parsed.valid).toBe(false);
+    expect(parsed.completionSafe).toBe(false);
     expect(parsed.recovery).toBe("escalate");
   });
 
   test("RETRYABLE field parsed case-insensitively", () => {
     const t = parseTaskReport("STATUS: failed\nCHANGES: x\nVERIFIED: exit gate: true\nGAPS: err\nRETRYABLE: False");
-    expect(t.retryable).toBe(false);
+    expect(t.taxonomy.retryable).toBe(false);
     expect(t.recovery).toBe("escalate");
     const t2 = parseTaskReport("STATUS: failed\nCHANGES: x\nVERIFIED: exit gate: true\nGAPS: err\nRETRYABLE: TRUE");
-    expect(t2.retryable).toBe(true);
+    expect(t2.taxonomy.retryable).toBe(true);
     expect(t2.recovery).toBe("retry");
   });
 });
@@ -149,7 +199,7 @@ describe("contradiction detection precedence over declared status", () => {
   test("STATUS complete vs VERIFIED failure still fires even when taskStatus complete", () => {
     const raw = "STATUS: complete\nCHANGES: x\nVERIFIED: exit gate: true; tests failed\nGAPS: none";
     const parsed = parseTaskReport(raw);
-    expect(parsed.taskStatus).toBe("complete");
+    expect(parsed.taxonomy.status).toBe("complete");
     expect(parsed.contradictions.length).toBeGreaterThan(0);
     expect(parsed.valid).toBe(false);
     expect(parsed.completionSafe).toBe(false);
@@ -162,7 +212,7 @@ describe("contradiction detection precedence over declared status", () => {
   test("TASK_STATUS complete vs VERIFIED failure precedence", () => {
     const raw = "TASK_STATUS: complete\nSTATUS: partial\nCHANGES: x\nVERIFIED: exit gate: true; error occurred\nGAPS: none";
     const parsed = parseTaskReport(raw);
-    expect(parsed.taskStatus).toBe("complete");
+    expect(parsed.taxonomy.status).toBe("complete");
     expect(parsed.contradictions.length).toBeGreaterThan(0);
     expect(parsed.recovery).toBe("escalate");
   });
@@ -173,6 +223,29 @@ describe("contradiction detection precedence over declared status", () => {
     expect(parsed.contradictions.length).toBeGreaterThan(0);
     expect(parsed.recovery).toBe("escalate");
     expect(parsed.valid).toBe(false);
+  });
+
+  test("STATUS complete + TASK_STATUS failed opposite conflict → contradiction", () => {
+    const raw = "STATUS: complete\nTASK_STATUS: failed\nCHANGES: x\nVERIFIED: exit gate: true\nGAPS: none";
+    const parsed = parseTaskReport(raw);
+    expect(parsed.taxonomy.status).toBe("failed");
+    expect(parsed.contradictions.join(" ")).toContain("STATUS");
+    expect(parsed.contradictions.join(" ")).toContain("TASK_STATUS");
+    expect(parsed.valid).toBe(false);
+    expect(parsed.completionSafe).toBe(false);
+    expect(parsed.recovery).toBe("escalate");
+    const gate = evaluateClosure("standard", baseLifecycle, parsed);
+    expect(gate.recovery).toBe("escalate");
+    expect(gate.canClose).toBe(false);
+  });
+
+  test("STATUS failed + TASK_STATUS complete opposite conflict → contradiction", () => {
+    const raw = "STATUS: failed\nTASK_STATUS: complete\nCHANGES: x\nVERIFIED: exit gate: true\nGAPS: none";
+    const parsed = parseTaskReport(raw);
+    expect(parsed.taxonomy.status).toBe("complete");
+    expect(parsed.contradictions.length).toBeGreaterThan(0);
+    expect(parsed.valid).toBe(false);
+    expect(parsed.completionSafe).toBe(false);
   });
 
   test("missing exit-gate evidence still malformed regardless of taxonomy", () => {
@@ -187,7 +260,7 @@ describe("contradiction detection precedence over declared status", () => {
     const raw = "WATCHDOG-ABORT\nSTATUS: complete\nCHANGES: x\nVERIFIED: exit gate: true\nGAPS: none";
     const parsed = parseTaskReport(raw);
     expect(parsed.watchdogAborted).toBe(true);
-    expect(parsed.taskStatus).toBe("complete");
+    expect(parsed.taxonomy.status).toBe("complete");
     expect(parsed.recovery).toBe("reroute");
     const gate = evaluateClosure("standard", baseLifecycle, parsed);
     expect(gate.recovery).toBe("reroute");
@@ -212,10 +285,10 @@ describe("contradiction detection precedence over declared status", () => {
 describe("lifecycle taxonomy routing table", () => {
   test.each([
     ["complete", false, undefined], // success path: canClose true, recovery undefined
-    ["bail", false, "escalate"],
+    ["bail", false, "abandon"],
     ["failed", true, "retry"],
     ["failed", false, "escalate"],
-    ["tripwire", false, "escalate"],
+    ["tripwire", false, "fix-plan"],
   ] as Array<[TaskStatus, boolean, string | undefined]>)("lifecycle %s retryable=%s → %s", (status, retryable, expected) => {
     const raw = reportFor(status, retryable);
     const report = parseTaskReport(raw);
@@ -233,12 +306,23 @@ describe("lifecycle taxonomy routing table", () => {
     const bail = parseTaskReport(reportFor("bail", false));
     const gate = evaluateClosure("tiny", {}, bail);
     expect(gate.canClose).toBe(false);
-    expect(gate.recovery).toBe("escalate");
+    expect(gate.recovery).toBe("abandon");
+  });
+
+  test("lifecycle GAPS precedence with terminal taxonomy", () => {
+    const bailWithClarify = parseTaskReport("STATUS: bail\nCHANGES: x\nVERIFIED: exit gate: true\nGAPS: need user clarification");
+    expect(bailWithClarify.recovery).toBe("abandon");
+    const gate = evaluateClosure("standard", baseLifecycle, bailWithClarify);
+    expect(gate.recovery).toBe("abandon");
+    const failedWithClarify = parseTaskReport("STATUS: failed\nCHANGES: x\nVERIFIED: exit gate: true\nGAPS: need user clarification\nRETRYABLE: true");
+    expect(failedWithClarify.recovery).toBe("user-clarification");
+    const gate2 = evaluateClosure("standard", baseLifecycle, failedWithClarify);
+    expect(gate2.recovery).toBe("user-clarification");
   });
 });
 
 describe("discriminated union no leakage", () => {
-  test("taxonomy is discriminated by status field", () => {
+  test("taxonomy is discriminated by status field and lifecycle consumes union", () => {
     const completed: import("../src/report").TaskTaxonomy = { status: "complete", retryable: false };
     const bailed: import("../src/report").TaskTaxonomy = { status: "bail", retryable: false };
     const failed: import("../src/report").TaskTaxonomy = { status: "failed", retryable: true };
@@ -247,5 +331,10 @@ describe("discriminated union no leakage", () => {
     expect(bailed.status).toBe("bail");
     expect(failed.status).toBe("failed");
     expect(tripped.status).toBe("tripwire");
+    // lifecycle consumes union directly
+    const report = parseTaskReport(reportFor("bail", false));
+    // verify union shape is used, not scalar fields
+    expect(report.taxonomy).toBeDefined();
+    expect("status" in report.taxonomy && "retryable" in report.taxonomy).toBe(true);
   });
 });

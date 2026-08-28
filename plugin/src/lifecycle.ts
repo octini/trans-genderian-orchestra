@@ -64,21 +64,24 @@ function deriveRecoveryFromTaxonomy(report: ParsedReport | undefined): RecoveryA
   // Precedence: watchdog and contradictions are authoritative (from report.ts)
   if (report.watchdogAborted) return "reroute";
   if (report.contradictions.length > 0) return "escalate";
-  // GAPS clarification preserves user-clarification route for backward compat
+  // Terminal taxonomy outranks GAPS clarification — human already decided
+  switch (report.taxonomy.status) {
+    case "bail":
+      return "abandon";
+    case "tripwire":
+      return "fix-plan";
+    default:
+      break;
+  }
+  // GAPS clarification remains the route for complete/failed reports
   const gapsNeedsClarification = report.fields.GAPS && /clarif(?:y|ication)|ambiguous|unclear|need(?:s)? user/i.test(report.fields.GAPS);
   if (gapsNeedsClarification) {
-    // For taxonomy that is strictly non-retry (bail/tripwire), we still respect clarification as non-retry
-    // but return user-clarification to signal human input needed
     return "user-clarification";
   }
-  // Taxonomy routing — consumes {status, retryable}
-  switch (report.taskStatus) {
-    case "bail":
-      return "escalate";
-    case "tripwire":
-      return "escalate";
+  // Taxonomy routing — consumes discriminated union {status, retryable}
+  switch (report.taxonomy.status) {
     case "failed":
-      return report.retryable ? "retry" : "escalate";
+      return report.taxonomy.retryable ? "retry" : "escalate";
     case "complete":
       return "retry";
     default:
@@ -89,9 +92,9 @@ function deriveRecoveryFromTaxonomy(report: ParsedReport | undefined): RecoveryA
 /**
  * Validate closure metadata; this does not verify or mutate a Beads issue.
  * Recovery derives from taxonomy {status, retryable} with precedence:
- * watchdog→reroute, contradictions→escalate, bail→escalate (never reroute),
- * failed+retryable→retry, failed+!retryable→escalate, tripwire→escalate (plan-fix),
- * complete→success. No live bd calls (metadata-only).
+ * watchdog→reroute, contradictions→escalate, bail→abandon (never reroute),
+ * tripwire→fix-plan (never retry), GAPS clarification→user-clarification (for failed/complete),
+ * failed+retryable→retry, failed+!retryable→escalate, complete→success. No live bd calls (metadata-only).
  */
 export function evaluateClosure(
   route: RouteClass,

@@ -86,8 +86,8 @@ describe("parseTaskReport", () => {
 
   test("recovery fallback table: watchdog reroute, blocked escalate, clarification, else retry", () => {
     expect(parseTaskReport("WATCHDOG-ABORT").recovery).toBe("reroute");
-    expect(parseTaskReport("STATUS: blocked\nCHANGES: x\nVERIFIED: exit gate: true\nGAPS: blocked").recovery).toBe("escalate");
-    expect(parseTaskReport("STATUS: escalate\nCHANGES: x\nVERIFIED: exit gate: true\nGAPS: escalate").recovery).toBe("escalate");
+    expect(parseTaskReport("STATUS: blocked\nCHANGES: x\nVERIFIED: exit gate: true\nGAPS: blocked").recovery).toBe("fix-plan");
+    expect(parseTaskReport("STATUS: escalate\nCHANGES: x\nVERIFIED: exit gate: true\nGAPS: escalate").recovery).toBe("fix-plan");
     expect(parseTaskReport("STATUS: complete\nCHANGES: x\nVERIFIED: tests failed\nGAPS: none").recovery).toBe("escalate");
     expect(parseTaskReport("STATUS: partial\nCHANGES: x\nVERIFIED: exit gate: true\nGAPS: need user clarification").recovery).toBe("user-clarification");
     expect(parseTaskReport("STATUS: partial\nCHANGES: x\nVERIFIED: exit gate: true\nGAPS: todo").recovery).toBe("retry");

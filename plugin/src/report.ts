@@ -1,6 +1,6 @@
 export const REPORT_STATUSES = ["complete", "partial", "blocked", "escalate"] as const;
 export type ReportStatus = (typeof REPORT_STATUSES)[number];
-export const RECOVERY_ACTIONS = ["retry", "reroute", "escalate", "user-clarification"] as const;
+export const RECOVERY_ACTIONS = ["retry", "reroute", "escalate", "user-clarification", "abandon", "fix-plan"] as const;
 export type RecoveryAction = (typeof RECOVERY_ACTIONS)[number];
 
 export const TASK_STATUSES = ["complete", "bail", "failed", "tripwire"] as const;
@@ -18,9 +18,6 @@ export interface ParsedReport {
   /** True only when VERIFIED contains the exact explicit `exit gate: true` evidence. */
   exitGate: boolean;
   status?: ReportStatus;
-  /** Typed taxonomy status — discriminated union discriminant */
-  taskStatus: TaskStatus;
-  retryable: boolean;
   taxonomy: TaskTaxonomy;
   fields: { STATUS?: string; CHANGES?: string; VERIFIED?: string; GAPS?: string; TASK_STATUS?: string; RETRYABLE?: string };
   raw: string;
@@ -39,6 +36,20 @@ function hasFailure(text: string): boolean {
     .replace(/\bno\s+(?:failures?|errors?)\b/gi, "")
     .replace(/\bdid\s+not\s+fail(?:ed|ure|ing)?\b/gi, "");
   return /\b(?:fail(?:ed|ure)?|failing|error|not run|unverified|unknown|did not pass)\b/i.test(withoutNegatedSuccess);
+}
+
+function statusTextToTaskStatus(text: string | undefined): TaskStatus | undefined {
+  if (!text) return undefined;
+  const lower = text.trim().toLowerCase();
+  const asTaxonomy = TASK_STATUSES.find((c) => lower === c) as TaskStatus | undefined;
+  if (asTaxonomy) return asTaxonomy;
+  const asLegacy = REPORT_STATUSES.find((c) => lower === c);
+  if (asLegacy) {
+    if (asLegacy === "complete") return "complete";
+    if (asLegacy === "partial") return "failed";
+    if (asLegacy === "blocked" || asLegacy === "escalate") return "tripwire";
+  }
+  return undefined;
 }
 
 /** Parse a specialist report without treating prose as proof of completion. */
@@ -106,6 +117,15 @@ export function parseTaskReport(raw: string): ParsedReport {
     taskStatus = "failed";
   }
 
+  // Conflicting legacy/new status: if both STATUS and TASK_STATUS present and imply different taxonomy, flag contradiction
+  if (fields.STATUS !== undefined && fields.TASK_STATUS !== undefined) {
+    const impliedFromStatus = statusTextToTaskStatus(fields.STATUS);
+    const impliedFromTask = taskStatusFromField;
+    if (impliedFromStatus && impliedFromTask && impliedFromStatus !== impliedFromTask) {
+      contradictions.push(`STATUS ${fields.STATUS} conflicts with TASK_STATUS ${fields.TASK_STATUS}`);
+    }
+  }
+
   // Additional contradiction for taxonomy complete (mirrors legacy, ensures precedence)
   if (taskStatus === "complete" && fields.VERIFIED && hasFailure(fields.VERIFIED)) {
     const msg = "TASK_STATUS complete conflicts with failed or unverified VERIFIED evidence";
@@ -130,7 +150,22 @@ export function parseTaskReport(raw: string): ParsedReport {
     else retryable = false;
   }
 
-  const taxonomy: TaskTaxonomy = { status: taskStatus, retryable } as TaskTaxonomy;
+  // Construct discriminated union without assertion — exhaustive switch
+  let taxonomy: TaskTaxonomy;
+  switch (taskStatus) {
+    case "complete":
+      taxonomy = { status: "complete", retryable };
+      break;
+    case "bail":
+      taxonomy = { status: "bail", retryable };
+      break;
+    case "failed":
+      taxonomy = { status: "failed", retryable };
+      break;
+    case "tripwire":
+      taxonomy = { status: "tripwire", retryable };
+      break;
+  }
 
   // watchdogAborted detection: reroute is authoritative and must not be trusted as complete
   const watchdogAborted = /watchdog.{0,40}abort/i.test(text);
@@ -138,22 +173,20 @@ export function parseTaskReport(raw: string): ParsedReport {
   let recovery: RecoveryAction = "retry";
   if (watchdogAborted) recovery = "reroute";
   else if (contradictions.length > 0) recovery = "escalate";
+  else if (taxonomy.status === "bail") recovery = "abandon";
+  else if (taxonomy.status === "tripwire") recovery = "fix-plan";
   else if (fields.GAPS && /clarif(?:y|ication)|ambiguous|unclear|need(?:s)? user/i.test(fields.GAPS)) recovery = "user-clarification";
-  else if (taskStatus === "bail") recovery = "escalate";
-  else if (taskStatus === "tripwire") recovery = "escalate";
-  else if (taskStatus === "failed") recovery = retryable ? "retry" : "escalate";
-  else if (taskStatus === "complete") recovery = "retry";
+  else if (taxonomy.status === "failed") recovery = taxonomy.retryable ? "retry" : "escalate";
+  else if (taxonomy.status === "complete") recovery = "retry";
   else {
     // fallback for any unexpected — preserve legacy blocked/escalate handling
     if (status === "blocked" || status === "escalate") recovery = "escalate";
   }
   return {
     valid,
-    completionSafe: valid && taskStatus === "complete" && exitGate,
+    completionSafe: valid && taxonomy.status === "complete" && exitGate,
     exitGate,
     status,
-    taskStatus,
-    retryable,
     taxonomy,
     fields,
     raw: text,
