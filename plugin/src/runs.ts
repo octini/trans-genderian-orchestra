@@ -266,7 +266,7 @@ export const DEFAULT_PRUNE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 export const DEFAULT_PRUNE_MAX_BYTES = 50 * 1024 * 1024;
 export const DEFAULT_PRUNE_MAX_FILES = 200;
 
-// Single-flight guard for prune — F5 repo-scoped (not global)
+// Single-flight guard for prune — F5 repo-scoped (not global, keyed by repoRoot)
 const pruneInFlight = new Map<string, Promise<string[]>>();
 
 export async function pruneRuns(repoRoot: string, opts: PruneOptions = {}): Promise<string[]> {
