@@ -86,6 +86,16 @@ function defaultUptimeNow(): number {
   return Math.round(process.uptime() * 1000);
 }
 
+function hashString(s: string): string {
+  // FNV-1a 32-bit — no deps, fast, hash full signature for distinctness
+  let hash = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    hash ^= s.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
 export function toolSignature(tool: string, input: unknown): string {
   const t = (tool ?? "").trim();
   let primary = "";
@@ -151,9 +161,12 @@ export function toolSignature(tool: string, input: unknown): string {
       primary = String(input);
     }
   }
-  let norm = primary.trim();
-  if (norm.length > 200) norm = norm.slice(0, 200);
-  if (norm) return `${t || "unknown"}:${norm}`;
+  const norm = primary.trim();
+  if (norm) {
+    const hash = hashString(norm);
+    const prefix = norm.slice(0, 48);
+    return `${t || "unknown"}:${prefix}:${hash}`;
+  }
   return t || "unknown";
 }
 

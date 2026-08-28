@@ -146,4 +146,29 @@ describe("validateDelegationPacket", () => {
     expect(validateDelegationPacket({ route: "other", tiny: false, reasons: [] }, full).valid).toBe(false);
     expect(validateDelegationPacket({ route: "standard", tiny: true, reasons: [] }, full).valid).toBe(false);
   });
+
+  test("progressPath accepts beads IDs with dots and underscores (VALID_BEAD_ID charset)", () => {
+    const withDot = { ...full, progressPath: ".tgo/tgo-a6r.20/progress.md" };
+    expect(validateDelegationPacket(standard, withDot).valid).toBe(true);
+    expect(validateDelegationPacket(standard, withDot).malformed).not.toContain("progressPath");
+    const withUnderscore = { ...full, progressPath: ".tgo/tgo_foo/progress.md" };
+    expect(validateDelegationPacket(standard, withUnderscore).valid).toBe(true);
+    expect(validateDelegationPacket(standard, withUnderscore).malformed).not.toContain("progressPath");
+    const withBoth = { ...full, progressPath: ".tgo/tgo-a6r.20_foo-bar/progress.md" };
+    expect(validateDelegationPacket(standard, withBoth).valid).toBe(true);
+  });
+
+  test("progressPath rejects path traversal and invalid bead IDs", () => {
+    const dotDot = { ...full, progressPath: ".tgo/../progress.md" };
+    const dotHidden = { ...full, progressPath: ".tgo/.hidden/progress.md" };
+    const empty = { ...full, progressPath: ".tgo//progress.md" };
+    for (const bad of [dotDot, dotHidden, empty]) {
+      const result = validateDelegationPacket(standard, bad);
+      expect(result.valid).toBe(false);
+      expect(result.malformed).toContain("progressPath");
+      expect(result.diagnostics.join(" ")).toContain("progressPath must match");
+    }
+    const traversal = { ...full, progressPath: ".tgo/../../etc/passwd" };
+    expect(validateDelegationPacket(standard, traversal).valid).toBe(false);
+  });
 });

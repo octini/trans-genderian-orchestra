@@ -11,7 +11,8 @@ export const REGISTRY_URL = `https://registry.npmjs.org/${PLUGIN_NPM_NAME}/lates
  * Handles `v` prefix and pre-release suffixes (pre-release < release).
  */
 export function compareVersions(a: string, b: string): number {
-  const norm = (v: string) => v.trim().replace(/^v/, "");
+  const stripBuild = (v: string) => v.split("+", 1)[0] ?? v;
+  const norm = (v: string) => stripBuild(v.trim().replace(/^v/, ""));
   const parse = (v: string) => {
     const [core, pre] = norm(v).split("-", 2);
     const parts = core.split(".").map((p) => {
