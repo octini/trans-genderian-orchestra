@@ -1,109 +1,19 @@
 import { classifyRouting, type RouteClass, type RoutingInput } from "./fit";
-import * as fs from "node:fs/promises";
-import * as path from "node:path";
-
-export function hashString(s: string): string {
-  // FNV-1a 32-bit — stable vector: hashString("foo.ts") === "b5c9292a" (shared with watchdog.ts / session-reuse.ts)
-  let hash = 2166136261;
-  for (let i = 0; i < s.length; i++) {
-    hash ^= s.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0");
-}
-
-export interface DefSnapshot {
-  promptHash: string;
-  model: string;
-  preset: string;
-  seatFrontmatterHash: string;
-  capturedAt: string;
-}
-
-export function buildDefSnapshot(opts: {
-  promptText: string;
-  seatFrontmatter: string;
-  model: string;
-  preset: string;
-  capturedAt?: string;
-}): DefSnapshot {
-  return {
-    promptHash: hashString(opts.promptText),
-    seatFrontmatterHash: hashString(opts.seatFrontmatter),
-    model: opts.model,
-    preset: opts.preset,
-    capturedAt: opts.capturedAt ?? new Date().toISOString(),
-  };
-}
-
-export function defSnapshotPath(repoRoot: string, issueId: string): string {
-  return path.join(repoRoot, ".tgo", issueId, "def-snapshot.json");
-}
-
-export async function writeDefSnapshot(
-  repoRoot: string,
-  issueId: string,
-  snapshot: DefSnapshot,
-  opts?: { useLatestDefinitions?: boolean }
-): Promise<boolean> {
-  const target = defSnapshotPath(repoRoot, issueId);
-  const dir = path.dirname(target);
-  try { await fs.mkdir(dir, { recursive: true }); } catch {}
-  if (!opts?.useLatestDefinitions) {
-    try { await fs.access(target); return false; } catch {}
-  }
-  const tmp = path.join(dir, `def-snapshot.json.${process.pid}.${Date.now()}.tmp`);
-  try {
-    await fs.writeFile(tmp, JSON.stringify(snapshot, null, 2), "utf-8");
-    await fs.rename(tmp, target);
-    return true;
-  } catch {
-    try { await fs.rm(tmp, { force: true }); } catch {}
-    return false;
-  }
-}
-
-export async function readDefSnapshot(repoRoot: string, issueId: string): Promise<DefSnapshot | undefined> {
-  const target = defSnapshotPath(repoRoot, issueId);
-  try {
-    const raw = await fs.readFile(target, "utf-8");
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    if (!parsed || typeof parsed !== "object") return undefined;
-    const { promptHash, seatFrontmatterHash, model, preset, capturedAt } = parsed as Record<string, unknown>;
-    if (typeof promptHash !== "string" || !/^[0-9a-f]{8}$/.test(promptHash)) return undefined;
-    if (typeof seatFrontmatterHash !== "string" || !/^[0-9a-f]{8}$/.test(seatFrontmatterHash)) return undefined;
-    if (typeof model !== "string" || model.trim().length === 0) return undefined;
-    if (typeof preset !== "string" || preset.trim().length === 0) return undefined;
-    if (typeof capturedAt !== "string" || capturedAt.trim().length === 0) return undefined;
-    return parsed as unknown as DefSnapshot;
-  } catch {
-    return undefined;
-  }
-}
-
-export async function ensureDefSnapshot(opts: {
-  repoRoot: string;
-  issueId: string;
-  promptText: string;
-  seatFrontmatter: string;
-  model: string;
-  preset: string;
-  useLatestDefinitions?: boolean;
-  capturedAt?: string;
-}): Promise<{ snapshot: DefSnapshot; written: boolean; reused: boolean }> {
-  const existing = await readDefSnapshot(opts.repoRoot, opts.issueId);
-  if (existing && !opts.useLatestDefinitions) return { snapshot: existing, written: false, reused: true };
-  const snapshot = buildDefSnapshot({
-    promptText: opts.promptText,
-    seatFrontmatter: opts.seatFrontmatter,
-    model: opts.model,
-    preset: opts.preset,
-    capturedAt: opts.capturedAt,
-  });
-  const written = await writeDefSnapshot(opts.repoRoot, opts.issueId, snapshot, { useLatestDefinitions: opts.useLatestDefinitions });
-  if (!written && existing) return { snapshot: existing, written: false, reused: true };
-  return { snapshot, written, reused: false };
-}
+import {
+  hashString,
+  hashFivePartPacket,
+  buildDefSnapshot,
+  buildDefSnapshotFromPrompt,
+  defSnapshotPath,
+  writeDefSnapshot,
+  readDefSnapshot,
+  ensureDefSnapshot,
+  isValidBeadID,
+  assertValidBeadID,
+  VALID_BEAD_ID,
+  type DefSnapshot,
+} from "./def-snapshot";
+export { hashString, hashFivePartPacket, buildDefSnapshot, buildDefSnapshotFromPrompt, defSnapshotPath, writeDefSnapshot, readDefSnapshot, ensureDefSnapshot, isValidBeadID, assertValidBeadID, VALID_BEAD_ID, type DefSnapshot };
 
 export interface DelegationPacket {
   Objective?: unknown;
@@ -269,6 +179,15 @@ export function validateDelegationPacket(
       if (!malformed.includes("issueStatusObserved") && !missing.includes("issueStatusObserved")) {
         // ensure the forged packet is marked invalid even if caller only sent issueClaimed
       }
+    }
+  }
+
+  // P0: issueId must match VALID_BEAD_ID before any filesystem use — applies to all routes
+  if ("issueId" in value && typeof value.issueId === "string") {
+    const id = (value.issueId as string).trim();
+    if (id.length > 0 && !isValidBeadID(id)) {
+      if (!malformed.includes("issueId")) malformed.push("issueId");
+      diagnostics.push(`issueId must match VALID_BEAD_ID ${VALID_BEAD_ID.source} — got ${JSON.stringify(value.issueId)}.`);
     }
   }
 

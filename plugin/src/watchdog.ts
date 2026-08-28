@@ -1,3 +1,6 @@
+import { hashString } from "./def-snapshot";
+export { hashString };
+
 export type WatchdogStatusType = "idle" | "busy" | "retry";
 
 export interface WatchdogConfig {
@@ -84,16 +87,6 @@ function defaultUptimeNow(): number {
   // process.uptime() is a monotonic clock that does NOT advance during system
   // sleep (kernel ticks are suspended); Date.now() is wall clock that DOES.
   return Math.round(process.uptime() * 1000);
-}
-
-export function hashString(s: string): string {
-  // FNV-1a 32-bit — no deps, fast, hash full signature for distinctness
-  let hash = 2166136261;
-  for (let i = 0; i < s.length; i++) {
-    hash ^= s.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
 export function toolSignature(tool: string, input: unknown): string {

@@ -2,104 +2,32 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { estimateTokens, safeWarn } from "./config";
 import { readProgress, writeProgress, formatProgress, parseProgress, updateProgress } from "./progress";
+import {
+  hashString as defHashString,
+  hashFivePartPacket,
+  buildDefSnapshot as defBuildSnapshot,
+  buildDefSnapshotFromPrompt,
+  defSnapshotPath as defPath,
+  writeDefSnapshot as defWrite,
+  readDefSnapshot as defRead,
+  ensureDefSnapshot as defEnsure,
+  isValidBeadID,
+  assertValidBeadID,
+  type DefSnapshot as DefSnapshotType,
+} from "./def-snapshot";
 
-export function hashString(s: string): string {
-  // FNV-1a 32-bit — shared with watchdog.ts; stable vector: hashString("foo.ts") === "b5c9292a"
-  let hash = 2166136261;
-  for (let i = 0; i < s.length; i++) {
-    hash ^= s.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0");
+export const hashString = defHashString;
+export function hashPrompt(promptText: string): string { return defHashString(promptText); }
+export function hashSeatFrontmatter(content: string): string { return defHashString(content); }
+export type DefSnapshot = DefSnapshotType;
+export function defSnapshotPath(repoRoot: string, issueId: string): string { return defPath(repoRoot, issueId); }
+export function buildDefSnapshot(opts: { promptText: string; seatFrontmatter: string; model: string; preset: string; capturedAt?: string; seatFileFound?: boolean }): DefSnapshot {
+  return buildDefSnapshotFromPrompt({ promptText: opts.promptText, seatFrontmatter: opts.seatFrontmatter, seatFileFound: opts.seatFileFound ?? true, model: opts.model, preset: opts.preset, capturedAt: opts.capturedAt });
 }
-
-export function hashPrompt(promptText: string): string {
-  return hashString(promptText);
-}
-
-export function hashSeatFrontmatter(content: string): string {
-  return hashString(content);
-}
-
-export interface DefSnapshot {
-  promptHash: string;
-  model: string;
-  preset: string;
-  seatFrontmatterHash: string;
-  capturedAt: string;
-}
-
-export function defSnapshotPath(repoRoot: string, issueId: string): string {
-  return path.join(repoRoot, ".tgo", issueId, "def-snapshot.json");
-}
-
-export function buildDefSnapshot(opts: {
-  promptText: string;
-  seatFrontmatter: string;
-  model: string;
-  preset: string;
-  capturedAt?: string;
-}): DefSnapshot {
-  return {
-    promptHash: hashPrompt(opts.promptText),
-    seatFrontmatterHash: hashSeatFrontmatter(opts.seatFrontmatter),
-    model: opts.model,
-    preset: opts.preset,
-    capturedAt: opts.capturedAt ?? new Date().toISOString(),
-  };
-}
-
-export async function writeDefSnapshot(
-  repoRoot: string,
-  issueId: string,
-  snapshot: DefSnapshot,
-  opts?: { useLatestDefinitions?: boolean }
-): Promise<boolean> {
-  const target = defSnapshotPath(repoRoot, issueId);
-  const dir = path.dirname(target);
-  try {
-    await fs.mkdir(dir, { recursive: true });
-  } catch {}
-  // write-once semantics: never downgrade or mutate mid-run unless explicit opt-in
-  if (!opts?.useLatestDefinitions) {
-    try {
-      await fs.access(target);
-      return false;
-    } catch {}
-  }
-  const tmp = path.join(dir, `def-snapshot.json.${process.pid}.${Date.now()}.tmp`);
-  try {
-    const payload = JSON.stringify(snapshot, null, 2);
-    await fs.writeFile(tmp, payload, "utf-8");
-    await fs.rename(tmp, target);
-    return true;
-  } catch {
-    try { await fs.rm(tmp, { force: true }); } catch {}
-    return false;
-  }
-}
-
-export async function readDefSnapshot(repoRoot: string, issueId: string): Promise<DefSnapshot | undefined> {
-  const target = defSnapshotPath(repoRoot, issueId);
-  try {
-    const raw = await fs.readFile(target, "utf-8");
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    if (!parsed || typeof parsed !== "object") return undefined;
-    const promptHash = parsed.promptHash;
-    const seatFrontmatterHash = parsed.seatFrontmatterHash;
-    const model = parsed.model;
-    const preset = parsed.preset;
-    const capturedAt = parsed.capturedAt;
-    if (typeof promptHash !== "string" || !/^[0-9a-f]{8}$/.test(promptHash)) return undefined;
-    if (typeof seatFrontmatterHash !== "string" || !/^[0-9a-f]{8}$/.test(seatFrontmatterHash)) return undefined;
-    if (typeof model !== "string" || model.trim().length === 0) return undefined;
-    if (typeof preset !== "string" || preset.trim().length === 0) return undefined;
-    if (typeof capturedAt !== "string" || capturedAt.trim().length === 0) return undefined;
-    return parsed as unknown as DefSnapshot;
-  } catch {
-    return undefined;
-  }
-}
+export const writeDefSnapshot = defWrite;
+export const readDefSnapshot = defRead;
+export { isValidBeadID, assertValidBeadID, hashFivePartPacket };
+export const hashDelegationPacket = hashFivePartPacket;
 
 export interface ReuseDecision {
   reuse: boolean;
@@ -341,21 +269,33 @@ export async function ensureDefSnapshot(opts: {
   preset: string;
   useLatestDefinitions?: boolean;
   capturedAt?: string;
+  seatFileFound?: boolean;
 }): Promise<{ snapshot: DefSnapshot; written: boolean; reused: boolean }> {
+  assertValidBeadID(opts.issueId);
   const existing = await readDefSnapshot(opts.repoRoot, opts.issueId);
   if (existing && !opts.useLatestDefinitions) {
     return { snapshot: existing, written: false, reused: true };
   }
+  if (opts.model === "unknown") throw new Error(`ensureDefSnapshot: refusing model "unknown"`);
   const snapshot = buildDefSnapshot({
     promptText: opts.promptText,
     seatFrontmatter: opts.seatFrontmatter,
+    seatFileFound: opts.seatFileFound,
     model: opts.model,
     preset: opts.preset,
     capturedAt: opts.capturedAt,
   });
   const written = await writeDefSnapshot(opts.repoRoot, opts.issueId, snapshot, { useLatestDefinitions: opts.useLatestDefinitions });
-  if (!written && existing) {
-    return { snapshot: existing, written: false, reused: true };
+  if (!written) {
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const retry = await readDefSnapshot(opts.repoRoot, opts.issueId);
+      if (retry) return { snapshot: retry, written: false, reused: true };
+      if (existing) return { snapshot: existing, written: false, reused: true };
+      await new Promise((r) => setTimeout(r, 5 * (attempt + 1)));
+    }
+    const finalRetry = await readDefSnapshot(opts.repoRoot, opts.issueId);
+    if (finalRetry) return { snapshot: finalRetry, written: false, reused: true };
+    if (existing) return { snapshot: existing, written: false, reused: true };
   }
   return { snapshot, written, reused: false };
 }
@@ -371,16 +311,20 @@ export async function captureDelegationSession(deps: { tool: string; input: unkn
     const packet = taskArgs?.delegationPacket && typeof taskArgs.delegationPacket === "object"
       ? (taskArgs.delegationPacket as Record<string, unknown>)
       : undefined;
-    const issueId = typeof packet?.issueId === "string" ? packet.issueId.trim() : "";
+    const issueIdRaw = typeof packet?.issueId === "string" ? packet.issueId.trim() : "";
     const delegationId = typeof packet?.delegationId === "string" ? packet.delegationId.trim() : undefined;
     const outputRec = deps.output as Record<string, unknown> | undefined;
     const outputText = typeof outputRec?.output === "string" ? (outputRec.output as string) : "";
     if (outputText.includes("Background task started")) {
       return;
     }
-    if (!issueId) {
+    if (!issueIdRaw) {
       return;
     }
+    if (!isValidBeadID(issueIdRaw)) {
+      throw new Error(`invalid issueId "${issueIdRaw}" — must match ${/^[A-Za-z0-9][A-Za-z0-9._-]*$/.source}`);
+    }
+    const issueId = issueIdRaw;
     let sessionId: string | undefined;
     const meta = (deps.output as unknown as { metadata?: unknown })?.metadata;
     if (meta && typeof meta === "object" && typeof (meta as Record<string, unknown>).sessionId === "string") {
@@ -397,42 +341,15 @@ export async function captureDelegationSession(deps: { tool: string; input: unkn
     if (!/^ses_[A-Za-z0-9]+$/.test(sessionId)) {
       return;
     }
-    // Snapshot delegation definition at start — host-code write, atomic tmp+rename, write-once
+    // After-hook NEVER touches snapshot — write-once at start only. Read existing promptHash for session map.
     let promptHash: string | undefined;
     try {
-      const useLatest = deps.useLatestDefinitions ?? (typeof packet?.useLatestDefinitions === "boolean" ? packet.useLatestDefinitions : false);
-      // Resolve promptText: explicit deps > packet Objective > packet JSON
-      let promptText = deps.promptText;
-      if (promptText === undefined) {
-        if (typeof packet?.Objective === "string" && packet.Objective.trim().length > 0) promptText = packet.Objective as string;
-        else if (packet) promptText = JSON.stringify(packet);
-        else promptText = "";
-      }
-      let seatFrontmatter = deps.seatFrontmatter;
-      if (seatFrontmatter === undefined) {
-        if (typeof packet?.seatFrontmatter === "string") seatFrontmatter = packet.seatFrontmatter as string;
-        else seatFrontmatter = "";
-      }
-      const model = deps.model ?? (typeof packet?.model === "string" ? packet.model as string : "unknown");
-      const preset = deps.preset ?? (typeof packet?.preset === "string" ? packet.preset as string : "balanced");
-      if (promptText !== undefined && promptText.length > 0) {
-        const existing = await readDefSnapshot(deps.repoRoot, issueId);
-        if (!existing || useLatest) {
-          const result = await ensureDefSnapshot({
-            repoRoot: deps.repoRoot,
-            issueId,
-            promptText,
-            seatFrontmatter,
-            model,
-            preset,
-            useLatestDefinitions: useLatest,
-          });
-          promptHash = result.snapshot.promptHash;
-        } else {
-          promptHash = existing.promptHash;
-        }
-      }
-    } catch {}
+      const snap = await readDefSnapshot(deps.repoRoot, issueId);
+      if (snap) promptHash = snap.promptHash;
+    } catch (e) {
+      // Invalid issueId already rejected above; readDefSnapshot validates again, but we treat as no snapshot
+      if (String(e).includes("invalid issueId")) throw e;
+    }
     const map = await loadSessionMap(deps.repoRoot);
     const exitGate = typeof packet?.exitGate === "boolean" ? (packet.exitGate as boolean) : undefined;
     const entry: SessionMapEntry = {
@@ -442,6 +359,8 @@ export async function captureDelegationSession(deps: { tool: string; input: unkn
       ...(exitGate !== undefined ? { exitGate } : {}),
       ...(promptHash ? { promptHash } : {}),
     };
+    // Validate issueId before session map write as well
+    assertValidBeadID(issueId);
     await saveSessionMap(deps.repoRoot, upsertSession(map, issueId, entry));
   } catch (error) {
     safeWarn(deps.log as unknown as (level: "warn" | "info" | "error", message: string, extra?: Record<string, unknown>) => void, `session-reuse capture failed: ${String(error)}`);

@@ -1,5 +1,5 @@
 import { test, expect, describe } from "bun:test";
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, mkdirSync } from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as os from "node:os";
@@ -22,7 +22,8 @@ import {
 } from "../src/session-reuse";
 import {
   hashString as delegationHashString,
-  buildDefSnapshot as delegationBuild,
+  buildDefSnapshot as delegationBuildPacket,
+  buildDefSnapshotFromPrompt as delegationBuildFromPrompt,
   writeDefSnapshot as delegationWrite,
   readDefSnapshot as delegationRead,
   defSnapshotPath as delegationPath,
@@ -32,6 +33,8 @@ import { hashString as watchdogHashString } from "../src/watchdog";
 import { buildBoardTextWithHints, BoardController } from "../src/board";
 import { validateDelegationPacket } from "../src/delegation";
 import type { RoutingClassification } from "../src/fit";
+import { hashFivePartPacket, isValidBeadID, assertValidBeadID } from "../src/def-snapshot";
+import { captureDelegationSession } from "../src/session-reuse";
 
 function tmpDir(): string {
   return mkdtempSync(path.join(os.tmpdir(), "tgo-def-snapshot-"));
@@ -39,34 +42,31 @@ function tmpDir(): string {
 
 describe("hash vector pinned", () => {
   test("FNV-1a vector stable — hashString('foo.ts') === b5c9292a across modules", () => {
-    // shared vector from watchdog tgo-vtn
     expect(hashString("foo.ts")).toBe("b5c9292a");
     expect(delegationHashString("foo.ts")).toBe("b5c9292a");
     expect(watchdogHashString("foo.ts")).toBe("b5c9292a");
-    // also verify prompt/seat helpers reuse same hash
     expect(hashPrompt("foo.ts")).toBe("b5c9292a");
     expect(hashSeatFrontmatter("foo.ts")).toBe("b5c9292a");
   });
 
   test("hash stability across inputs", () => {
-    expect(hashString("")).toBe("811c9dc5"); // FNV-1a offset basis for empty
+    expect(hashString("")).toBe("811c9dc5");
     expect(hashString("hello")).toBe(hashString("hello"));
     expect(hashString("hello")).not.toBe(hashString("hello "));
     expect(hashString("prompt text A")).not.toBe(hashString("prompt text B"));
   });
 
   test("delegation buildDefSnapshot hash pinned", () => {
-    const snap = delegationBuild({
+    const snap = delegationBuildFromPrompt({
       promptText: "Implement foo",
       seatFrontmatter: "---\nname: dylan\n---\n",
       model: "opencode-go/muse-spark-1.2-contributor",
       preset: "balanced",
       capturedAt: "2026-08-28T00:00:00.000Z",
     });
-    // hashString is deterministic; pin vector for known input
     expect(snap.promptHash).toBe(hashString("Implement foo"));
     expect(snap.seatFrontmatterHash).toBe(hashString("---\nname: dylan\n---\n"));
-    // also via session-reuse builder same
+    expect(snap.seatFileFound).toBe(true);
     const snap2 = buildDefSnapshot({
       promptText: "Implement foo",
       seatFrontmatter: "---\nname: dylan\n---\n",
@@ -76,6 +76,36 @@ describe("hash vector pinned", () => {
     });
     expect(snap2.promptHash).toBe(snap.promptHash);
     expect(snap2.seatFrontmatterHash).toBe(snap.seatFrontmatterHash);
+    expect(snap2.seatFileFound).toBe(true);
+    const packetSnap = delegationBuildPacket({
+      packet: { Objective: "Implement foo", Files: ["a.ts"], Interfaces: "i", Constraints: "c", Verification: "v" },
+      seatFrontmatter: "---\nname: dylan\n---\n",
+      seatFileFound: true,
+      model: "opencode-go/muse-spark-1.2-contributor",
+      preset: "balanced",
+    });
+    expect(packetSnap.promptHash).toBe(hashFivePartPacket({ Objective: "Implement foo", Files: ["a.ts"], Interfaces: "i", Constraints: "c", Verification: "v" }));
+  });
+
+  test("five-part hash mutation matrix — each section changes hash", () => {
+    const base = { Objective: "O", Files: ["a.ts"], Interfaces: "I", Constraints: "C", Verification: "V" } as const;
+    const baseHash = hashFivePartPacket(base);
+    const mutateObjective = hashFivePartPacket({ ...base, Objective: "O2" });
+    const mutateFiles = hashFivePartPacket({ ...base, Files: ["b.ts"] });
+    const mutateInterfaces = hashFivePartPacket({ ...base, Interfaces: "I2" });
+    const mutateConstraints = hashFivePartPacket({ ...base, Constraints: "C2" });
+    const mutateVerification = hashFivePartPacket({ ...base, Verification: "V2" });
+    expect(mutateObjective).not.toBe(baseHash);
+    expect(mutateFiles).not.toBe(baseHash);
+    expect(mutateInterfaces).not.toBe(baseHash);
+    expect(mutateConstraints).not.toBe(baseHash);
+    expect(mutateVerification).not.toBe(baseHash);
+    // ensure distinct mutations produce distinct hashes
+    const hashes = new Set([baseHash, mutateObjective, mutateFiles, mutateInterfaces, mutateConstraints, mutateVerification]);
+    expect(hashes.size).toBe(6);
+    // hash covers Files array content, not just presence
+    const sameFilesDifferentOrder = hashFivePartPacket({ ...base, Files: ["b.ts", "a.ts"] });
+    expect(sameFilesDifferentOrder).not.toBe(baseHash);
   });
 });
 
@@ -89,18 +119,17 @@ describe("snapshot write/read round-trip", () => {
         seatFrontmatterHash: hashSeatFrontmatter("---\nname: dylan\n---\nImplement with care."),
         model: "opencode-go/muse-spark-1.2-contributor",
         preset: "balanced",
+        seatFileFound: true,
         capturedAt: new Date().toISOString(),
       };
       const written = await writeDefSnapshot(dir, issueId, snapshot);
       expect(written).toBe(true);
       const loaded = await readDefSnapshot(dir, issueId);
       expect(loaded).toEqual(snapshot);
-      // atomic tmp+rename leaves no tmp behind
       const tgoDir = path.join(dir, ".tgo", issueId);
       const files = await fs.readdir(tgoDir);
       expect(files.some((f) => f.includes(".tmp"))).toBe(false);
       expect(files).toContain("def-snapshot.json");
-      // raw file is valid JSON with 2-space formatting via write
       const raw = await fs.readFile(defSnapshotPath(dir, issueId), "utf-8");
       expect(JSON.parse(raw)).toEqual(snapshot);
     } finally {
@@ -117,6 +146,7 @@ describe("snapshot write/read round-trip", () => {
         seatFrontmatterHash: hashSeatFrontmatter("first seat"),
         model: "model-a",
         preset: "balanced",
+        seatFileFound: true,
         capturedAt: "2026-01-01T00:00:00.000Z",
       };
       const second: DefSnapshot = {
@@ -124,6 +154,7 @@ describe("snapshot write/read round-trip", () => {
         seatFrontmatterHash: hashSeatFrontmatter("second seat"),
         model: "model-b",
         preset: "cheap",
+        seatFileFound: true,
         capturedAt: "2026-01-02T00:00:00.000Z",
       };
       expect(await writeDefSnapshot(dir, issueId, first)).toBe(true);
@@ -145,6 +176,7 @@ describe("snapshot write/read round-trip", () => {
         seatFrontmatterHash: hashSeatFrontmatter("seat v1"),
         model: "model-a",
         preset: "balanced",
+        seatFileFound: true,
         capturedAt: "2026-01-01T00:00:00.000Z",
       };
       const second: DefSnapshot = {
@@ -152,6 +184,7 @@ describe("snapshot write/read round-trip", () => {
         seatFrontmatterHash: hashSeatFrontmatter("seat v2"),
         model: "model-b",
         preset: "frontier",
+        seatFileFound: true,
         capturedAt: "2026-01-02T00:00:00.000Z",
       };
       await writeDefSnapshot(dir, issueId, first);
@@ -173,6 +206,9 @@ describe("snapshot write/read round-trip", () => {
       expect(await readDefSnapshot(dir, "bad")).toBeUndefined();
       await fs.writeFile(defSnapshotPath(dir, "bad"), JSON.stringify({ promptHash: "bad", model: "x" }), "utf-8");
       expect(await readDefSnapshot(dir, "bad")).toBeUndefined();
+      // unknown model is rejected
+      await fs.writeFile(defSnapshotPath(dir, "bad"), JSON.stringify({ promptHash: "b5c9292a", seatFrontmatterHash: "b5c9292a", model: "unknown", preset: "balanced", seatFileFound: true, capturedAt: new Date().toISOString() }), "utf-8");
+      expect(await readDefSnapshot(dir, "bad")).toBeUndefined();
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -182,7 +218,7 @@ describe("snapshot write/read round-trip", () => {
     const dir = tmpDir();
     try {
       const issueId = "tgo-mirror";
-      const snap = delegationBuild({
+      const snap = delegationBuildFromPrompt({
         promptText: "prompt",
         seatFrontmatter: "seat",
         model: "m",
@@ -191,12 +227,12 @@ describe("snapshot write/read round-trip", () => {
       expect(await delegationWrite(dir, issueId, snap)).toBe(true);
       expect(await delegationRead(dir, issueId)).toEqual(snap);
       expect(delegationPath(dir, issueId)).toBe(defSnapshotPath(dir, issueId));
-      // ensure via delegation also
       const res = await delegationEnsure({
         repoRoot: dir,
         issueId: "tgo-mirror2",
         promptText: "p2",
         seatFrontmatter: "s2",
+        seatFileFound: true,
         model: "m2",
         preset: "cheap",
       });
@@ -217,6 +253,7 @@ describe("snapshot write/read round-trip", () => {
         seatFrontmatter: "seat1",
         model: "m1",
         preset: "balanced",
+        seatFileFound: true,
       });
       expect(r1.written).toBe(true);
       expect(r1.reused).toBe(false);
@@ -227,6 +264,7 @@ describe("snapshot write/read round-trip", () => {
         seatFrontmatter: "seat2",
         model: "m2",
         preset: "cheap",
+        seatFileFound: true,
       });
       expect(r2.written).toBe(false);
       expect(r2.reused).toBe(true);
@@ -238,11 +276,132 @@ describe("snapshot write/read round-trip", () => {
         seatFrontmatter: "seat2",
         model: "m2",
         preset: "cheap",
+        seatFileFound: true,
         useLatestDefinitions: true,
       });
       expect(r3.written).toBe(true);
       expect(r3.reused).toBe(false);
       expect(r3.snapshot.promptHash).toBe(hashPrompt("second different"));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("authoritative metadata: seatFileFound flag and model validation", async () => {
+    const dir = tmpDir();
+    try {
+      // missing seat file should be explicit false, not silent empty hash
+      const snapMissing = delegationBuildFromPrompt({
+        promptText: "p",
+        seatFrontmatter: "",
+        seatFileFound: false,
+        model: "opencode-go/muse-spark-1.2-contributor",
+        preset: "balanced",
+      });
+      expect(snapMissing.seatFileFound).toBe(false);
+      expect(snapMissing.seatFrontmatterHash).toBe(hashString(""));
+      await writeDefSnapshot(dir, "tgo-seat-missing", snapMissing);
+      const loadedMissing = await readDefSnapshot(dir, "tgo-seat-missing");
+      expect(loadedMissing?.seatFileFound).toBe(false);
+      // present seat file
+      const snapFound = delegationBuildFromPrompt({
+        promptText: "p",
+        seatFrontmatter: "---\nname: dylan\n---\ncontent",
+        seatFileFound: true,
+        model: "opencode-go/muse-spark-1.2-contributor",
+        preset: "balanced",
+      });
+      expect(snapFound.seatFileFound).toBe(true);
+      // unknown model is rejected at write and read
+      const badSnap: DefSnapshot = {
+        promptHash: hashPrompt("p"),
+        seatFrontmatterHash: hashSeatFrontmatter("seat"),
+        model: "unknown",
+        preset: "balanced",
+        seatFileFound: true,
+        capturedAt: new Date().toISOString(),
+      };
+      await expect(writeDefSnapshot(dir, "tgo-bad-model", badSnap)).rejects.toThrow(/unknown/);
+      // build with unknown also throws
+      expect(() => delegationBuildFromPrompt({ promptText: "p", seatFrontmatter: "s", model: "unknown", preset: "balanced" })).toThrow();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("VALID_BEAD_ID validation — traversal ids rejected at every entry point", async () => {
+    const dir = tmpDir();
+    const traversal = "../../target";
+    const dotSlash = "../tgo-evil";
+    const withSlash = "tgo/bad";
+    const empty = "";
+    const badPacket = { Objective: "O", Files: ["a.ts"], Interfaces: "i", Constraints: "c", Verification: "v" };
+    const goodModel = "opencode-go/muse-spark-1.2-contributor";
+    for (const badId of [traversal, dotSlash, withSlash, empty, "-bad", ".hidden"]) {
+      expect(isValidBeadID(badId)).toBe(false);
+      expect(() => assertValidBeadID(badId)).toThrow(/VALID_BEAD_ID/);
+      // defSnapshotPath should throw
+      expect(() => defSnapshotPath(dir, badId)).toThrow(/VALID_BEAD_ID/);
+      // write should throw (not create file outside .tgo)
+      const snap: DefSnapshot = {
+        promptHash: hashPrompt("p"),
+        seatFrontmatterHash: hashSeatFrontmatter("s"),
+        model: goodModel,
+        preset: "balanced",
+        seatFileFound: true,
+        capturedAt: new Date().toISOString(),
+      };
+      await expect(writeDefSnapshot(dir, badId, snap)).rejects.toThrow(/VALID_BEAD_ID/);
+      // read should throw as well (not return undefined silently for traversal)
+      await expect(readDefSnapshot(dir, badId)).rejects.toThrow(/VALID_BEAD_ID/);
+      // ensure should throw
+      await expect(ensureDefSnapshot({ repoRoot: dir, issueId: badId, promptText: "p", seatFrontmatter: "s", seatFileFound: true, model: goodModel, preset: "balanced" })).rejects.toThrow(/VALID_BEAD_ID/);
+      // delegation path
+      expect(() => delegationPath(dir, badId)).toThrow(/VALID_BEAD_ID/);
+      await expect(delegationWrite(dir, badId, snap)).rejects.toThrow(/VALID_BEAD_ID/);
+      await expect(delegationRead(dir, badId)).rejects.toThrow(/VALID_BEAD_ID/);
+    }
+    // valid ids pass
+    for (const good of ["tgo-123", "tgo_123", "tgo.123", "A1", "tgo-5t1"]) {
+      expect(isValidBeadID(good)).toBe(true);
+      expect(() => assertValidBeadID(good)).not.toThrow();
+      expect(() => defSnapshotPath(dir, good)).not.toThrow();
+    }
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("concurrent write convergence — N concurrent ensureDefSnapshot → exactly one winner, no corruption", async () => {
+    const dir = tmpDir();
+    try {
+      const issueId = "tgo-concurrent";
+      const N = 12;
+      const promises = Array.from({ length: N }, (_, i) =>
+        ensureDefSnapshot({
+          repoRoot: dir,
+          issueId,
+          promptText: `prompt-${i}`,
+          seatFrontmatter: `seat-${i}`,
+          seatFileFound: true,
+          model: `model-${i}`,
+          preset: "balanced",
+        })
+      );
+      const results = await Promise.all(promises);
+      const written = results.filter((r) => r.written).length;
+      expect(written).toBe(1);
+      const reused = results.filter((r) => r.reused).length;
+      expect(reused).toBe(N - 1);
+      const loaded = await readDefSnapshot(dir, issueId);
+      expect(loaded).toBeDefined();
+      // file is valid JSON, no corruption
+      const raw = await fs.readFile(defSnapshotPath(dir, issueId), "utf-8");
+      expect(() => JSON.parse(raw)).not.toThrow();
+      // all reused snapshots point to same winner's hash
+      const winnerHash = results.find((r) => r.written)!.snapshot.promptHash;
+      for (const r of results) {
+        if (r.reused) expect(r.snapshot.promptHash).toBe(winnerHash);
+      }
+      expect(loaded?.promptHash).toBe(winnerHash);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -275,7 +434,6 @@ describe("session map promptHash extension", () => {
       const loaded = await loadSessionMap(dir);
       expect(loaded["tgo-legacy"]?.sessionId).toBe("ses_old123");
       expect(loaded["tgo-legacy"]?.promptHash).toBeUndefined();
-      // also raw JSON without promptHash parses
       await fs.writeFile(path.join(dir, ".tgo", "sessions.json"), JSON.stringify({ "tgo-raw": { sessionId: "ses_raw999", updatedAt: new Date().toISOString() } }));
       const loaded2 = await loadSessionMap(dir);
       expect(loaded2["tgo-raw"]?.promptHash).toBeUndefined();
@@ -307,6 +465,7 @@ describe("reuse-vs-upgrade decision matrix", () => {
       seatFrontmatterHash: hashSeatFrontmatter("seat"),
       model: "m",
       preset: "balanced",
+      seatFileFound: true,
       capturedAt: new Date().toISOString(),
     };
     const d = decideReuse({ estimate: 200000, maxContextTokens: 100000, existingSnapshot: snap, currentPromptHash: hashPrompt("different") });
@@ -322,6 +481,7 @@ describe("reuse-vs-upgrade decision matrix", () => {
       seatFrontmatterHash: hashSeatFrontmatter("seat"),
       model: "m",
       preset: "balanced",
+      seatFileFound: true,
       capturedAt: new Date().toISOString(),
     };
     const d = decideReuse({ estimate: 10, maxContextTokens: 100000, existingSnapshot: snap, currentPromptHash: h });
@@ -334,6 +494,7 @@ describe("reuse-vs-upgrade decision matrix", () => {
       seatFrontmatterHash: hashSeatFrontmatter("seat"),
       model: "m",
       preset: "balanced",
+      seatFileFound: true,
       capturedAt: new Date().toISOString(),
     };
     const d = decideReuse({ estimate: 10, maxContextTokens: 100000, existingSnapshot: snap, currentPromptHash: hashPrompt("old"), useLatestDefinitions: true });
@@ -355,6 +516,49 @@ describe("reuse-vs-upgrade decision matrix", () => {
     const d = decideReuse({ estimate: 10, maxContextTokens: 100000, existingSnapshot: null, useLatestDefinitions: true });
     expect(d.reuse).toBe(false);
   });
+
+  test("production reuse wiring — snapshot exists overrides token overflow (board path)", async () => {
+    const dir = tmpDir();
+    try {
+      const issueId = "tgo-prod-reuse";
+      const sid = "ses_abc123";
+      const snap: DefSnapshot = {
+        promptHash: hashPrompt("pinned-work"),
+        seatFrontmatterHash: hashSeatFrontmatter("seat"),
+        model: "m",
+        preset: "balanced",
+        seatFileFound: true,
+        capturedAt: new Date().toISOString(),
+      };
+      await writeDefSnapshot(dir, issueId, snap);
+      await saveSessionMap(dir, { [issueId]: { sessionId: sid, updatedAt: new Date().toISOString(), promptHash: snap.promptHash } });
+      const inProg = JSON.stringify([{ id: issueId, title: "Prod reuse", priority: 1 }]);
+      const run = async (cmd: string) => {
+        if (cmd.includes("in_progress")) return inProg;
+        if (cmd.includes("bd ready")) return "[]";
+        if (cmd.includes("bd blocked")) return "[]";
+        if (cmd.includes("bd memories")) return "{}";
+        return "";
+      };
+      // Large estimate that would fail legacy shouldReuse but should pass with snapshot
+      const largeText = Array.from({ length: 20000 }, () => "word").join(" ");
+      const client = {
+        session: {
+          messages: async () => [{ parts: [{ type: "text", text: largeText }] }],
+        },
+      };
+      const ctrl = new BoardController({ run, refreshMs: 0, sessionReuse: { repoRoot: dir, client: client as any, maxContextTokens: 5, supported: true, enabled: true } });
+      const text = await ctrl.renderFor("sess-prod-reuse");
+      // With snapshot, should still be considered reusable despite overflow — hint line present
+      expect(text).toContain(`reusable session ${sid}`);
+      // Also board decision helper directly
+      const estimate = 100000;
+      expect(shouldReuseWithSnapshot(estimate, 5, { snapshot: snap })).toBe(true);
+      expect(shouldReuseWithSnapshot(estimate, 5, { snapshot: null })).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("board badge renders", () => {
@@ -367,6 +571,7 @@ describe("board badge renders", () => {
         seatFrontmatterHash: hashSeatFrontmatter("seat content"),
         model: "m",
         preset: "balanced",
+        seatFileFound: true,
         capturedAt: new Date().toISOString(),
       };
       await writeDefSnapshot(dir, issueId, snap);
@@ -412,11 +617,11 @@ describe("board badge renders", () => {
         seatFrontmatterHash: hashSeatFrontmatter("seat"),
         model: "m",
         preset: "balanced",
+        seatFileFound: true,
         capturedAt: new Date().toISOString(),
       };
       await writeDefSnapshot(dir, issueId, snap);
       await fs.mkdir(path.join(dir, ".tgo"), { recursive: true });
-      // need sessions.json for controller reuse logic, but badge is independent of session map
       await saveSessionMap(dir, { [issueId]: { sessionId: sid, updatedAt: new Date().toISOString(), promptHash: snap.promptHash } });
       const inProg = JSON.stringify([{ id: issueId, title: "Badge ctrl", priority: 1 }]);
       const run = async (cmd: string) => {
@@ -445,6 +650,7 @@ describe("board badge renders", () => {
         seatFrontmatterHash: hashSeatFrontmatter("seat"),
         model: "m",
         preset: "balanced",
+        seatFileFound: true,
         capturedAt: new Date().toISOString(),
       };
       await writeDefSnapshot(dir, withSnap, snap);
@@ -464,12 +670,54 @@ describe("board badge renders", () => {
         6,
         dir
       );
-      // withSnap line should have badge, withoutSnap line should not leak badge
       const lines = built.split("\n");
       const withLine = lines.find((l) => l.includes(withSnap)) ?? "";
       const withoutLine = lines.find((l) => l.includes(withoutSnap)) ?? "";
       expect(withLine).toContain(`pinned v${snap.promptHash.slice(0, 8)}`);
       expect(withoutLine).not.toContain("pinned v");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("after-hook never rewrites snapshot — captured snapshot survives large second write without useLatest", async () => {
+    const dir = tmpDir();
+    try {
+      const issueId = "tgo-no-rewrite";
+      // Simulate first dispatch writes snapshot
+      const first: DefSnapshot = {
+        promptHash: hashPrompt("first"),
+        seatFrontmatterHash: hashSeatFrontmatter("seat1"),
+        model: "model-a",
+        preset: "balanced",
+        seatFileFound: true,
+        capturedAt: "2026-01-01T00:00:00.000Z",
+      };
+      await writeDefSnapshot(dir, issueId, first);
+      // Simulate after-hook trying to write different data without useLatest — should not overwrite
+      const second: DefSnapshot = {
+        promptHash: hashPrompt("second-different"),
+        seatFrontmatterHash: hashSeatFrontmatter("seat2"),
+        model: "model-b",
+        preset: "cheap",
+        seatFileFound: true,
+        capturedAt: "2026-01-02T00:00:00.000Z",
+      };
+      const written = await writeDefSnapshot(dir, issueId, second);
+      expect(written).toBe(false);
+      const loaded = await readDefSnapshot(dir, issueId);
+      expect(loaded).toEqual(first);
+      // Also verify captureDelegationSession is read-only: call it and ensure snapshot unchanged
+      await captureDelegationSession({
+        tool: "task",
+        input: { args: { delegationPacket: { issueId, delegationId: "d1", Objective: "second-different", Files: ["b.ts"], Interfaces: "i2", Constraints: "c2", Verification: "v2", exitGate: true, issueStatusObserved: "in_progress", issueAssigneeObserved: "tester", claimExitCode: 0, beadsOperator: "Bernstein" } } },
+        output: { output: "done", metadata: { sessionId: "ses_abc123" } },
+        repoRoot: dir,
+        enabled: true,
+      });
+      const after = await readDefSnapshot(dir, issueId);
+      expect(after).toEqual(first);
+      expect(after?.promptHash).not.toBe(second.promptHash);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -509,5 +757,110 @@ describe("delegation packet useLatestDefinitions", () => {
     const r = validateDelegationPacket(standard as any, { ...base, useLatestDefinitions: "true" });
     expect(r.valid).toBe(false);
     expect(r.malformed).toContain("useLatestDefinitions");
+  });
+});
+
+describe("delegation packet traversal rejection", () => {
+  const standard: RoutingClassification = { route: "standard", tiny: false, reasons: [] };
+  const base = {
+    Objective: "Do work",
+    Files: ["src/a.ts"],
+    Interfaces: "keep",
+    Constraints: "none",
+    Verification: "run tests",
+    exitGate: true,
+    issueStatusObserved: "in_progress",
+    issueAssigneeObserved: "tester",
+    claimExitCode: 0,
+    delegationId: "del-1",
+    beadsOperator: "Bernstein",
+  };
+  for (const bad of ["../../target", "../evil", "tgo/bad", "-bad", ".hidden", "tgo 123"]) {
+    test(`issueId "${bad}" → invalid`, () => {
+      const r = validateDelegationPacket(standard as any, { ...base, issueId: bad });
+      expect(r.valid).toBe(false);
+      expect(r.malformed).toContain("issueId");
+      expect(r.diagnostics.join(" ")).toContain("VALID_BEAD_ID");
+    });
+  }
+  test(`issueId "" → invalid (empty)`, () => {
+    const r = validateDelegationPacket(standard as any, { ...base, issueId: "" });
+    expect(r.valid).toBe(false);
+    expect(r.malformed).toContain("issueId");
+  });
+  test("valid bead ids pass", () => {
+    for (const good of ["tgo-123", "tgo_123", "tgo.123", "A1", "tgo-5t1"]) {
+      const r = validateDelegationPacket(standard as any, { ...base, issueId: good });
+      expect(r.valid).toBe(true);
+    }
+  });
+});
+
+describe("abort-failure skip and host-authoritative snapshot", () => {
+  test("plugin abort failure would skip snapshot rewrite — simulate ensure not called on abort throw", async () => {
+    const dir = tmpDir();
+    try {
+      const issueId = "tgo-abort-skip";
+      const first: DefSnapshot = {
+        promptHash: hashPrompt("first"),
+        seatFrontmatterHash: hashSeatFrontmatter("seat1"),
+        model: "model-a",
+        preset: "balanced",
+        seatFileFound: true,
+        capturedAt: "2026-01-01T00:00:00.000Z",
+      };
+      await writeDefSnapshot(dir, issueId, first);
+      // Simulate plugin before hook: abort fails, so ensure should NOT be called (snapshot unchanged)
+      let ensureCalled = false;
+      const mockAbort = async () => { throw new Error("abort failed"); };
+      try {
+        await mockAbort();
+        ensureCalled = true;
+        await ensureDefSnapshot({ repoRoot: dir, issueId, promptText: "second", seatFrontmatter: "seat2", seatFileFound: true, model: "model-b", preset: "cheap", useLatestDefinitions: true });
+      } catch (e) {
+        expect(String(e)).toContain("abort failed");
+      }
+      expect(ensureCalled).toBe(false);
+      const loaded = await readDefSnapshot(dir, issueId);
+      expect(loaded).toEqual(first);
+      // Now simulate successful abort: ensure with useLatest overwrites
+      const r = await ensureDefSnapshot({ repoRoot: dir, issueId, promptText: "second", seatFrontmatter: "seat2", seatFileFound: true, model: "model-b", preset: "cheap", useLatestDefinitions: true });
+      expect(r.written).toBe(true);
+      const overwritten = await readDefSnapshot(dir, issueId);
+      expect(overwritten?.promptHash).toBe(hashPrompt("second"));
+      expect(overwritten?.preset).toBe("cheap");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("host-authoritative model/preset not taken from packet spoof", async () => {
+    const dir = tmpDir();
+    try {
+      const issueId = "tgo-host-auth";
+      const packet = { Objective: "O", Files: ["a.ts"], Interfaces: "I", Constraints: "C", Verification: "V" };
+      const activePreset = "frontier";
+      const resolvedModel = "opencode-go/grok-4.6";
+      const seatFrontmatter = "---\nname: dylan\n---\nreal content";
+      const snap = await delegationEnsure({
+        repoRoot: dir,
+        issueId,
+        packet,
+        seatFrontmatter,
+        seatFileFound: true,
+        model: resolvedModel,
+        preset: activePreset,
+      });
+      expect(snap.snapshot.preset).toBe(activePreset);
+      expect(snap.snapshot.model).toBe(resolvedModel);
+      expect(snap.snapshot.preset).not.toBe("cheap");
+      expect(snap.snapshot.model).not.toBe("unknown");
+      expect(snap.snapshot.model).not.toBe("evil-model");
+      const spoofPacket = { ...packet, Files: ["evil.ts"], Verification: "evil" };
+      const spoofHash = hashFivePartPacket(spoofPacket);
+      expect(spoofHash).not.toBe(snap.snapshot.promptHash);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

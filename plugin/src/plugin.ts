@@ -12,7 +12,8 @@ import { preapproveExternalDirectory, resolveWorktreeFamily } from "./permission
 import { DEPENDENCIES, installMissing, runShellCommand } from "./deps";
 import { applyPreset, readPresetNudge, resolveActivePreset } from "./presets";
 import { validateDelegationBoundary, validateDelegationPacket, verifyClaimObserved as verifyDelegationClaimObserved } from "./delegation";
-import { captureDelegationSession, probeSessionReuseCapability, persistAbortHandback, ensureDefSnapshot, loadSessionMap } from "./session-reuse";
+import { captureDelegationSession, probeSessionReuseCapability, persistAbortHandback, loadSessionMap } from "./session-reuse";
+import { ensureDefSnapshot, isValidBeadID, assertValidBeadID } from "./def-snapshot";
 import { authorizeLifecycleSession, evaluateClosure, verifyClaimObserved } from "./lifecycle";
 import { loadBeadsTui, renderBeadsTui } from "./tui";
 import { checkVersionDrift, fetchLatestVersion, PLUGIN_NPM_NAME, readLocalVersion } from "./version";
@@ -485,40 +486,107 @@ export const TgoPlugin: Plugin = async (
             : undefined;
           if (packet && typeof packet.issueId === "string" && packet.issueId.trim().length > 0) {
             const issueId = (packet.issueId as string).trim();
+            // P0: validate BEFORE any path construction — traversal-style ids rejected
+            if (!isValidBeadID(issueId)) {
+              throw new Error(`invalid issueId "${issueId}" — must match VALID_BEAD_ID`);
+            }
             const repoRoot = directory ?? worktree ?? (project as unknown as { worktree?: string })?.worktree ?? ".";
             const useLatest = packet.useLatestDefinitions === true;
             if (useLatest) {
-              try {
-                const map = await loadSessionMap(repoRoot);
-                const prior = map[issueId];
-                if (prior?.sessionId) {
-                  try { await client.session.abort({ path: { id: prior.sessionId } }); } catch {}
+              const map = await loadSessionMap(repoRoot);
+              const prior = map[issueId];
+              if (prior?.sessionId) {
+                try {
+                  await client.session.abort({ path: { id: prior.sessionId } });
+                } catch (e) {
+                  // P1: abort failure surfaces and skips the rewrite — do not overwrite pinned snapshot
+                  throw new Error(`useLatestDefinitions abort failed for ${issueId}: ${String(e)}`);
                 }
+              }
+            }
+            // Host-authoritative preset: resolve ACTIVE preset (post-nudge), not config.preset
+            let activePreset: string;
+            try {
+              const memories = await readPresetNudge(runBd, appLog);
+              activePreset = resolveActivePreset(config, memories);
+            } catch {
+              activePreset = config.preset;
+            }
+            // Resolve seat name for model + frontmatter — host-authoritative
+            let seatName: string | undefined;
+            try {
+              const subagentRaw = (rawArgs as Record<string, unknown>)?.subagent_type;
+              if (typeof subagentRaw === "string" && subagentRaw.trim().length > 0) seatName = subagentRaw.trim();
+            } catch {}
+            // Fallback: try packet delegationId hint or default to dylan (sole writer) for model resolution
+            if (!seatName) {
+              // If no explicit seat, we still need a model — default to dylan as primary writer seat
+              seatName = "dylan";
+            }
+            // Resolve model from ACTIVE preset — never "unknown"
+            let model: string | undefined;
+            try {
+              const presetMap = (config.presets as Record<string, Record<string, { model: string }>>)?.[activePreset];
+              if (presetMap) {
+                const direct = presetMap[seatName as string];
+                if (direct?.model) model = direct.model;
+                else if (["cobain", "grohl", "novoselic"].includes(seatName) && presetMap["band-members"]?.model) model = presetMap["band-members"].model;
+                else if (presetMap["dylan"]?.model) model = presetMap["dylan"].model;
+                else {
+                  for (const fallback of ["dylan", "horowitz", "nas", "bernstein", "nirvana"] as const) {
+                    if (presetMap[fallback]?.model) { model = presetMap[fallback].model; break; }
+                  }
+                }
+              }
+            } catch {}
+            if (!model || model === "unknown" || model.trim().length === 0) {
+              // As last fallback, use the first available preset's dylan model rather than "unknown"
+              try {
+                const anyPreset = config.presets?.[activePreset as keyof typeof config.presets] ?? config.presets?.balanced;
+                const candidate = (anyPreset as Record<string, { model?: string }> | undefined)?.[seatName] ?? (anyPreset as Record<string, { model?: string }> | undefined)?.dylan;
+                if (candidate?.model) model = candidate.model;
               } catch {}
             }
-            let promptText: string;
-            if (typeof packet.Objective === "string" && (packet.Objective as string).trim().length > 0) promptText = packet.Objective as string;
-            else promptText = JSON.stringify(packet);
+            if (!model || model === "unknown" || model.trim().length === 0) {
+              throw new Error(`host-authoritative model resolution failed for preset "${activePreset}" seat "${seatName}"`);
+            }
+            // Read seat frontmatter host-side — record explicit found flag
             let seatFrontmatter = "";
-            if (typeof packet.seatFrontmatter === "string") seatFrontmatter = packet.seatFrontmatter as string;
-            else {
+            let seatFileFound = false;
+            try {
+              const seatDir = resolveAgentsDir({ agentDir: config.agentDir });
+              const p = path.join(seatDir, `${seatName}.md`);
               try {
-                const subagent = (rawArgs as Record<string, unknown>)?.subagent_type;
-                if (typeof subagent === "string" && subagent.trim().length > 0) {
-                  const seatDir = resolveAgentsDir({ agentDir: config.agentDir });
-                  try {
-                    const fs = await import("node:fs/promises");
-                    seatFrontmatter = await fs.readFile(path.join(seatDir, `${subagent}.md`), "utf-8").catch(() => "");
-                  } catch {}
-                }
-              } catch {}
+                const fsMod = await import("node:fs/promises");
+                seatFrontmatter = await fsMod.readFile(p, "utf-8");
+                seatFileFound = true;
+              } catch (e) {
+                const code = (e as NodeJS.ErrnoException)?.code;
+                if (code === "ENOENT") { seatFileFound = false; seatFrontmatter = ""; }
+                else { seatFileFound = false; seatFrontmatter = ""; }
+              }
+            } catch {
+              seatFileFound = false;
+              seatFrontmatter = "";
             }
-            const preset = typeof packet.preset === "string" ? (packet.preset as string) : config.preset;
-            const model = typeof packet.model === "string" ? (packet.model as string) : "unknown";
-            await ensureDefSnapshot({ repoRoot, issueId, promptText, seatFrontmatter, model, preset, useLatestDefinitions: useLatest });
+            // Hash covers full five-part definition via packet, not just Objective
+            await ensureDefSnapshot({
+              repoRoot,
+              issueId,
+              packet: packet as { Objective?: unknown; Files?: unknown; Interfaces?: unknown; Constraints?: unknown; Verification?: unknown },
+              seatFrontmatter,
+              seatFileFound,
+              model,
+              preset: activePreset,
+              useLatestDefinitions: useLatest,
+            });
           }
         } catch (e) {
           safeWarn(appLog, `def-snapshot capture failed: ${String(e)}`);
+          // Re-throw invalid issueId and useLatest abort failures so caller sees typed error
+          if (String(e).includes("invalid issueId") || String(e).includes("useLatestDefinitions abort failed") || String(e).includes("model resolution failed")) {
+            throw e;
+          }
         }
       }
       // A tool is about to execute (bash, edit, etc.). While a foreground tool
@@ -542,29 +610,8 @@ export const TgoPlugin: Plugin = async (
       watchdog.noteToolEnd(input.sessionID, background, isProgress);
       watchdog.noteActivity(input.sessionID);
       if (reuseCapability.supported) {
-        let promptText: string | undefined;
-        let seatFrontmatter: string | undefined;
-        let model: string | undefined;
-        let preset: string | undefined;
-        let useLatestDefinitions: boolean | undefined;
-        try {
-          const rawInput = input.args as Record<string, unknown> | undefined;
-          const taskArgs = rawInput && typeof (rawInput as Record<string, unknown>).delegationPacket === "object"
-            ? rawInput as Record<string, unknown>
-            : (rawInput && typeof (rawInput as Record<string, unknown>).args === "object" ? (rawInput as Record<string, unknown>).args as Record<string, unknown> : undefined);
-          const packet = taskArgs?.delegationPacket && typeof taskArgs.delegationPacket === "object"
-            ? (taskArgs.delegationPacket as Record<string, unknown>)
-            : (input.args && typeof (input.args as Record<string, unknown>).delegationPacket === "object" ? (input.args as Record<string, unknown>).delegationPacket as Record<string, unknown> : undefined);
-          if (packet) {
-            if (typeof packet.Objective === "string" && (packet.Objective as string).trim().length > 0) promptText = packet.Objective as string;
-            else promptText = JSON.stringify(packet);
-            if (typeof packet.seatFrontmatter === "string") seatFrontmatter = packet.seatFrontmatter as string;
-            if (typeof packet.model === "string") model = packet.model as string;
-            if (typeof packet.preset === "string") preset = packet.preset as string;
-            if (typeof packet.useLatestDefinitions === "boolean") useLatestDefinitions = packet.useLatestDefinitions as boolean;
-          }
-        } catch {}
-        await captureDelegationSession({ tool: input.tool, input, output, repoRoot: directory ?? worktree ?? (project as unknown as { worktree?: string })?.worktree ?? ".", enabled: config.sessionReuse?.enabled !== false, log: appLog, promptText, seatFrontmatter, model, preset, useLatestDefinitions });
+        // After-hook is read-only for snapshots — write-once at start only (P1). Never touches def-snapshot.
+        await captureDelegationSession({ tool: input.tool, input, output, repoRoot: directory ?? worktree ?? (project as unknown as { worktree?: string })?.worktree ?? ".", enabled: config.sessionReuse?.enabled !== false, log: appLog });
       }
       if (input.tool === "task" && typeof output?.output === "string") {
         const report = parseTaskReport(output.output);

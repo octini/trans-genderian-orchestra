@@ -1,7 +1,8 @@
 import * as crypto from "node:crypto";
 import { safeWarn } from "./config";
 import { readProgress } from "./progress";
-import { estimateSessionTokens, loadSessionMap, shouldReuse, readDefSnapshot } from "./session-reuse";
+import { estimateSessionTokens, loadSessionMap, shouldReuseWithSnapshot } from "./session-reuse";
+import { readDefSnapshot } from "./def-snapshot";
 
 export const BOARD_SENTINEL_START = "<!-- tgo:board -->";
 export const BOARD_SENTINEL_END = "<!-- /tgo:board -->";
@@ -512,7 +513,13 @@ export class BoardController {
         } catch {
           continue;
         }
-        if (shouldReuse(estimate, this.sessionReuse!.maxContextTokens)) {
+        let snapshot: import("./def-snapshot").DefSnapshot | null | undefined;
+        try {
+          snapshot = await readDefSnapshot(this.sessionReuse!.repoRoot, issue.id);
+        } catch {
+          snapshot = null;
+        }
+        if (shouldReuseWithSnapshot(estimate, this.sessionReuse!.maxContextTokens, { snapshot: snapshot ?? null })) {
           reusableSet.add(issue.id);
           sessionIdsByIssue.set(issue.id, sid);
         }
