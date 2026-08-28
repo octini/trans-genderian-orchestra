@@ -33,7 +33,7 @@ import { hashString as watchdogHashString } from "../src/watchdog";
 import { buildBoardTextWithHints, BoardController } from "../src/board";
 import { validateDelegationPacket } from "../src/delegation";
 import type { RoutingClassification } from "../src/fit";
-import { hashFivePartPacket, isValidBeadID, assertValidBeadID } from "../src/def-snapshot";
+import { hashFivePartPacket, isValidBeadID, assertValidBeadID, __setDefSnapshotWriteDelayForTest, __clearDefSnapshotWriteDelayForTest } from "../src/def-snapshot";
 import { captureDelegationSession } from "../src/session-reuse";
 
 function tmpDir(): string {
@@ -381,38 +381,56 @@ describe("snapshot write/read round-trip", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  test("concurrent write convergence — N concurrent ensureDefSnapshot → exactly one winner, no corruption", async () => {
+  test("concurrent write convergence — N concurrent ensureDefSnapshot → exactly one winner, no corruption (deterministic fault injection)", async () => {
     const dir = tmpDir();
     try {
       const issueId = "tgo-concurrent";
       const N = 12;
-      const promises = Array.from({ length: N }, (_, i) =>
-        ensureDefSnapshot({
-          repoRoot: dir,
-          issueId,
-          promptText: `prompt-${i}`,
-          seatFrontmatter: `seat-${i}`,
-          seatFileFound: true,
-          model: `model-${i}`,
-          preset: "balanced",
-        })
-      );
-      const results = await Promise.all(promises);
-      const written = results.filter((r) => r.written).length;
-      expect(written).toBe(1);
-      const reused = results.filter((r) => r.reused).length;
-      expect(reused).toBe(N - 1);
-      const loaded = await readDefSnapshot(dir, issueId);
-      expect(loaded).toBeDefined();
-      // file is valid JSON, no corruption
-      const raw = await fs.readFile(defSnapshotPath(dir, issueId), "utf-8");
-      expect(() => JSON.parse(raw)).not.toThrow();
-      // all reused snapshots point to same winner's hash
-      const winnerHash = results.find((r) => r.written)!.snapshot.promptHash;
-      for (const r of results) {
-        if (r.reused) expect(r.snapshot.promptHash).toBe(winnerHash);
+      // Deterministic fault injection: delay winner's write after open so losers must poll FINAL path (no tmp file, no empty read)
+      __setDefSnapshotWriteDelayForTest(150);
+      try {
+        const promises = Array.from({ length: N }, (_, i) =>
+          ensureDefSnapshot({
+            repoRoot: dir,
+            issueId,
+            promptText: `prompt-${i}`,
+            seatFrontmatter: `seat-${i}`,
+            seatFileFound: true,
+            model: `model-${i}`,
+            preset: "balanced",
+          })
+        );
+        const results = await Promise.all(promises);
+        const written = results.filter((r) => r.written).length;
+        expect(written).toBe(1);
+        const reused = results.filter((r) => r.reused).length;
+        expect(reused).toBe(N - 1);
+        // zero empty/divergent reads — all losers converged to winner's hash
+        const winner = results.find((r) => r.written)!;
+        expect(winner).toBeDefined();
+        const winnerHash = winner.snapshot.promptHash;
+        let emptyReads = 0;
+        for (const r of results) {
+          if (!r.snapshot || !r.snapshot.promptHash) emptyReads++;
+          expect(r.snapshot.promptHash).toBe(winnerHash);
+          expect(r.snapshot.model).toBe(winner.snapshot.model);
+          expect(r.snapshot.preset).toBe(winner.snapshot.preset);
+          expect(r.snapshot.seatFrontmatterHash).toBe(winner.snapshot.seatFrontmatterHash);
+        }
+        expect(emptyReads).toBe(0);
+        const loaded = await readDefSnapshot(dir, issueId);
+        expect(loaded).toBeDefined();
+        expect(loaded?.promptHash).toBe(winnerHash);
+        // file is valid JSON, no corruption, no tmp left behind
+        const raw = await fs.readFile(defSnapshotPath(dir, issueId), "utf-8");
+        expect(() => JSON.parse(raw)).not.toThrow();
+        const tgoDir = path.join(dir, ".tgo", issueId);
+        const files = await fs.readdir(tgoDir);
+        expect(files.some((f) => f.includes(".tmp"))).toBe(false);
+        expect(files).toContain("def-snapshot.json");
+      } finally {
+        __clearDefSnapshotWriteDelayForTest();
       }
-      expect(loaded?.promptHash).toBe(winnerHash);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

@@ -290,15 +290,18 @@ export async function ensureDefSnapshot(opts: {
   });
   const written = await writeDefSnapshot(opts.repoRoot, opts.issueId, snapshot, { useLatestDefinitions: opts.useLatestDefinitions });
   if (!written) {
-    for (let attempt = 0; attempt < 5; attempt++) {
+    const attempts = 10;
+    const intervalMs = 200;
+    for (let attempt = 0; attempt < attempts; attempt++) {
       const retry = await readDefSnapshot(opts.repoRoot, opts.issueId);
       if (retry) return { snapshot: retry, written: false, reused: true };
       if (existing) return { snapshot: existing, written: false, reused: true };
-      await new Promise((r) => setTimeout(r, 5 * (attempt + 1)));
+      if (attempt < attempts - 1) await new Promise((r) => setTimeout(r, intervalMs));
     }
     const finalRetry = await readDefSnapshot(opts.repoRoot, opts.issueId);
     if (finalRetry) return { snapshot: finalRetry, written: false, reused: true };
     if (existing) return { snapshot: existing, written: false, reused: true };
+    throw new Error(`def-snapshot convergence failed for ${opts.issueId}: final file absent after 2s poll`);
   }
   return { snapshot, written, reused: false };
 }

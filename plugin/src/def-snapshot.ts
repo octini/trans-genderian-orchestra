@@ -3,6 +3,12 @@ import * as path from "node:path";
 
 export const VALID_BEAD_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
+// Fault-injection hook for deterministic concurrency tests — delays the first write-once fs.open
+let __defSnapshotFaultDelayMs = 0;
+let __defSnapshotFaultFired = false;
+export function __setDefSnapshotWriteDelayForTest(ms: number): void { __defSnapshotFaultDelayMs = ms; __defSnapshotFaultFired = false; }
+export function __clearDefSnapshotWriteDelayForTest(): void { __defSnapshotFaultDelayMs = 0; __defSnapshotFaultFired = false; }
+
 export function isValidBeadID(id: string): boolean {
   return VALID_BEAD_ID.test(id);
 }
@@ -116,10 +122,14 @@ export async function writeDefSnapshot(
   try { await fs.mkdir(dir, { recursive: true }); } catch {}
 
   if (!opts?.useLatestDefinitions) {
-    // atomic exclusive create — if file already exists, fail fast without overwriting.
-    // Use open 'wx' for true atomicity against concurrent writers; fall back to access-check if needed.
+    // write-once via exclusive create — no tmp+rename; close makes content fully visible atomically
     try {
       const fh = await fs.open(target, "wx");
+      // Fault injection for deterministic concurrency test: delay first successful winner's write after open
+      if (__defSnapshotFaultDelayMs > 0 && !__defSnapshotFaultFired) {
+        __defSnapshotFaultFired = true;
+        await new Promise((r) => setTimeout(r, __defSnapshotFaultDelayMs));
+      }
       try {
         await fh.writeFile(JSON.stringify(snapshot, null, 2), "utf-8");
       } finally {
@@ -129,7 +139,6 @@ export async function writeDefSnapshot(
     } catch (e) {
       const code = (e as NodeJS.ErrnoException)?.code;
       if (code === "EEXIST") return false;
-      // If wx failed for other reason (e.g. ENOENT dir missing), try mkdir and retry once
       if (code === "ENOENT") {
         try { await fs.mkdir(dir, { recursive: true }); } catch {}
         try {
@@ -142,23 +151,10 @@ export async function writeDefSnapshot(
           return true;
         } catch (e2) {
           if ((e2 as NodeJS.ErrnoException)?.code === "EEXIST") return false;
-          // fall through to tmp+rename fallback below for unexpected errors
+          throw e2;
         }
       }
-      // Fallback: check existence via access and then tmp+rename if still absent (paranoid)
-      try { await fs.access(target); return false; } catch {}
-      // Still absent but wx failed — fallback to tmp+rename (should be rare)
-      const tmp = path.join(dir, `def-snapshot.json.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`);
-      try {
-        await fs.writeFile(tmp, JSON.stringify(snapshot, null, 2), "utf-8");
-        // Try exclusive link: write tmp then attempt to move without overwriting via open check
-        try { await fs.access(target); await fs.rm(tmp, { force: true }); return false; } catch {}
-        await fs.rename(tmp, target);
-        return true;
-      } catch {
-        try { await fs.rm(tmp, { force: true }); } catch {}
-        return false;
-      }
+      throw e;
     }
   }
 
@@ -249,18 +245,19 @@ export async function ensureDefSnapshot(opts: {
   }
   const written = await writeDefSnapshot(opts.repoRoot, opts.issueId, snapshot, { useLatestDefinitions: opts.useLatestDefinitions });
   if (!written) {
-    // Either pre-existing file or concurrent winner — re-read to converge on single winner.
-    // Concurrent losers may race the winner's write (file exists but is empty/not yet flushed), so retry a few times.
-    for (let attempt = 0; attempt < 5; attempt++) {
+    // Loser: poll FINAL path only with generous deadline (2s, 10 attempts); persistent absence → typed error, never divergent
+    const attempts = 10;
+    const intervalMs = 200;
+    for (let attempt = 0; attempt < attempts; attempt++) {
       const retry = await readDefSnapshot(opts.repoRoot, opts.issueId);
       if (retry) return { snapshot: retry, written: false, reused: true };
       if (existing) return { snapshot: existing, written: false, reused: true };
-      // Brief backoff before retrying — winner's write is in-flight
-      await new Promise((r) => setTimeout(r, 5 * (attempt + 1)));
+      if (attempt < attempts - 1) await new Promise((r) => setTimeout(r, intervalMs));
     }
     const finalRetry = await readDefSnapshot(opts.repoRoot, opts.issueId);
     if (finalRetry) return { snapshot: finalRetry, written: false, reused: true };
     if (existing) return { snapshot: existing, written: false, reused: true };
+    throw new Error(`def-snapshot convergence failed for ${opts.issueId}: final file absent after 2s poll`);
   }
   return { snapshot, written, reused: false };
 }
