@@ -3,11 +3,29 @@ import { mkdtempSync, rmSync } from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as os from "node:os";
-import { writeProgress } from "../src/progress";
+import { progressPath, readProgress, writeProgress } from "../src/progress";
 
 function tmpDir(): string {
   return mkdtempSync(path.join(os.tmpdir(), "tgo-progress-"));
 }
+
+describe("progress path-boundary validation", () => {
+  test("progressPath rejects traversal ids", () => {
+    for (const bad of ["../../evil", "tgo/bad"]) {
+      expect(() => progressPath("/tmp/repo", bad)).toThrow(/VALID_BEAD_ID/);
+    }
+  });
+  test("readProgress rejects traversal ids", async () => {
+    for (const bad of ["../../evil", "tgo/bad"]) {
+      await expect(readProgress("/tmp/repo", bad)).rejects.toThrow(/VALID_BEAD_ID/);
+    }
+  });
+  test("writeProgress rejects traversal ids", async () => {
+    for (const bad of ["../../evil", "tgo/bad"]) {
+      await expect(writeProgress("/tmp/repo", bad, "content")).rejects.toThrow(/VALID_BEAD_ID/);
+    }
+  });
+});
 
 describe("writeProgress regression tgo-30d", () => {
   test("fresh foreign lock: pre-create lock with current mtime and content someone-else → returns false and lock preserved", async () => {

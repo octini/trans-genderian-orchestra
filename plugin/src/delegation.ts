@@ -1,4 +1,19 @@
 import { classifyRouting, type RouteClass, type RoutingInput } from "./fit";
+import {
+  hashString,
+  hashFivePartPacket,
+  buildDefSnapshot,
+  buildDefSnapshotFromPrompt,
+  defSnapshotPath,
+  writeDefSnapshot,
+  readDefSnapshot,
+  ensureDefSnapshot,
+  isValidBeadID,
+  assertValidBeadID,
+  VALID_BEAD_ID,
+  type DefSnapshot,
+} from "./def-snapshot";
+export { hashString, hashFivePartPacket, buildDefSnapshot, buildDefSnapshotFromPrompt, defSnapshotPath, writeDefSnapshot, readDefSnapshot, ensureDefSnapshot, isValidBeadID, assertValidBeadID, VALID_BEAD_ID, type DefSnapshot };
 
 export interface DelegationPacket {
   Objective?: unknown;
@@ -19,6 +34,10 @@ export interface DelegationPacket {
   beadsOperator?: unknown;
   taskId?: unknown;
   progressPath?: string;
+  useLatestDefinitions?: unknown;
+  model?: unknown;
+  preset?: unknown;
+  seatFrontmatter?: unknown;
 }
 
 export interface DelegationBoundaryArgs {
@@ -163,6 +182,15 @@ export function validateDelegationPacket(
     }
   }
 
+  // P0: issueId must match VALID_BEAD_ID before any filesystem use — applies to all routes
+  if ("issueId" in value && typeof value.issueId === "string") {
+    const id = (value.issueId as string).trim();
+    if (id.length > 0 && !isValidBeadID(id)) {
+      if (!malformed.includes("issueId")) malformed.push("issueId");
+      diagnostics.push(`issueId must match VALID_BEAD_ID ${VALID_BEAD_ID.source} — got ${JSON.stringify(value.issueId)}.`);
+    }
+  }
+
   if ("taskId" in value) {
     const taskId = value.taskId;
     if (typeof taskId !== "string" || taskId.trim().length === 0 || !/^ses_[A-Za-z0-9]+$/.test(taskId.trim())) {
@@ -176,6 +204,14 @@ export function validateDelegationPacket(
     if (typeof progressPath !== "string" || progressPath.trim().length === 0 || !/^\.tgo\/[A-Za-z0-9][A-Za-z0-9._-]*\/progress\.md$/.test(progressPath.trim())) {
       malformed.push("progressPath");
       diagnostics.push("progressPath must match .tgo/<issueId>/progress.md where <issueId> matches [A-Za-z0-9][A-Za-z0-9._-]*");
+    }
+  }
+
+  if ("useLatestDefinitions" in value) {
+    const v = value.useLatestDefinitions;
+    if (typeof v !== "boolean") {
+      malformed.push("useLatestDefinitions");
+      diagnostics.push("useLatestDefinitions must be a boolean when present (default false = pinned).");
     }
   }
 

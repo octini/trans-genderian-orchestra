@@ -12,7 +12,8 @@ import { preapproveExternalDirectory, resolveWorktreeFamily } from "./permission
 import { DEPENDENCIES, installMissing, runShellCommand } from "./deps";
 import { applyPreset, readPresetNudge, resolveActivePreset } from "./presets";
 import { validateDelegationBoundary, validateDelegationPacket, verifyClaimObserved as verifyDelegationClaimObserved } from "./delegation";
-import { captureDelegationSession, probeSessionReuseCapability, persistAbortHandback } from "./session-reuse";
+import { captureDelegationSession, probeSessionReuseCapability, persistAbortHandback, loadSessionMap } from "./session-reuse";
+import { ensureDefSnapshot, isValidBeadID, assertValidBeadID } from "./def-snapshot";
 import { authorizeLifecycleSession, evaluateClosure, verifyClaimObserved } from "./lifecycle";
 import { loadBeadsTui, renderBeadsTui } from "./tui";
 import { checkVersionDrift, fetchLatestVersion, PLUGIN_NPM_NAME, readLocalVersion } from "./version";
@@ -476,6 +477,98 @@ export const TgoPlugin: Plugin = async (
           throw new Error("Beads lifecycle packets are allowed only from an identified primary session.");
         }
       }
+      // Host-code delegation snapshot at dispatch — immutable, atomic tmp+rename, write-once (conductor-oss pattern)
+      if (delegation?.valid && input.tool === "task") {
+        try {
+          const rawArgs = output?.args as Record<string, unknown> | undefined;
+          const packet = rawArgs?.delegationPacket && typeof rawArgs.delegationPacket === "object"
+            ? (rawArgs.delegationPacket as Record<string, unknown>)
+            : undefined;
+          if (packet && typeof packet.issueId === "string" && packet.issueId.trim().length > 0) {
+            const issueId = (packet.issueId as string).trim();
+            // P0: validate BEFORE any path construction — traversal-style ids rejected
+            if (!isValidBeadID(issueId)) {
+              throw new Error(`invalid issueId "${issueId}" — must match VALID_BEAD_ID`);
+            }
+            const repoRoot = directory ?? worktree ?? (project as unknown as { worktree?: string })?.worktree ?? ".";
+            const useLatest = packet.useLatestDefinitions === true;
+            if (useLatest) {
+              const map = await loadSessionMap(repoRoot);
+              const prior = map[issueId];
+              if (prior?.sessionId) {
+                try {
+                  await client.session.abort({ path: { id: prior.sessionId } });
+                } catch (e) {
+                  // P1: abort failure surfaces and skips the rewrite — do not overwrite pinned snapshot
+                  throw new Error(`useLatestDefinitions abort failed for ${issueId}: ${String(e)}`);
+                }
+              }
+            }
+            // Host-authoritative preset: resolve ACTIVE preset (post-nudge) — exact dispatch, no fallback to config.preset
+            const memories = await readPresetNudge(runBd, appLog);
+            const activePreset = resolveActivePreset(config, memories);
+            if (!activePreset || activePreset.trim().length === 0) {
+              throw new Error(`host-authoritative preset resolution failed — active preset empty`);
+            }
+            // Resolve seat name for model + frontmatter — host-authoritative, no fallback
+            let seatName: string | undefined;
+            try {
+              const subagentRaw = (rawArgs as Record<string, unknown>)?.subagent_type;
+              if (typeof subagentRaw === "string" && subagentRaw.trim().length > 0) seatName = subagentRaw.trim();
+            } catch {}
+            if (!seatName || seatName.trim().length === 0) {
+              throw new Error(`host-authoritative seat resolution failed for preset "${activePreset}" — subagent_type missing`);
+            }
+            // Resolve model from ACTIVE preset — exact dispatch, no fallback to other models
+            let model: string | undefined;
+            const presetMap = (config.presets as Record<string, Record<string, { model: string }>>)?.[activePreset];
+            if (!presetMap) {
+              throw new Error(`host-authoritative model resolution failed for preset "${activePreset}" seat "${seatName}" — preset not found`);
+            }
+            const direct = presetMap[seatName as string];
+            if (direct?.model) model = direct.model;
+            else if (["cobain", "grohl", "novoselic"].includes(seatName) && presetMap["band-members"]?.model) {
+              model = presetMap["band-members"].model;
+            }
+            if (!model || model === "unknown" || model.trim().length === 0) {
+              throw new Error(`host-authoritative model resolution failed for preset "${activePreset}" seat "${seatName}"`);
+            }
+            // Read seat frontmatter host-side — record explicit found flag
+            let seatFrontmatter = "";
+            let seatFileFound = false;
+            try {
+              const seatDir = resolveAgentsDir({ agentDir: config.agentDir });
+              const p = path.join(seatDir, `${seatName}.md`);
+              try {
+                const fsMod = await import("node:fs/promises");
+                seatFrontmatter = await fsMod.readFile(p, "utf-8");
+                seatFileFound = true;
+              } catch (e) {
+                const code = (e as NodeJS.ErrnoException)?.code;
+                if (code === "ENOENT") { seatFileFound = false; seatFrontmatter = ""; }
+                else { seatFileFound = false; seatFrontmatter = ""; }
+              }
+            } catch {
+              seatFileFound = false;
+              seatFrontmatter = "";
+            }
+            // Hash covers full five-part definition via packet, not just Objective
+            await ensureDefSnapshot({
+              repoRoot,
+              issueId,
+              packet: packet as { Objective?: unknown; Files?: unknown; Interfaces?: unknown; Constraints?: unknown; Verification?: unknown },
+              seatFrontmatter,
+              seatFileFound,
+              model,
+              preset: activePreset,
+              useLatestDefinitions: useLatest,
+            });
+          }
+        } catch (e) {
+          safeWarn(appLog, `def-snapshot capture failed: ${String(e)}`);
+          throw e;
+        }
+      }
       // A tool is about to execute (bash, edit, etc.). While a foreground tool
       // runs the idle clock is paused so long-running commands don't false-trip
       // the cap. Background-intent calls (args.background === true — dev
@@ -497,6 +590,7 @@ export const TgoPlugin: Plugin = async (
       watchdog.noteToolEnd(input.sessionID, background, isProgress);
       watchdog.noteActivity(input.sessionID);
       if (reuseCapability.supported) {
+        // After-hook is read-only for snapshots — write-once at start only (P1). Never touches def-snapshot.
         await captureDelegationSession({ tool: input.tool, input, output, repoRoot: directory ?? worktree ?? (project as unknown as { worktree?: string })?.worktree ?? ".", enabled: config.sessionReuse?.enabled !== false, log: appLog });
       }
       if (input.tool === "task" && typeof output?.output === "string") {

@@ -1,14 +1,17 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { safeWarn } from "./config";
+import { assertValidBeadID } from "./def-snapshot";
 
 export const PROGRESS_LOCK_STALE_MS = 10_000;
 
 export function progressPath(repoRoot: string, issueId: string): string {
+  assertValidBeadID(issueId);
   return path.join(repoRoot, ".tgo", issueId, "progress.md");
 }
 
 export async function readProgress(repoRoot: string, issueId: string): Promise<string | undefined> {
+  assertValidBeadID(issueId);
   try {
     const target = progressPath(repoRoot, issueId);
     const data = await fs.readFile(target, "utf-8");
@@ -87,6 +90,7 @@ async function releaseProgressLock(lockPath: string, ownerToken: string): Promis
 }
 
 export async function writeProgress(repoRoot: string, issueId: string, content: string): Promise<boolean> {
+  assertValidBeadID(issueId);
   try {
     const issueDir = path.join(repoRoot, ".tgo", issueId);
     const lockPath = path.join(issueDir, "progress.lock");
@@ -117,6 +121,7 @@ export async function updateProgress(
   merge: (parts: ProgressParts) => ProgressParts,
   log?: (level: "warn" | "info" | "error", message: string, extra?: Record<string, unknown>) => void,
 ): Promise<boolean> {
+  assertValidBeadID(issueId);
   try {
     const issueDir = path.join(repoRoot, ".tgo", issueId);
     const lockPath = path.join(issueDir, "progress.lock");

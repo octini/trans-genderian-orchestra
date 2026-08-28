@@ -1,7 +1,8 @@
 import * as crypto from "node:crypto";
 import { safeWarn } from "./config";
 import { readProgress } from "./progress";
-import { estimateSessionTokens, loadSessionMap, shouldReuse } from "./session-reuse";
+import { estimateSessionTokens, loadSessionMap, shouldReuseWithSnapshot } from "./session-reuse";
+import { readDefSnapshot } from "./def-snapshot";
 
 export const BOARD_SENTINEL_START = "<!-- tgo:board -->";
 export const BOARD_SENTINEL_END = "<!-- /tgo:board -->";
@@ -150,7 +151,14 @@ export async function buildBoardTextWithHints(
   if (data.inProgress.length > 0) {
     const inProgressLines: string[] = [];
     for (const issue of data.inProgress) {
-      inProgressLines.push(line(issue));
+      let rendered = line(issue);
+      if (repoRoot) {
+        try {
+          const snap = await readDefSnapshot(repoRoot, issue.id);
+          if (snap) rendered += ` [pinned v${snap.promptHash.slice(0, 8)}]`;
+        } catch {}
+      }
+      inProgressLines.push(rendered);
       if (reusableSet?.has(issue.id) && sessionIdsByIssue?.has(issue.id)) {
         const sid = sessionIdsByIssue.get(issue.id)!;
         inProgressLines.push(`reusable session ${sid} — pass task_id: "${sid}" on the next task call to continue it.`);
@@ -505,7 +513,13 @@ export class BoardController {
         } catch {
           continue;
         }
-        if (shouldReuse(estimate, this.sessionReuse!.maxContextTokens)) {
+        let snapshot: import("./def-snapshot").DefSnapshot | null | undefined;
+        try {
+          snapshot = await readDefSnapshot(this.sessionReuse!.repoRoot, issue.id);
+        } catch {
+          snapshot = null;
+        }
+        if (shouldReuseWithSnapshot(estimate, this.sessionReuse!.maxContextTokens, { snapshot: snapshot ?? null })) {
           reusableSet.add(issue.id);
           sessionIdsByIssue.set(issue.id, sid);
         }
