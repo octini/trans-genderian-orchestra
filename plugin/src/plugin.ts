@@ -20,6 +20,17 @@ import { checkVersionDrift, fetchLatestVersion, PLUGIN_NPM_NAME, readLocalVersio
 import { parseCompletionSignal, terminationDecision, type CompletionSignal } from "./termination";
 import { selfUpdate } from "./self-update";
 import { reconcileSeats } from "./seat-sync";
+// Suspend gate — durable wait-for-user with typed schemas, prose resume, timer catch-up
+import {
+  suspend as suspendWait,
+  tryProseResume,
+  listAllAwaits,
+  scanExpiredAwaits,
+  readAwaitJson,
+  parseProseReply,
+  getRequiredFields,
+  validateAgainstSchema,
+} from "./suspend";
 // No runtime function re-exports here: opencode's legacy plugin loader calls
 // EVERY exported function as a plugin factory (input, options), so an entry
 // re-export like evaluateClosure gets invoked as one and throws inside the
@@ -216,6 +227,35 @@ export const TgoPlugin: Plugin = async (
   const completionSignals = new Map<string, { signal: CompletionSignal; text: string; exitGateRequired: boolean }>();
   const terminationParentIds = new Map<string, string | undefined>();
 
+  // Suspend gate hydration + timer catch-up on plugin load (no daemon, best-effort catch-up)
+  // Documented limit: WAIT timers fire on next launch, not mid-sleep.
+  void (async () => {
+    const repoRoot = directory ?? worktree ?? (project as unknown as { worktree?: string })?.worktree ?? ".";
+    try {
+      const all = await listAllAwaits(repoRoot);
+      const sessionIds: string[] = [];
+      for (const rec of all) {
+        if (rec.sessionId) sessionIds.push(rec.sessionId);
+        else {
+          // Fallback: resolve sessionId via sessions.json map for file-based survival without sessionId in await
+          try {
+            const map = await loadSessionMap(repoRoot);
+            const sid = map[rec.issueId]?.sessionId;
+            if (sid) sessionIds.push(sid);
+          } catch {}
+        }
+      }
+      if (sessionIds.length > 0) watchdog.hydrateSuspended(sessionIds);
+    } catch (e) {
+      safeWarn(appLog, `suspend hydration failed: ${String(e)}`);
+    }
+    try {
+      await scanExpiredAwaits(repoRoot, appLog);
+    } catch (e) {
+      safeWarn(appLog, `timer catch-up failed: ${String(e)}`);
+    }
+  })();
+
   const setup = new SetupController({
     run: async (command, cwd) => {
       try {
@@ -289,6 +329,48 @@ export const TgoPlugin: Plugin = async (
             return "Beads snapshot is available only from a primary session.";
           }
           return renderBeadsTui(await loadBeadsTui(runBd));
+        },
+      }),
+      tgo_wait_for_user: tool({
+        description: "Suspend current task awaiting human input — durable wait gate (file-based, survives restart). Provide resumeSchema describing expected reply shape.",
+        args: {
+          issueId: tool.schema.string(),
+          reason: tool.schema.string(),
+          suspendSchema: tool.schema.string(),
+          suspendPayload: tool.schema.string(),
+          resumeSchema: tool.schema.string(),
+          until: tool.schema.string().optional(),
+        },
+        async execute(args, context) {
+          const repoRoot = directory ?? worktree ?? (project as unknown as { worktree?: string })?.worktree ?? ".";
+          const issueId = String((args as Record<string, unknown>).issueId ?? "").trim();
+          const reason = String((args as Record<string, unknown>).reason ?? "awaiting human").trim();
+          let suspendSchema: unknown;
+          let suspendPayload: unknown;
+          let resumeSchema: unknown;
+          try { suspendSchema = JSON.parse(String((args as Record<string, unknown>).suspendSchema ?? "{}")); } catch { suspendSchema = {}; }
+          try { suspendPayload = JSON.parse(String((args as Record<string, unknown>).suspendPayload ?? "{}")); } catch { suspendPayload = (args as Record<string, unknown>).suspendPayload; }
+          try { resumeSchema = JSON.parse(String((args as Record<string, unknown>).resumeSchema ?? "{}")); } catch { resumeSchema = {}; }
+          const until = (args as Record<string, unknown>).until ? String((args as Record<string, unknown>).until) : undefined;
+          assertValidBeadID(issueId);
+          const result = await suspendWait({
+            repoRoot,
+            issueId,
+            suspendSchema: suspendSchema as import("./suspend").JsonSchema,
+            suspendPayload,
+            resumeSchema: resumeSchema as import("./suspend").JsonSchema,
+            reason,
+            until,
+            sessionId: context.sessionID,
+          });
+          if (result.written) {
+            watchdog.markSuspended(context.sessionID);
+            // also hydrate via sessions.json mapping for cross-session visibility
+            try { board.invalidate(context.sessionID); } catch {}
+            return `suspended ${issueId}: ⏸ awaiting human: ${reason} — reply with: ${getRequiredFields(resumeSchema as import("./suspend").JsonSchema).join(", ") || "response"}`;
+          } else {
+            return `already suspended ${issueId}`;
+          }
         },
       }),
     },
@@ -401,6 +483,131 @@ export const TgoPlugin: Plugin = async (
     },
 
     "chat.message": async (input, output) => {
+      // --- Suspend gate: prose resume interception — validates BEFORE wake, rejects invalid without clearing ---
+      try {
+        const repoRoot = directory ?? worktree ?? (project as unknown as { worktree?: string })?.worktree ?? ".";
+        const rawText = output.parts
+          .filter((p) => (p as { type?: string }).type === "text")
+          .map((p) => (p as { text?: string }).text ?? "")
+          .join("\n")
+          .trim();
+        if (rawText.length > 0) {
+          // Find suspended await for this session: first via sessions.json mapping, then scan by sessionId
+          let issueId: string | undefined;
+          try {
+            const map = await loadSessionMap(repoRoot);
+            issueId = Object.entries(map).find(([, v]) => v.sessionId === input.sessionID)?.[0];
+          } catch {}
+          let candidateIssueIds: string[] = [];
+          if (issueId) candidateIssueIds = [issueId];
+          else {
+            try {
+              const all = await listAllAwaits(repoRoot);
+              for (const rec of all) {
+                if (rec.sessionId === input.sessionID) candidateIssueIds.push(rec.issueId);
+              }
+            } catch {}
+          }
+          if (candidateIssueIds.length > 0) {
+            for (const cid of candidateIssueIds) {
+              const awaitRec = await readAwaitJson(repoRoot, cid);
+              if (!awaitRec) continue;
+              // Attempt prose resume — validates against resumeSchema BEFORE waking
+              const result = await tryProseResume({ repoRoot, issueId: cid, rawReply: rawText });
+              if (result.success) {
+                // Clear watchdog suspension for the delegated session (which holds the await), not just current input session
+                const delegatedSid = awaitRec.sessionId;
+                if (delegatedSid) watchdog.markResumed(delegatedSid);
+                try {
+                  const map = await loadSessionMap(repoRoot);
+                  const sid2 = map[cid]?.sessionId;
+                  if (sid2) watchdog.markResumed(sid2);
+                } catch {}
+                // Also clear current input session if it was marked suspended (same-session resume)
+                watchdog.markResumed(input.sessionID);
+                appLog("info", `tgo: prose resume succeeded for ${cid}`, { issueId: cid, sessionID: input.sessionID });
+                // Wake delegated session if resume came from a different (primary) session — inject resume payload
+                if (delegatedSid && delegatedSid !== input.sessionID) {
+                  try {
+                    await client.session.prompt({
+                      path: { id: delegatedSid },
+                      body: { parts: [{ type: "text", text: `Resumed for ${cid} with: ${rawText}`, synthetic: true }] },
+                    });
+                  } catch (e) {
+                    safeWarn(appLog, `tgo: wake prompt failed for ${delegatedSid}: ${String(e)}`);
+                  }
+                }
+              } else {
+                // Already resumed by concurrent request — treat as success (converged)
+                if (result.errors?.some((er) => er.includes("already resumed"))) {
+                  appLog("info", `tgo: concurrent resume converged for ${cid}`, { issueId: cid, sessionID: input.sessionID });
+                  break;
+                }
+                // Invalid reply = rejection surfaced to human, session stays suspended (file preserved)
+                const required = getRequiredFields(awaitRec.resumeSchema).join(", ") || "response";
+                const details = result.errors?.join("; ") ?? "validation failed";
+                const hint = `resume validation failed for ${cid}: ${details} — reply with: ${required}`;
+                appLog("warn", hint, { issueId: cid, sessionID: input.sessionID, errors: result.errors });
+                // Surface to human by throwing — opencode surfaces hook errors to the user and does not wake the LLM
+                // Keep file intact so session remains suspended
+                throw new Error(hint);
+              }
+              // Only handle first matching await for this session
+              break;
+            }
+          } else {
+            // No session-specific await — check for cross-session resume (primary replying to delegated suspend)
+            // Only attempt if there is at least one suspended await; validate reply against each resumeSchema
+            // Valid match => treat as cross-session resume and wake delegated session. Invalid => let message pass normally
+            // (do not block primary's unrelated messages)
+            try {
+              const all = await listAllAwaits(repoRoot);
+              if (all.length > 0) {
+                const parsed = parseProseReply(rawText);
+                for (const rec of all) {
+                  const validation = validateAgainstSchema(parsed, rec.resumeSchema);
+                  if (validation.valid) {
+                    const result = await tryProseResume({ repoRoot, issueId: rec.issueId, rawReply: rawText });
+                    if (result.success) {
+                      if (rec.sessionId) watchdog.markResumed(rec.sessionId);
+                      try {
+                        const map = await loadSessionMap(repoRoot);
+                        const sid = map[rec.issueId]?.sessionId;
+                        if (sid) watchdog.markResumed(sid);
+                      } catch {}
+                      appLog("info", `tgo: cross-session prose resume for ${rec.issueId} from ${input.sessionID}`, {
+                        issueId: rec.issueId,
+                        fromSession: input.sessionID,
+                        delegatedSession: rec.sessionId ?? null,
+                      });
+                      if (rec.sessionId && rec.sessionId !== input.sessionID) {
+                        try {
+                          await client.session.prompt({
+                            path: { id: rec.sessionId },
+                            body: { parts: [{ type: "text", text: `Resumed for ${rec.issueId} with: ${rawText}`, synthetic: true }] },
+                          });
+                        } catch (e) {
+                          safeWarn(appLog, `tgo: cross-session wake failed for ${rec.sessionId}: ${String(e)}`);
+                        }
+                      }
+                      try { board.invalidate(input.sessionID); } catch {}
+                      break;
+                    } else if (result.errors?.some((e) => e.includes("already resumed"))) {
+                      break;
+                    }
+                  }
+                }
+              }
+            } catch {}
+          }
+        }
+      } catch (e) {
+        // If this was our validation rejection, rethrow to surface to human
+        const msg = String((e as Error)?.message ?? e);
+        if (msg.includes("resume validation failed") || msg.includes("reply with:")) throw e;
+        // Otherwise log and continue (non-fatal suspend path)
+        safeWarn(appLog, `suspend prose hook failed: ${String(e)}`);
+      }
       watchdog.noteActivity(input.sessionID);
       if (config.setup?.enabled !== false && directory && directory !== "/") {
         try {

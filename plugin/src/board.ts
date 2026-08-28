@@ -3,6 +3,8 @@ import { safeWarn } from "./config";
 import { readProgress } from "./progress";
 import { estimateSessionTokens, loadSessionMap, shouldReuseWithSnapshot } from "./session-reuse";
 import { readDefSnapshot } from "./def-snapshot";
+// Suspend gate badge — additive, no rewrite of existing board hints path
+import { readAwaitJson, getRequiredFields, isExpired } from "./suspend";
 
 export const BOARD_SENTINEL_START = "<!-- tgo:board -->";
 export const BOARD_SENTINEL_END = "<!-- /tgo:board -->";
@@ -167,6 +169,21 @@ export async function buildBoardTextWithHints(
         try {
           const p = await readProgress(repoRoot, issue.id);
           if (p !== undefined) inProgressLines.push(`progress: .tgo/${issue.id}/progress.md`);
+        } catch {}
+      }
+      // Suspend badge: durable wait gate — derived from resumeSchema required fields
+      if (repoRoot) {
+        try {
+          const awaitRec = await readAwaitJson(repoRoot, issue.id);
+          if (awaitRec) {
+            const fields = getRequiredFields(awaitRec.resumeSchema);
+            const fieldsStr = fields.length > 0 ? fields.join(", ") : "response";
+            let badge = `⏸ awaiting human: ${awaitRec.reason} — reply with: ${fieldsStr}`;
+            if (awaitRec.until && isExpired(awaitRec)) {
+              badge += ` (timer expired ${awaitRec.until})`;
+            }
+            inProgressLines.push(badge);
+          }
         } catch {}
       }
     }

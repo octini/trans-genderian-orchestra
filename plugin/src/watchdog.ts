@@ -186,6 +186,11 @@ export class WatchdogController {
   private readonly uptimeNow: () => number;
   private lastWallMs: number;
   private lastUptimeMs: number;
+  // Suspended sessions: durable wait gate — suspended ≠ failed. File-based survives restart
+  // (plugin hydrates this set on load by scanning .tgo/*/await.json). While suspended,
+  // idle/stuck aborts are suppressed; wall-clock still applies only if explicitly desired,
+  // but per spec suspended sessions are excluded from idle/stuck (and wall-clock) aborts.
+  private readonly suspended = new Set<string>();
 
   constructor(config: WatchdogConfig, deps: WatchdogDeps) {
     this.config = config;
@@ -329,6 +334,30 @@ export class WatchdogController {
 
   onCompact(sessionID: string): void {
     this.sessions.delete(sessionID);
+    this.suspended.delete(sessionID);
+  }
+
+  // --- Suspend gate: additive API for durable wait-for-user ---
+  markSuspended(sessionID: string): void {
+    if (!sessionID) return;
+    this.suspended.add(sessionID);
+  }
+
+  markResumed(sessionID: string): void {
+    if (!sessionID) return;
+    this.suspended.delete(sessionID);
+  }
+
+  isSuspended(sessionID: string): boolean {
+    return this.suspended.has(sessionID);
+  }
+
+  // Hydrate from await.json scan — called on plugin load to survive restart.
+  // Accepts pre-resolved sessionIds for each suspended issue.
+  hydrateSuspended(sessionIds: string[]): void {
+    for (const id of sessionIds) {
+      if (id) this.suspended.add(id);
+    }
   }
 
   get size(): number {
@@ -382,6 +411,8 @@ export class WatchdogController {
     for (const tracked of this.sessions.values()) {
       if (tracked.aborted) continue;
       if (!tracked.busy) continue;
+      // Suspended sessions are excluded from idle/stuck (and wall-clock) aborts — durable wait gate
+      if (this.suspended.has(tracked.sessionID)) continue;
       const now = this.awakeNow();
       // Wall-clock measures from the later of session start and the last
       // completed foreground tool. A session that keeps completing tools is
