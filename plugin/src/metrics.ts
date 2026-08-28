@@ -20,9 +20,18 @@ export function metricsPath(repoRoot: string): string {
 
 let metricsWriteInFlight: Promise<void> | undefined;
 export async function writeMetrics(repoRoot: string, snapshot: MetricsSnapshot): Promise<void> {
-  // F8 single-flight: serialize concurrent writes so older doesn't overwrite newer
-  if (metricsWriteInFlight) {
+  // F4 double-checked locking: after awaiting shared promise, re-read and skip if stale; only guard owner writes
+  while (metricsWriteInFlight) {
     try { await metricsWriteInFlight; } catch {}
+    try {
+      const existing = await readMetrics(repoRoot);
+      if (existing) {
+        const existingTs = Date.parse(existing.updatedAt);
+        const incomingTs = Date.parse(snapshot.updatedAt);
+        if (!Number.isNaN(existingTs) && !Number.isNaN(incomingTs) && incomingTs <= existingTs) return;
+      }
+    } catch {}
+    if (!metricsWriteInFlight) break;
   }
   const task = (async () => {
     const dir = path.join(repoRoot, ".tgo");
@@ -222,7 +231,7 @@ export function buildProblemsSection(problems: ProblemEntry[]): string | undefin
 
 /** Map recovery flags + watchdog state into ProblemEntry[] for board/sidebar */
 export function problemsFromRecovery(
-  recovery: Array<{ runId: string; reason: "suspended" | "dead-heartbeat"; lastHeartbeat?: number; hasAwaitJson: boolean }>,
+  recovery: Array<{ runId: string; reason: "suspended" | "dead-heartbeat" | "aborted"; lastHeartbeat?: number; hasAwaitJson: boolean }>,
   watchdogProblems?: Array<{ sessionID: string; issueId?: string; state: ProblemState; reason: string }>,
 ): ProblemEntry[] {
   const out: ProblemEntry[] = [];
@@ -231,6 +240,8 @@ export function problemsFromRecovery(
       out.push({ runId: r.runId, state: "awaiting", reason: "suspended — await.json present", lastTs: r.lastHeartbeat });
     } else if (r.reason === "dead-heartbeat") {
       out.push({ runId: r.runId, state: "stuck", reason: `dead heartbeat — last ${r.lastHeartbeat ? new Date(r.lastHeartbeat).toISOString() : "unknown"}`, lastTs: r.lastHeartbeat });
+    } else if ((r.reason as string) === "aborted") {
+      out.push({ runId: r.runId, state: "aborted", reason: "aborted — terminal status", lastTs: r.lastHeartbeat });
     }
   }
   if (watchdogProblems) {

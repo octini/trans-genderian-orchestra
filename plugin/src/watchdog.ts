@@ -343,6 +343,32 @@ export class WatchdogController {
     }));
   }
 
+  /** F2: only flag actual problems (idle/stuck/aborted), not every busy */
+  getProblems(now?: number): Array<{ sessionID: string; parentID?: string; state: "idle" | "stuck" | "aborted"; reason: string }> {
+    const checkNow = now ?? this.awakeNow();
+    const out: Array<{ sessionID: string; parentID?: string; state: "idle" | "stuck" | "aborted"; reason: string }> = [];
+    for (const tracked of this.sessions.values()) {
+      if (tracked.aborted) continue;
+      if (!tracked.busy) continue;
+      const wallBaseline = Math.max(tracked.busySince, tracked.lastProgress);
+      const wallElapsed = checkNow - wallBaseline;
+      const idleElapsed = tracked.toolInFlight > 0 ? 0 : checkNow - tracked.lastActivity;
+      const wallClockExempt = tracked.backgroundInFlight > 0 && tracked.toolInFlight === 0;
+      const windowSize = tracked.stuckWindow.length;
+      const distinct = new Set(tracked.stuckWindow).size;
+      const windowElapsed = windowSize > 0 && tracked.stuckWindowTimes.length > 0 ? checkNow - tracked.stuckWindowTimes[0]! : 0;
+      const isStuckLoop = tracked.toolInFlight === 0 && windowSize >= this.config.stuckLoopTools && this.config.stuckLoopTools > 0 && distinct < 3 && windowElapsed >= this.config.stuckLoopMs;
+      if (isStuckLoop) {
+        out.push({ sessionID: tracked.sessionID, parentID: tracked.parentID, state: "stuck", reason: "stuck-loop" });
+      } else if (!wallClockExempt && wallElapsed >= this.config.wallClockMs) {
+        out.push({ sessionID: tracked.sessionID, parentID: tracked.parentID, state: "aborted", reason: "wall-clock" });
+      } else if (idleElapsed >= this.config.idleMs) {
+        out.push({ sessionID: tracked.sessionID, parentID: tracked.parentID, state: "idle", reason: "idle" });
+      }
+    }
+    return out;
+  }
+
   // Awake-only wall clock: Date.now() minus accumulated host-sleep drift. All
   // session clocks (busySince, lastActivity) are stored in this frame. Ticks
   // the sleep offset on every read so hooks firing between checks stay in the

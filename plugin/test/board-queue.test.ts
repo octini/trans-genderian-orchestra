@@ -123,16 +123,18 @@ describe("board — queue and problems rendering", () => {
     }
   });
 
-  test("BoardController problems section renders mixed states", async () => {
+  test("BoardController problems section renders mixed states (file-derived)", async () => {
     const dir = mkdtempSync(path.join(os.tmpdir(), "tgo-board-prob-"));
     try {
-      // create runs that will be flagged as dead-heartbeat and suspended (contract v2)
       const now = Date.now();
       await appendRunEvent(dir, "tgo-prob-stuck.1", { ts: now - 10 * 60 * 1000, type: "heartbeat", seat: "dylan", tool: "heartbeat", argsHash: hashArgs({}), ok: true, issueId: "tgo-prob-stuck.1", note: "heartbeat" });
       const awaitPath = path.join(dir, ".tgo", "tgo-prob-await.1", "await.json");
       await fs.mkdir(path.dirname(awaitPath), { recursive: true });
       await fs.writeFile(awaitPath, "{}", "utf-8");
       await appendRunEvent(dir, "tgo-prob-await.1", { ts: now, type: "step", seat: "dylan", tool: "task", argsHash: hashArgs({}), ok: true, issueId: "tgo-prob-await.1", note: "s" });
+      // aborted via terminal status:aborted
+      await appendRunEvent(dir, "tgo-prob-aborted.1", { ts: now - 5000, type: "heartbeat", seat: "dylan", tool: "heartbeat", argsHash: hashArgs({}), ok: true, issueId: "tgo-prob-aborted.1", note: "heartbeat" });
+      await appendRunEvent(dir, "tgo-prob-aborted.1", { ts: now, type: "status", seat: "dylan", tool: "task", argsHash: hashArgs({}), ok: false, issueId: "tgo-prob-aborted.1", note: "aborted" });
 
       const shim = createShim();
       const run = fakeRunner({
@@ -143,18 +145,18 @@ describe("board — queue and problems rendering", () => {
       });
       const client = { session: { messages: async () => [] } } as any;
       const ctrl = new BoardController({ run, shim, refreshMs: 0, sessionReuse: { repoRoot: dir, client, maxContextTokens: 100000, supported: true, enabled: true } });
-      // also inject manual problems for idle/aborted to test mixed
-      ctrl.setProblems([
-        { runId: "tgo-idle.1", state: "idle", reason: "idle 30s" },
-        { runId: "tgo-aborted.1", state: "aborted", reason: "watchdog wall-clock" },
-      ]);
       const text = await ctrl.renderFor("sess-prob-1");
       expect(text).toContain("PROBLEMS:");
-      // should contain all four states: stuck (from dead heartbeat), awaiting (from await.json), plus injected idle/aborted
+      expect(text).toContain("tgo-prob-stuck.1");
       expect(text).toContain("STUCK");
+      expect(text).toContain("tgo-prob-await.1");
       expect(text).toContain("AWAITING");
-      expect(text).toContain("IDLE");
+      expect(text).toContain("tgo-prob-aborted.1");
       expect(text).toContain("ABORTED");
+      // stale drop: after resolving stuck, next scan should drop it
+      await appendRunEvent(dir, "tgo-prob-stuck.1", { ts: now, type: "status", seat: "dylan", tool: "task", argsHash: hashArgs({}), ok: true, issueId: "tgo-prob-stuck.1", note: "complete" });
+      const text2 = await ctrl.renderFor("sess-prob-2");
+      expect(text2).not.toContain("tgo-prob-stuck.1");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

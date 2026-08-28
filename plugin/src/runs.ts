@@ -181,7 +181,7 @@ export function hashArgs(args: unknown): string {
 export interface RecoveryFlag {
   runId: string;
   issueId: string;
-  reason: "suspended" | "dead-heartbeat";
+  reason: "suspended" | "dead-heartbeat" | "aborted";
   lastHeartbeat?: number;
   hasAwaitJson: boolean;
   hasTerminalStatus: boolean;
@@ -227,6 +227,7 @@ export async function scanRunsForProblems(
       continue;
     }
     const hasTerminalStatus = events.some(isTerminalStatus);
+    const hasAborted = events.some((e) => e.type === "status" && (e.note ?? "").trim().toLowerCase() === "aborted");
     const heartbeats = events.filter((e) => e.type === "heartbeat");
     const lastHeartbeat = heartbeats.length > 0 ? heartbeats[heartbeats.length - 1]!.ts : undefined;
     const lastEventTs = events.length > 0 ? events[events.length - 1]!.ts : undefined;
@@ -237,6 +238,10 @@ export async function scanRunsForProblems(
     } catch {}
     if (hasAwait) {
       out.push({ runId, issueId, reason: "suspended", lastHeartbeat: heartbeatRef, hasAwaitJson: true, hasTerminalStatus });
+      continue;
+    }
+    if (hasAborted) {
+      out.push({ runId, issueId, reason: "aborted", lastHeartbeat: heartbeatRef, hasAwaitJson: false, hasTerminalStatus });
       continue;
     }
     if (!hasTerminalStatus && heartbeatRef !== undefined && now - heartbeatRef > threshold) {
@@ -261,11 +266,12 @@ export const DEFAULT_PRUNE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 export const DEFAULT_PRUNE_MAX_BYTES = 50 * 1024 * 1024;
 export const DEFAULT_PRUNE_MAX_FILES = 200;
 
-// Single-flight guard for prune
-let pruneInFlight: Promise<string[]> | undefined;
+// Single-flight guard for prune — F5 repo-scoped (not global)
+const pruneInFlight = new Map<string, Promise<string[]>>();
 
 export async function pruneRuns(repoRoot: string, opts: PruneOptions = {}): Promise<string[]> {
-  if (pruneInFlight) return pruneInFlight;
+  const key = path.resolve(repoRoot);
+  if (pruneInFlight.has(key)) return pruneInFlight.get(key)!;
   const p = (async () => {
     const now = opts.now ?? Date.now();
     const maxAgeMs = opts.maxAgeMs ?? DEFAULT_PRUNE_MAX_AGE_MS;
@@ -367,10 +373,10 @@ export async function pruneRuns(repoRoot: string, opts: PruneOptions = {}): Prom
     }
     return deleted;
   })();
-  pruneInFlight = p;
+  pruneInFlight.set(key, p);
   try {
     return await p;
   } finally {
-    pruneInFlight = undefined;
+    if (pruneInFlight.get(key) === p) pruneInFlight.delete(key);
   }
 }

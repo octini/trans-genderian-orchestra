@@ -10,6 +10,34 @@ import { createProblemsStore } from "../src/sidebar/tui";
 
 function tmpDir() { return mkdtempSync(path.join(os.tmpdir(), "tgo-fix-")); }
 
+describe("F1 sessionToRunId per-dispatch + child seeding", () => {
+  test("two sequential delegations from one parent get distinct runIds", async () => {
+    // Simulate plugin's sessionToRunId logic: parent session dispatches two tasks sequentially
+    const parentSid = "sess-parent-1";
+    const runId1 = "tgo-f1-first.1";
+    const runId2 = "tgo-f1-second.1";
+    const childSid1 = "sess-child-1";
+    const childSid2 = "sess-child-2";
+    // Simulate in-memory map as plugin does
+    const sessionToRunId = new Map<string, string>();
+    // First dispatch
+    sessionToRunId.set(parentSid, runId1);
+    // Child created from first dispatch — seeded at session.created
+    sessionToRunId.set(childSid1, sessionToRunId.get(parentSid)!);
+    expect(sessionToRunId.get(childSid1)).toBe(runId1);
+    // Second dispatch from same parent overwrites parent mapping (per-dispatch)
+    sessionToRunId.set(parentSid, runId2);
+    expect(sessionToRunId.get(parentSid)).toBe(runId2);
+    // Child from second dispatch gets new runId, not first
+    sessionToRunId.set(childSid2, sessionToRunId.get(parentSid)!);
+    expect(sessionToRunId.get(childSid2)).toBe(runId2);
+    expect(sessionToRunId.get(childSid2)).not.toBe(runId1);
+    // Child tool events resolve immediately via map
+    expect(sessionToRunId.get(childSid1)).toBe(runId1);
+    expect(sessionToRunId.get(childSid2)).toBe(runId2);
+  });
+});
+
 describe("F3 child-event runId resolution + periodic heartbeat", () => {
   test("child tool can resolve runId via sessionToRunId fallback (simulated)", async () => {
     // Simulate plugin's sessionToRunId map: child session should resolve to parent issueId
@@ -46,16 +74,14 @@ describe("F3 child-event runId resolution + periodic heartbeat", () => {
 });
 
 describe("F5 watchdog problems wiring", () => {
-  test("board merges watchdog busy into problems via watchdogGetter", async () => {
+  test("board merges watchdog actual problems (idle) via watchdogProblemsGetter, not every busy", async () => {
     const dir = tmpDir();
     try {
       const shim = createShim();
-      const watchdogTracked = [
-        { sessionID: "sess-watch-1", parentID: "p1", busy: true },
-        { sessionID: "sess-watch-2", parentID: "p1", busy: false },
+      // Simulate a watchdog that has an actual idle problem (not just busy)
+      const watchdogProblems = [
+        { sessionID: "sess-watch-1", parentID: "p1", state: "idle" as const, reason: "idle" },
       ];
-      const shimAgents = new Map<string, string>([["sess-watch-1", "dylan"]]);
-      // Need to create a fake runner that returns empty
       const run = async (cmd: string) => {
         if (cmd.includes("in_progress")) return "[]";
         if (cmd.includes("bd ready")) return "[]";
@@ -65,13 +91,18 @@ describe("F5 watchdog problems wiring", () => {
       };
       const client = { session: { messages: async () => [] } } as any;
       const ctrl = new BoardController({ run, shim, refreshMs: 0, sessionReuse: { repoRoot: dir, client, maxContextTokens: 100000, supported: true, enabled: true } });
-      ctrl.setWatchdogGetter(() => watchdogTracked as any);
-      // need to populate shim.agents for watchdog mapping
+      // Use the new problems getter (actual problems), not just busy
+      ctrl.setWatchdogProblemsGetter(() => watchdogProblems as any);
       shim.agents.set("sess-watch-1", "dylan");
       const text = await ctrl.renderFor("sess-watch-test");
-      // Should contain watchdog-derived problem (idle)
       expect(text).toContain("PROBLEMS:");
       expect(text).toContain("IDLE");
+      // Also verify that a busy but not idle does NOT become a problem
+      const ctrl2 = new BoardController({ run, shim: createShim(), refreshMs: 0, sessionReuse: { repoRoot: dir, client, maxContextTokens: 100000, supported: true, enabled: true } });
+      ctrl2.setWatchdogGetter(() => [{ sessionID: "sess-busy", parentID: "p1", busy: true }] as any);
+      // No problems getter set, so busy alone should not create PROBLEMS
+      const text2 = await ctrl2.renderFor("sess-watch-test2");
+      expect(text2).not.toContain("PROBLEMS:");
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });
@@ -96,13 +127,37 @@ describe("F6 cache dedup", () => {
       ]);
       expect(ctrl.getProblems().length).toBe(1);
       expect(ctrl.getProblems()[0]!.reason).toBe("second");
-      // Also test that render dedup works
+      // Also test that render dedup works with a stale heartbeat (so it appears in PROBLEMS)
       const now = Date.now();
-      await appendRunEvent(dir, "tgo-dup.1", { ts: now - 10000, type: "heartbeat", seat: "dylan", tool: "heartbeat", argsHash: hashArgs({}), ok: true, issueId: "tgo-dup.1", note: "heartbeat" });
+      await appendRunEvent(dir, "tgo-dup.1", { ts: now - 10 * 60 * 1000, type: "heartbeat", seat: "dylan", tool: "heartbeat", argsHash: hashArgs({}), ok: true, issueId: "tgo-dup.1", note: "heartbeat" });
       const text = await ctrl.renderFor("sess-dedup");
-      // Should not duplicate
+      // Should not duplicate (derived + cache dedup)
       const occurrences = (text!.match(/tgo-dup\.1/g) ?? []).length;
       expect(occurrences).toBe(1);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+  test("stale problems drop on next scan (full replacement)", async () => {
+    const dir = tmpDir();
+    try {
+      const shim = createShim();
+      const run = async (cmd: string) => {
+        if (cmd.includes("in_progress")) return "[]";
+        if (cmd.includes("bd ready")) return "[]";
+        if (cmd.includes("bd blocked")) return "[]";
+        if (cmd.includes("bd memories")) return "{}";
+        return "";
+      };
+      const client = { session: { messages: async () => [] } } as any;
+      const ctrl = new BoardController({ run, shim, refreshMs: 0, sessionReuse: { repoRoot: dir, client, maxContextTokens: 100000, supported: true, enabled: true } });
+      const now = Date.now();
+      await appendRunEvent(dir, "tgo-stale-drop.1", { ts: now - 10 * 60 * 1000, type: "heartbeat", seat: "dylan", tool: "heartbeat", argsHash: hashArgs({}), ok: true, issueId: "tgo-stale-drop.1", note: "heartbeat" });
+      const text1 = await ctrl.renderFor("sess-drop-1");
+      expect(text1).toContain("tgo-stale-drop.1");
+      // Now add terminal status so it is no longer stale
+      await appendRunEvent(dir, "tgo-stale-drop.1", { ts: now, type: "status", seat: "dylan", tool: "task", argsHash: hashArgs({}), ok: true, issueId: "tgo-stale-drop.1", note: "complete" });
+      // Need new controller or invalidate cache to force re-scan (since renderFor caches per sessionID, use new sessionID)
+      const text2 = await ctrl.renderFor("sess-drop-2");
+      expect(text2).not.toContain("tgo-stale-drop.1");
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });

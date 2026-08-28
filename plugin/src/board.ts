@@ -360,6 +360,7 @@ export class BoardController {
   // tgo-2ry: queue gauge and problems state — additive, no existing field removed
   private previousMetrics?: import("./metrics").MetricsSnapshot;
   private watchdogGetter?: () => ReadonlyArray<{ sessionID: string; parentID?: string; busy: boolean }>;
+  private watchdogProblemsGetter?: () => Array<{ sessionID: string; parentID?: string; state: "idle" | "stuck" | "aborted"; reason: string }>;
   private problemsCache: ProblemEntry[] = [];
   private pruneDone = false;
   private runsConfig?: { maxAgeMs?: number; maxBytes?: number; maxFiles?: number; heartbeatThresholdMs?: number };
@@ -385,6 +386,10 @@ export class BoardController {
   /** tgo-2ry: allow plugin to wire watchdog tracked state without rewriting board */
   setWatchdogGetter(getter: () => ReadonlyArray<{ sessionID: string; parentID?: string; busy: boolean }>): void {
     this.watchdogGetter = getter;
+  }
+
+  setWatchdogProblemsGetter(getter: () => Array<{ sessionID: string; parentID?: string; state: "idle" | "stuck" | "aborted"; reason: string }>): void {
+    this.watchdogProblemsGetter = getter;
   }
 
   setRunsConfig(cfg: { maxAgeMs?: number; maxBytes?: number; maxFiles?: number; heartbeatThresholdMs?: number }): void {
@@ -608,17 +613,12 @@ export class BoardController {
           const { problemsFromRecovery } = await import("./metrics");
           // F5: wire watchdog problems via watchdogGetter
           let watchdogProblems: Array<{ sessionID: string; issueId?: string; state: import("./metrics").ProblemState; reason: string }> | undefined;
-          if (this.watchdogGetter) {
+          // F2: only flag actual watchdog problems (idle/stuck/aborted), not every busy
+          if (this.watchdogProblemsGetter) {
             try {
-              const tracked = this.watchdogGetter();
-              const busy = tracked.filter((t) => t.busy);
-              if (busy.length > 0) {
-                watchdogProblems = busy.map((t) => {
-                  // try to resolve issueId via sessionMap or shim? For now use sessionID as runId placeholder and map to idle (watchdog busy implies idle risk)
-                  // If we have a mapping from sessionID to issueId via loadSessionMap, try to resolve
-                  return { sessionID: t.sessionID, state: "idle" as const, reason: "watchdog busy — possible idle" };
-                });
-                // Attempt to enrich with issueId via session map (best effort)
+              const probs = this.watchdogProblemsGetter();
+              if (probs.length > 0) {
+                watchdogProblems = probs.map((p) => ({ sessionID: p.sessionID, issueId: undefined, state: p.state as import("./metrics").ProblemState, reason: `watchdog ${p.reason}` }));
                 try {
                   const map = await (await import("./session-reuse")).loadSessionMap(repoRootForProblems).catch(() => ({} as any));
                   for (const wp of watchdogProblems) {
@@ -631,15 +631,10 @@ export class BoardController {
             } catch {}
           }
           const derived = problemsFromRecovery(recovery as any, watchdogProblems as any);
-          // F6: key by runId+state, replace-not-append, drop stale (but keep externally set cache for 1 tick for test harness)
+          // F3 file-derived = full replacement each scan (no merge-back), watchdog recomputed fresh, union is cache
+          // F6 dedup by runId+state (replace-not-append) is handled via Map, stale dropped by not re-adding missing cache entries
           const dedup = new Map<string, ProblemEntry>();
           for (const p of derived) dedup.set(`${p.runId}:${p.state}`, p);
-          // Include previously setProblems that are not stale — for F6 drop, we only keep cache entries that correspond to a current derived/watchdog or were explicitly set and not yet stale.
-          // For now, keep cache entries that are not already in dedup (preserves test-injected idle/aborted for one render, but next scan without them will drop)
-          for (const p of this.problemsCache) {
-            const key = `${p.runId}:${p.state}`;
-            if (!dedup.has(key)) dedup.set(key, p);
-          }
           const merged = [...dedup.values()];
           if (merged.length > 0) problems = merged;
           this.problemsCache = merged;

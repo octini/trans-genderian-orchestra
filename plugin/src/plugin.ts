@@ -177,12 +177,79 @@ export const TgoPlugin: Plugin = async (
 
   const fit = new TaskFitController();
 
+  // F1/F3 maps before watchdog so its abort handler can capture them (avoid TDZ)
+  const runToolStarts = new Map<string, number>();
+  const sessionToRunId = new Map<string, string>();
+  const heartbeatIntervals = new Map<string, ReturnType<typeof setInterval>>();
+  function sanitizeCmdForRun(cmd: string): string { return cmd.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "").slice(0, 500); }
+  function extractCmd(tool: string, args: unknown): string | undefined {
+    if (!args || typeof args !== "object") return undefined;
+    const obj = args as Record<string, unknown>;
+    const lower = tool.toLowerCase();
+    if (lower.includes("bash")) {
+      const c = (obj.command as string) ?? (obj.cmd as string) ?? (obj.input as string);
+      if (typeof c === "string" && c.trim()) return sanitizeCmdForRun(c);
+    }
+    if (lower === "edit" || lower === "write" || lower === "multiedit") {
+      const p = (obj.filePath as string) ?? (obj.path as string) ?? (obj.target as string);
+      if (typeof p === "string" && p.trim()) return sanitizeCmdForRun(p);
+    }
+    return undefined;
+  }
+  function startHeartbeat(repoRoot: string, runId: string, seat: string): void {
+    if (heartbeatIntervals.has(runId)) return;
+    const interval = setInterval(() => {
+      void (async () => {
+        try {
+          await appendRunEvent(repoRoot, runId, {
+            ts: Date.now(),
+            type: "heartbeat",
+            seat,
+            tool: "heartbeat",
+            argsHash: hashArgs({}),
+            ok: true,
+            issueId: runId,
+            note: "heartbeat",
+          });
+        } catch {}
+      })();
+    }, 30_000);
+    if ((interval as any).unref) (interval as any).unref();
+    heartbeatIntervals.set(runId, interval);
+  }
+  function stopHeartbeat(runId: string): void {
+    const iv = heartbeatIntervals.get(runId);
+    if (iv) {
+      clearInterval(iv as any);
+      heartbeatIntervals.delete(runId);
+    }
+  }
+
   // Watchdog: abort delegated subagent sessions that exceed a wall-clock cap or
   // go silent past an idle cap, then inject a marker into the parent so the
   // orchestrator re-dispatches instead of trusting an empty result.
   const watchdog = new WatchdogController(config.watchdog, {
     log: appLog,
     abort: async (sessionID, reason) => {
+      // F2 ensure abort writes terminal status:aborted BEFORE deletion so scanner surfaces it
+      try {
+        const runId = sessionToRunId.get(sessionID);
+        if (runId) {
+          const seat = board.shimState.agents.get(sessionID) ?? "dylan";
+          const repoRoot2 = directory ?? worktree ?? (project as unknown as { worktree?: string })?.worktree ?? ".";
+          await appendRunEvent(repoRoot2, runId, {
+            ts: Date.now(),
+            type: "status",
+            seat,
+            tool: "task",
+            argsHash: hashArgs({ reason }),
+            ok: false,
+            issueId: runId,
+            note: "aborted",
+          });
+          try { stopHeartbeat(runId); } catch {}
+        }
+      } catch {}
       await client.session.abort({ path: { id: sessionID } });
       try {
         const repoRoot = directory ?? worktree ?? (project as unknown as { worktree?: string })?.worktree ?? ".";
@@ -217,6 +284,7 @@ export const TgoPlugin: Plugin = async (
   // tgo-2ry: wire watchdog → board gauge and run recovery scan on load (additive)
   try {
     board.setWatchdogGetter(() => watchdog.tracked as any);
+    board.setWatchdogProblemsGetter(() => (watchdog as any).getProblems?.() ?? []);
     board.setRunsConfig({
       maxAgeMs: (config as any).runs?.maxAgeMs,
       maxBytes: (config as any).runs?.maxBytes,
@@ -254,55 +322,6 @@ export const TgoPlugin: Plugin = async (
   const delegatedSessionIds = new Set<string>();
   const completionSignals = new Map<string, { signal: CompletionSignal; text: string; exitGateRequired: boolean }>();
   const terminationParentIds = new Map<string, string | undefined>();
-  // tgo-2ry: run snapshot start times for durationMs
-  const runToolStarts = new Map<string, number>();
-  // F3: sessionID→runId mapping for child tool events (persisted via sessions.json + in-memory)
-  const sessionToRunId = new Map<string, string>();
-  const heartbeatIntervals = new Map<string, ReturnType<typeof setInterval>>();
-  function sanitizeCmdForRun(cmd: string): string { return cmd.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "").slice(0, 500); }
-  function extractCmd(tool: string, args: unknown): string | undefined {
-    if (!args || typeof args !== "object") return undefined;
-    const obj = args as Record<string, unknown>;
-    const lower = tool.toLowerCase();
-    if (lower.includes("bash")) {
-      const c = (obj.command as string) ?? (obj.cmd as string) ?? (obj.input as string);
-      if (typeof c === "string" && c.trim()) return sanitizeCmdForRun(c);
-    }
-    if (lower === "edit" || lower === "write" || lower === "multiedit") {
-      const p = (obj.filePath as string) ?? (obj.path as string) ?? (obj.target as string);
-      if (typeof p === "string" && p.trim()) return sanitizeCmdForRun(p);
-    }
-    return undefined;
-  }
-  function startHeartbeat(repoRoot: string, runId: string, seat: string): void {
-    if (heartbeatIntervals.has(runId)) return;
-    const interval = setInterval(() => {
-      void (async () => {
-        try {
-          await appendRunEvent(repoRoot, runId, {
-            ts: Date.now(),
-            type: "heartbeat",
-            seat,
-            tool: "heartbeat",
-            argsHash: hashArgs({}),
-            ok: true,
-            issueId: runId,
-            note: "heartbeat",
-          });
-        } catch {}
-      })();
-    }, 30_000);
-    // don't keep process alive
-    if ((interval as any).unref) (interval as any).unref();
-    heartbeatIntervals.set(runId, interval);
-  }
-  function stopHeartbeat(runId: string): void {
-    const iv = heartbeatIntervals.get(runId);
-    if (iv) {
-      clearInterval(iv as any);
-      heartbeatIntervals.delete(runId);
-    }
-  }
 
   const setup = new SetupController({
     run: async (command, cwd) => {
@@ -421,6 +440,13 @@ export const TgoPlugin: Plugin = async (
           parentID: info.parentID ?? null,
         });
         watchdog.noteSessionCreated(info);
+        // F1 seed child sessions at creation — resolve runId from parent's current mapping
+        try {
+          if (info.id && info.parentID) {
+            const parentRunId = sessionToRunId.get(info.parentID);
+            if (parentRunId) sessionToRunId.set(info.id, parentRunId);
+          }
+        } catch {}
         try {
           if (info.id && info.parentID && info.parentID !== "") delegatedSessionIds.add(info.id);
         } catch {}
@@ -692,8 +718,12 @@ export const TgoPlugin: Plugin = async (
             } catch {}
           }
           if (!runId || !isValidBeadID(runId)) return;
-          // seed mapping for future child events in same session
-          if (!sessionToRunId.has(input.sessionID)) sessionToRunId.set(input.sessionID, runId);
+          // F1 per-dispatch: parent mapping overwritten on each task dispatch (never sticky)
+          if (input.tool === "task") {
+            sessionToRunId.set(input.sessionID, runId);
+          } else if (!sessionToRunId.has(input.sessionID)) {
+            sessionToRunId.set(input.sessionID, runId);
+          }
           const seat = board.shimState.agents.get(input.sessionID) ?? "dylan";
           const argsHash = hashArgs(output?.args);
           const ts = Date.now();
@@ -764,7 +794,12 @@ export const TgoPlugin: Plugin = async (
             } catch {}
           }
           if (!runId || !isValidBeadID(runId)) return;
-          if (!sessionToRunId.has(input.sessionID)) sessionToRunId.set(input.sessionID, runId);
+          // F1 per-dispatch for parent task
+          if (input.tool === "task") {
+            sessionToRunId.set(input.sessionID, runId);
+          } else if (!sessionToRunId.has(input.sessionID)) {
+            sessionToRunId.set(input.sessionID, runId);
+          }
           const seat = board.shimState.agents.get(input.sessionID) ?? "dylan";
           const lastKey = `${runId}:${input.tool}:last`;
           const startTs = runToolStarts.get(lastKey);
