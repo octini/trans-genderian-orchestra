@@ -23,6 +23,8 @@ export interface AwaitRecord {
   createdAt: string;
   until?: string;
   sessionId?: string;
+  // F3: persisted expiry flag — when true, chat gate skips this candidate and board shows expired suffix
+  expired?: boolean;
 }
 
 export function awaitJsonPath(repoRoot: string, issueId: string): string {
@@ -249,31 +251,61 @@ export async function readAwaitJson(repoRoot: string, issueId: string): Promise<
     // suspendPayload can be anything, allow undefined
     if (parsed.until !== undefined && typeof parsed.until !== "string") return undefined;
     if (parsed.sessionId !== undefined && typeof parsed.sessionId !== "string") return undefined;
+    if (parsed.expired !== undefined && typeof parsed.expired !== "boolean") return undefined;
     return parsed as unknown as AwaitRecord;
   } catch {
     return undefined;
   }
 }
 
-// Clear on resume success — atomic rename+unlink, concurrent attempts converge (second gets ENOENT → false)
-// Uses rename (atomic on POSIX) rather than unlink, because concurrent unlink of same path can both succeed on APFS/bun threadpool
-// (verified: two concurrent fs.unlink of same file both returned success). Rename serializes correctly.
-export async function clearAwaitJson(repoRoot: string, issueId: string): Promise<boolean> {
+// Clear on resume success — rename-aside-verify-restore compare-and-swap (F2)
+// Never delete by path blindly. Rename await.json to tmp, read tmp and verify createdAt matches expected;
+// if matches → safe to unlink tmp; if differs (newer suspend snuck in) → rename tmp BACK and abort (surface superseded).
+// Uses rename (atomic) to serialize concurrent resumes; verify prevents deleting newer suspend.
+export async function clearAwaitJson(repoRoot: string, issueId: string, expectedCreatedAt?: string): Promise<boolean> {
   assertValidBeadID(issueId);
   const target = awaitJsonPath(repoRoot, issueId);
   const dir = path.dirname(target);
   const tmp = path.join(dir, `.await-clear-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.tmp`);
   try {
     await fs.rename(target, tmp);
-    try {
-      await fs.unlink(tmp);
-    } catch {}
-    return true;
   } catch (e) {
     const code = (e as NodeJS.ErrnoException)?.code;
     if (code === "ENOENT") return false;
     throw e;
   }
+  // Verify tmp content matches expected if provided
+  if (expectedCreatedAt !== undefined) {
+    try {
+      const raw = await fs.readFile(tmp, "utf-8");
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      const actualCreatedAt = typeof parsed.createdAt === "string" ? parsed.createdAt : undefined;
+      if (actualCreatedAt !== expectedCreatedAt) {
+        // Newer suspend — restore
+        try {
+          await fs.rename(tmp, target);
+        } catch (restoreErr) {
+          // If restore fails because target now exists (new suspend created after our rename), keep new file and drop old tmp
+          const code = (restoreErr as NodeJS.ErrnoException)?.code;
+          if (code === "EEXIST" || code === "ENOTEMPTY") {
+            try { await fs.unlink(tmp); } catch {}
+            // Do not delete new file; surface superseded
+            return false;
+          }
+          throw restoreErr;
+        }
+        return false;
+      }
+    } catch (readErr) {
+      // If we can't read/parse tmp, restore it to avoid data loss
+      try { await fs.rename(tmp, target); } catch {}
+      throw readErr;
+    }
+  }
+  try {
+    await fs.unlink(tmp);
+  } catch {}
+  return true;
 }
 
 export async function isSuspended(repoRoot: string, issueId: string): Promise<boolean> {
@@ -377,14 +409,20 @@ export async function tryProseResume(opts: {
     return { success: false, errors: validation.errors, record };
   }
 
-  // Validation passed — attempt atomic clear. Concurrent winners converge: only one rename succeeds.
-  // F4: capture old file's createdAt before rename to handle new suspend between rename and unlink
+  // Validation passed — attempt atomic clear with compare-and-swap (F2). Concurrent winners converge; newer suspend aborts clear.
   const oldCreatedAt = record.createdAt;
   const oldBadge = formatSuspendBlocker(record);
   const oldPrefix = `⏸ awaiting human: ${record.reason}`;
-  const cleared = await clearAwaitJson(opts.repoRoot, opts.issueId);
+  const cleared = await clearAwaitJson(opts.repoRoot, opts.issueId, oldCreatedAt);
   if (!cleared) {
-    // Another concurrent resume already cleared it — treat as already resumed (converged)
+    // Check if superseded by newer suspend (F2) vs already resumed
+    try {
+      const cur = await readAwaitJson(opts.repoRoot, opts.issueId);
+      if (cur && cur.createdAt !== oldCreatedAt) {
+        return { success: false, errors: [`superseded by newer suspend for ${opts.issueId} (createdAt ${cur.createdAt} vs ${oldCreatedAt})`], record: cur };
+      }
+    } catch {}
+    // Otherwise concurrent resume already cleared it — treat as already resumed (converged)
     return { success: false, errors: [`already resumed for ${opts.issueId}`], record };
   }
 
@@ -436,32 +474,69 @@ export async function listAllAwaits(repoRoot: string): Promise<AwaitRecord[]> {
 }
 
 export function isExpired(record: AwaitRecord, nowMs = Date.now()): boolean {
+  // F3: persisted expired flag takes precedence (survives restart, not just derived)
+  if (record.expired === true) return true;
   if (!record.until) return false;
   const untilMs = Date.parse(record.until);
   if (Number.isNaN(untilMs)) return false;
   return nowMs >= untilMs;
 }
 
+// F3: atomically persist expiry flag — rewrite await.json with expired:true (preserve other fields)
+export async function persistExpiredFlag(repoRoot: string, issueId: string): Promise<boolean> {
+  assertValidBeadID(issueId);
+  const rec = await readAwaitJson(repoRoot, issueId);
+  if (!rec) return false;
+  if (rec.expired === true) return true; // already persisted
+  const updated: AwaitRecord = { ...rec, expired: true };
+  const target = awaitJsonPath(repoRoot, issueId);
+  const dir = path.dirname(target);
+  const tmp = path.join(dir, `.await-exp-${hashString(JSON.stringify(updated))}-${process.pid}-${Math.random().toString(36).slice(2)}.tmp`);
+  try {
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(tmp, JSON.stringify(updated, null, 2), "utf-8");
+    await fs.rename(tmp, target);
+    return true;
+  } catch {
+    try { await fs.unlink(tmp); } catch {}
+    return false;
+  }
+}
+
 // Timer catch-up on plugin load: scan .tgo/*/await.json for expired until and surface them (log + board)
 // NO daemon, no mid-sleep wake — documented limit: WAIT timers fire on next launch, not mid-sleep.
+// F3: on expiry transition, atomically persist expired:true so chat gate skips and board suffix persists across restarts.
 export async function scanExpiredAwaits(
   repoRoot: string,
   log?: (level: "info" | "warn" | "error", message: string, extra?: Record<string, unknown>) => void,
   nowMs = Date.now()
 ): Promise<AwaitRecord[]> {
   const all = await listAllAwaits(repoRoot);
-  const expired = all.filter((r) => isExpired(r, nowMs));
-  for (const rec of expired) {
-    const msg = `tgo: timer expired for ${rec.issueId} (until ${rec.until}) — awaiting human: ${rec.reason}`;
+  // F3: skip already-persisted expired when determining newly expired, but return all expired for caller
+  const newlyExpired = all.filter((r) => r.expired !== true && isExpired(r, nowMs));
+  const allExpired = all.filter((r) => isExpired(r, nowMs));
+  for (const rec of newlyExpired) {
+    // Persist flag before surfacing so restart retains it
+    try { await persistExpiredFlag(repoRoot, rec.issueId); } catch {}
+    // Re-read to get persisted version for logging
+    const persisted = (await readAwaitJson(repoRoot, rec.issueId)) ?? rec;
+    const msg = `tgo: timer expired for ${persisted.issueId} (until ${persisted.until}) — awaiting human: ${persisted.reason}`;
     if (log) {
       try {
-        log("warn", msg, { issueId: rec.issueId, until: rec.until, reason: rec.reason });
+        log("warn", msg, { issueId: persisted.issueId, until: persisted.until, reason: persisted.reason });
       } catch {}
     } else {
       console.warn(msg);
     }
   }
-  return expired;
+  // Also log already-persisted expired that were not newly transitioned (for completeness)
+  for (const rec of allExpired.filter((r) => r.expired === true)) {
+    const msg = `tgo: timer expired (persisted) for ${rec.issueId} (until ${rec.until}) — awaiting human: ${rec.reason}`;
+    if (log) {
+      try { log("warn", msg, { issueId: rec.issueId, until: rec.until, reason: rec.reason }); } catch {}
+    }
+  }
+  return allExpired;
 }
 
 // Helper for board integration: get badge hint for an issue if suspended
@@ -477,9 +552,10 @@ export async function getBoardBadgeForIssue(
   const rec = await readAwaitJson(repoRoot, issueId);
   if (!rec) return undefined;
   const badge = formatSuspendBadge(rec);
-  // Surface expired timer note on board as well
-  if (rec.until && isExpired(rec)) {
-    return `${badge} (timer expired ${rec.until})`;
+  // F3: expired suffix derives from persisted field first, fallback to until-derived for pre-existing files
+  if (rec.expired === true || (rec.until && isExpired(rec))) {
+    const untilStr = rec.until ?? "unknown";
+    return `${badge} (timer expired ${untilStr})`;
   }
   return badge;
 }

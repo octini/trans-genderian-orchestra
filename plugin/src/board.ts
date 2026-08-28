@@ -131,6 +131,7 @@ export function buildBoardText(data: {
 }
 
 // F5: extracted badge helper — both render paths call this (buildBoardTextWithHints and fallback renderBoard)
+// F3: suffix derives from persisted expired field first, fallback to until-derived for pre-existing files
 export async function getSuspendBadge(issueId: string, repoRoot: string): Promise<string | undefined> {
   try {
     const rec = await readAwaitJson(repoRoot, issueId);
@@ -138,7 +139,10 @@ export async function getSuspendBadge(issueId: string, repoRoot: string): Promis
     const fields = getRequiredFields(rec.resumeSchema);
     const fieldsStr = fields.length > 0 ? fields.join(", ") : "response";
     let badge = `⏸ awaiting human: ${rec.reason} — reply with: ${fieldsStr}`;
-    if (rec.until && isExpired(rec)) badge += ` (timer expired ${rec.until})`;
+    if ((rec as unknown as { expired?: boolean }).expired === true || (rec.until && isExpired(rec))) {
+      const untilStr = rec.until ?? "unknown";
+      badge += ` (timer expired ${untilStr})`;
+    }
     return badge;
   } catch {
     return undefined;

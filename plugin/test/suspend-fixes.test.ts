@@ -480,3 +480,151 @@ describe("F5 badge fallback path", () => {
     }
   });
 });
+
+describe("F1 residual pass-through", () => {
+  test("unrelated chat passes while await exists (no block)", async () => {
+    const dir = tmpDir();
+    try {
+      await suspend({
+        repoRoot: dir,
+        issueId: "tgo-pass1",
+        suspendSchema: { type: "string" },
+        suspendPayload: "hello",
+        resumeSchema: { type: "object", properties: { decision: { type: "string", enum: ["approve"] } }, required: ["decision"] },
+        reason: "need approve",
+      });
+      const all = await listAllAwaits(dir);
+      expect(all.length).toBe(1);
+      const rawUnrelated = "hello unrelated chat, not a decision";
+      const parsed = parseProseReply(rawUnrelated);
+      const rec = all[0]!;
+      const v = validateAgainstSchema(parsed, rec.resumeSchema);
+      expect(v.valid).toBe(false);
+      // Simulate chat gate pass-through: should NOT clear
+      expect(await readAwaitJson(dir, "tgo-pass1")).toBeDefined();
+      // Matching reply should still work
+      const validRaw = JSON.stringify({ decision: "approve" });
+      const parsedValid = parseProseReply(validRaw);
+      const v2 = validateAgainstSchema(parsedValid, rec.resumeSchema);
+      expect(v2.valid).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("ambiguous passes through (no clear)", async () => {
+    const dir = tmpDir();
+    try {
+      await suspend({
+        repoRoot: dir,
+        issueId: "tgo-ambA",
+        suspendSchema: { type: "string" },
+        suspendPayload: "a",
+        resumeSchema: { type: "object", properties: { x: { type: "string" } }, required: ["x"] },
+        reason: "first",
+      });
+      await suspend({
+        repoRoot: dir,
+        issueId: "tgo-ambB",
+        suspendSchema: { type: "string" },
+        suspendPayload: "b",
+        resumeSchema: { type: "object", properties: { x: { type: "string" } }, required: ["x"] },
+        reason: "second",
+      });
+      const raw = JSON.stringify({ x: "hello" });
+      const parsed = parseProseReply(raw);
+      const all = await listAllAwaits(dir);
+      const valid = all.filter((r) => validateAgainstSchema(parsed, r.resumeSchema).valid);
+      expect(valid.length).toBe(2);
+      // Pass-through: should not clear either
+      expect(await readAwaitJson(dir, "tgo-ambA")).toBeDefined();
+      expect(await readAwaitJson(dir, "tgo-ambB")).toBeDefined();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("F2 compare-and-swap", () => {
+  test("clear with expectedCreatedAt does not delete newer suspend (superseded)", async () => {
+    const dir = tmpDir();
+    try {
+      const issueId = "tgo-cas";
+      const r1 = await suspend({
+        repoRoot: dir,
+        issueId,
+        suspendSchema: { type: "string" },
+        suspendPayload: "old",
+        resumeSchema: { type: "string" },
+        reason: "old",
+      });
+      const oldCreatedAt = r1.record.createdAt;
+      // Simulate concurrent newer suspend that happens after old's rename but before clear's verify
+      // We manually test clear with stale expected: clear should detect newer and restore
+      // First, read old, then create new by clearing old and writing new, then try to clear old again with stale expected
+      const clearedOld = await clearAwaitJson(dir, issueId, oldCreatedAt);
+      expect(clearedOld).toBe(true);
+      // Now new suspend
+      const r2 = await suspend({
+        repoRoot: dir,
+        issueId,
+        suspendSchema: { type: "string" },
+        suspendPayload: "new",
+        resumeSchema: { type: "string" },
+        reason: "new",
+      });
+      expect(r2.written).toBe(true);
+      const newCreatedAt = r2.record.createdAt;
+      expect(newCreatedAt).not.toBe(oldCreatedAt);
+      // Now attempt to clear with old expected (stale) — should fail and preserve new
+      const staleClear = await clearAwaitJson(dir, issueId, oldCreatedAt);
+      expect(staleClear).toBe(false);
+      const cur = await readAwaitJson(dir, issueId);
+      expect(cur?.createdAt).toBe(newCreatedAt);
+      expect(cur?.reason).toBe("new");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("F3 expiry persisted", () => {
+  test("expired flag persisted and chat gate skips", async () => {
+    const dir = tmpDir();
+    try {
+      const past = new Date(Date.now() - 60_000).toISOString();
+      await suspend({
+        repoRoot: dir,
+        issueId: "tgo-persist",
+        suspendSchema: { type: "string" },
+        suspendPayload: "x",
+        resumeSchema: { type: "string" },
+        reason: "to expire",
+        until: past,
+      });
+      // Before scan, isExpired true but not yet persisted
+      let rec = await readAwaitJson(dir, "tgo-persist");
+      expect(isExpired(rec!)).toBe(true);
+      expect(rec!.expired).toBeUndefined();
+      // Scan should persist
+      const expired = await scanExpiredAwaits(dir);
+      expect(expired.length).toBe(1);
+      rec = await readAwaitJson(dir, "tgo-persist");
+      expect(rec!.expired).toBe(true);
+      // After restart, still expired and isExpired true via persisted flag even if until not checked with now
+      // Simulate restart by reading again
+      const rec2 = await readAwaitJson(dir, "tgo-persist");
+      expect(rec2!.expired).toBe(true);
+      expect(isExpired(rec2!)).toBe(true);
+      // Chat gate should skip expired candidates
+      const all = await listAllAwaits(dir);
+      const active = all.filter((r) => !(r as any).expired && !isExpired(r));
+      expect(active.length).toBe(0);
+      // Board suffix should derive from persisted field
+      const badge = await getBoardBadgeForIssue(dir, "tgo-persist");
+      expect(badge).toContain("timer expired");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

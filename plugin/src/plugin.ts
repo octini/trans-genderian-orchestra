@@ -32,6 +32,7 @@ import {
   validateAgainstSchema,
   clearAwaitJson,
   formatSuspendBadge,
+  isExpired,
 } from "./suspend";
 // No runtime function re-exports here: opencode's legacy plugin loader calls
 // EVERY exported function as a plugin factory (input, options), so an entry
@@ -584,11 +585,16 @@ export const TgoPlugin: Plugin = async (
               else candidateRecs = all; // cross-session: consider all for exactly-one match
             } catch {}
           }
-          if (candidateRecs.length > 0) {
+          // F1 pass-through + F3 skip expired: filter out expired candidates before validation
+          const activeRecs = candidateRecs.filter((r) => !(r as unknown as { expired?: boolean }).expired && !isExpired(r));
+          if (activeRecs.length === 0) {
+            // No active candidates (all expired or none) → pass through, do not block
+            appLog("info", `tgo: chat pass-through — no active await for ${input.sessionID} (all expired or none)`, { sessionID: input.sessionID });
+          } else if (activeRecs.length > 0) {
             const parsed = parseProseReply(rawText);
-            const valid: typeof candidateRecs = [];
+            const valid: typeof activeRecs = [];
             const invalidDetails: string[] = [];
-            for (const rec of candidateRecs) {
+            for (const rec of activeRecs) {
               const v = validateAgainstSchema(parsed, rec.resumeSchema);
               if (v.valid) valid.push(rec);
               else {
@@ -597,18 +603,14 @@ export const TgoPlugin: Plugin = async (
               }
             }
             if (valid.length === 0) {
-              // Invalid → rejection listing what's missing, nothing cleared
-              // For cross-session with many candidates where input is unrelated chat, we should NOT block if candidates were "all" and none valid but message is not intended as resume?
-              // F1 mandates: ambiguous/invalid → rejection. We treat any suspended state as requiring valid reply; unrelated chat will be rejected.
-              // If candidates came from "all" (cross-session) and none valid, surface combined details.
-              const hint = `resume validation failed: no candidate matched — ${invalidDetails.join(" | ")}`;
-              appLog("warn", hint, { sessionID: input.sessionID, rawText: rawText.slice(0, 200), candidates: candidateRecs.map((r) => r.issueId) });
-              throw new Error(hint);
+              // F1 pass-through: zero valid → do NOT reject, just pass through and keep suspended
+              appLog("info", `tgo: chat pass-through — no candidate matched for ${input.sessionID} — ${invalidDetails.join(" | ")}`, { sessionID: input.sessionID, candidates: activeRecs.map((r) => r.issueId) });
+              // Do not throw — pass through untouched
             } else if (valid.length > 1) {
+              // F1 pass-through: ambiguous → pass through, do not clear
               const ids = valid.map((r) => r.issueId).join(", ");
-              const hint = `resume validation failed: ambiguous — reply matches multiple awaits [${ids}] — reply must target exactly one`; 
-              appLog("warn", hint, { sessionID: input.sessionID, validIds: ids });
-              throw new Error(hint);
+              appLog("info", `tgo: chat pass-through — ambiguous matches [${ids}] for ${input.sessionID}, leaving all suspended`, { sessionID: input.sessionID, validIds: ids });
+              // Do not throw — pass through
             } else {
               const targetRec = valid[0]!;
               // Exactly one valid — attempt wake BEFORE clear (F1)
@@ -633,10 +635,21 @@ export const TgoPlugin: Plugin = async (
                 appLog("error", hint, { issueId: targetRec.issueId, sessionID: input.sessionID, wakeError: String(wakeError) });
                 throw new Error(hint);
               }
-              // Wake succeeded (or was same-session) — now clear atomically with verify-then-clear (F4)
+              // Wake succeeded (or was same-session) — now clear atomically with compare-and-swap (F2)
               const oldCreatedAt = targetRec.createdAt;
-              const cleared = await clearAwaitJson(repoRoot, targetRec.issueId);
+              const cleared = await clearAwaitJson(repoRoot, targetRec.issueId, oldCreatedAt);
               if (!cleared) {
+                // Check if superseded by newer suspend vs already resumed
+                let isSuperseded = false;
+                try {
+                  const cur = await readAwaitJson(repoRoot, targetRec.issueId);
+                  if (cur && cur.createdAt !== oldCreatedAt) isSuperseded = true;
+                } catch {}
+                if (isSuperseded) {
+                  const hint = `resume aborted — superseded by newer suspend for ${targetRec.issueId}`;
+                  appLog("warn", hint, { issueId: targetRec.issueId, oldCreatedAt });
+                  throw new Error(hint);
+                }
                 // Concurrent resume already cleared — treat as converged, still mark resumed
                 appLog("info", `tgo: concurrent resume converged for ${targetRec.issueId}`, { issueId: targetRec.issueId, sessionID: input.sessionID });
               } else {
