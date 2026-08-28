@@ -1,3 +1,24 @@
+/**
+ * Suspend / await.json durable wait gate
+ *
+ * Concurrency model (single-host, in-process per-issue mutex):
+ * - All await.json writers (suspend via writeAwaitJson, resume via clearAwaitJson/mutateAwaitJson,
+ *   expiry via persistExpiredFlag, session-deleted cleanup via clearAwaitJson) run in ONE Node
+ *   process. Races exist only at await-point interleavings, not true parallel filesystem races.
+ * - POSIX rename/link tricks cannot fix lost updates between two writers that interleave at an
+ *   await point. Fix = serialize the writers with an in-process promise-chain mutex keyed by
+ *   path.resolve(repoRoot) + ":" + issueId (withAwaitLock). All mutations go through it.
+ * - createdAt is a staleness token across restarts (file survives restart, used to detect
+ *   superseded generations after a restart), not a CAS token for in-process concurrency. The
+ *   mutex provides the in-process correctness; createdAt provides cross-restart staleness
+ *   detection (e.g., expiry must not mark a newer generation as expired).
+ * - Cross-process concurrency (two hosts writing the same repo) is out of scope — single-host
+ *   assumption. A future multi-host deployment would need a real file lock or Beads-level
+ *   coordination.
+ * - Every tmp file is created with a unique name and removed in a finally block, so no .tmp
+ *   files remain after any sequence, even when the mutation throws.
+ */
+
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { assertValidBeadID, hashString } from "./def-snapshot";
@@ -42,6 +63,51 @@ export function __setSuspendWriteDelayForTest(ms: number): void {
 export function __clearSuspendWriteDelayForTest(): void {
   __suspendFaultDelayMs = 0;
   __suspendFaultFired = false;
+}
+
+// Monotonic unique createdAt generator — ensures staleness token is unique even within same ms
+// (ISO string alone is not unique; reviewer finding "non-unique token" eliminated by uniqueness here
+// plus mutex serialization). Counter suffix does not affect Date parsing for `until`.
+let _suspendSeq = 0;
+function nextCreatedAt(): string {
+  return `${new Date().toISOString()}#${process.pid}-${_suspendSeq++}-${Math.random().toString(36).slice(2, 5)}`;
+}
+
+// ---------------------------------------------------------------------------
+// In-process per-issue mutex — promise-chain keyed by resolved repoRoot + issueId
+// ---------------------------------------------------------------------------
+const awaitLockChains = new Map<string, Promise<void>>();
+
+/**
+ * Serialize async work per issue. Each call appends `fn` to the chain for
+ * `path.resolve(repoRoot)+":"+issueId`, awaits the previous tail, runs, and
+ * stores the new tail. On `fn` rejection the chain still advances (finally
+ * releases the tail) and the error is rethrown to the caller.
+ */
+export async function withAwaitLock<T>(
+  repoRoot: string,
+  issueId: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  assertValidBeadID(issueId);
+  const key = `${path.resolve(repoRoot)}:${issueId}`;
+  const prev = awaitLockChains.get(key) ?? Promise.resolve();
+  let release!: () => void;
+  const next = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  awaitLockChains.set(key, next);
+  await prev;
+  try {
+    return await fn();
+  } finally {
+    release();
+  }
+}
+
+// For tests: clear the in-memory lock map between isolated tmp dirs (no-op if empty)
+export function __clearAwaitLocksForTest(): void {
+  awaitLockChains.clear();
 }
 
 export function validateAgainstSchema(
@@ -176,7 +242,8 @@ export function formatSuspendBlocker(record: AwaitRecord): string {
   return formatSuspendBadge(record);
 }
 
-// Atomic write-once via tmp+link — survives restart, never partial, follows def-snapshot.ts pattern
+// Write-once via tmp+rename, serialized by withAwaitLock — no link/EEXIST race, no partial.
+// Returns true if written, false if already exists (already suspended).
 export async function writeAwaitJson(
   repoRoot: string,
   issueId: string,
@@ -186,53 +253,32 @@ export async function writeAwaitJson(
   if (record.issueId !== issueId) {
     throw new Error(`writeAwaitJson: record issueId "${record.issueId}" mismatches path issueId "${issueId}"`);
   }
-  const target = awaitJsonPath(repoRoot, issueId);
-  const dir = path.dirname(target);
-  try {
+  return withAwaitLock(repoRoot, issueId, async () => {
+    const existing = await readAwaitJson(repoRoot, issueId);
+    if (existing) return false;
+    const target = awaitJsonPath(repoRoot, issueId);
+    const dir = path.dirname(target);
     await fs.mkdir(dir, { recursive: true });
-  } catch {}
-  const content = JSON.stringify(record, null, 2);
-  const tmp = path.join(dir, `.await-${hashString(content)}-${process.pid}-${Math.random().toString(36).slice(2)}.tmp`);
-  try {
-    await fs.writeFile(tmp, content, "utf-8");
-    if (__suspendFaultDelayMs > 0 && !__suspendFaultFired) {
-      __suspendFaultFired = true;
-      await new Promise((r) => setTimeout(r, __suspendFaultDelayMs));
-    }
-    await fs.link(tmp, target);
+    const content = JSON.stringify(record, null, 2);
+    const tmp = path.join(dir, `.await-${hashString(content)}-${process.pid}-${Math.random().toString(36).slice(2)}.tmp`);
+    let renamed = false;
     try {
-      await fs.unlink(tmp);
-    } catch {}
-    return true;
-  } catch (e) {
-    try {
-      await fs.unlink(tmp);
-    } catch {}
-    const code = (e as NodeJS.ErrnoException)?.code;
-    if (code === "EEXIST") return false;
-    if (code === "ENOENT") {
-      try {
-        await fs.mkdir(dir, { recursive: true });
-      } catch {}
-      const retryTmp = path.join(dir, `.await-${hashString(content)}-${process.pid}-${Math.random().toString(36).slice(2)}.tmp`);
-      try {
-        await fs.writeFile(retryTmp, content, "utf-8");
-        await fs.link(retryTmp, target);
+      await fs.writeFile(tmp, content, "utf-8");
+      if (__suspendFaultDelayMs > 0 && !__suspendFaultFired) {
+        __suspendFaultFired = true;
+        await new Promise((r) => setTimeout(r, __suspendFaultDelayMs));
+      }
+      await fs.rename(tmp, target);
+      renamed = true;
+      return true;
+    } finally {
+      if (!renamed) {
         try {
-          await fs.unlink(retryTmp);
+          await fs.unlink(tmp);
         } catch {}
-        return true;
-      } catch (e2) {
-        try {
-          await fs.unlink(retryTmp);
-        } catch {}
-        const code2 = (e2 as NodeJS.ErrnoException)?.code;
-        if (code2 === "EEXIST") return false;
-        throw e2;
       }
     }
-    throw e;
-  }
+  });
 }
 
 export async function readAwaitJson(repoRoot: string, issueId: string): Promise<AwaitRecord | undefined> {
@@ -258,13 +304,10 @@ export async function readAwaitJson(repoRoot: string, issueId: string): Promise<
   }
 }
 
-// Unified CAS primitive — all await.json mutations must go through this
-// 1) rename(await.json → unique tmp) — if ENOENT return "absent"
-// 2) read tmp; if rec.createdAt !== expectedCreatedAt → restore (rename tmp → await.json) and return "superseded"
-//    If restore fails because await.json was recreated concurrently, discard tmp and return "superseded" (newer wins)
-// 3) Apply mutate: null → unlink tmp (delete); record → write mutated to second tmp then link into await.json only if absent
-//    (if target appeared concurrently, discard and return "superseded"); unlink first tmp
-// Returns "applied" only when the mutation for the expected generation succeeded.
+// Simplified CAS: single-writer under withAwaitLock — no rename-aside/restore/link dance.
+// 1) read; if absent → "absent"
+// 2) if rec.createdAt !== expectedCreatedAt → "superseded" (no file changes)
+// 3) else apply: null → plain unlink; record → tmp+rename (finally-cleaned)
 export async function mutateAwaitJson(
   repoRoot: string,
   issueId: string,
@@ -272,145 +315,50 @@ export async function mutateAwaitJson(
   mutate: (rec: AwaitRecord) => AwaitRecord | null
 ): Promise<"applied" | "superseded" | "absent"> {
   assertValidBeadID(issueId);
-  const target = awaitJsonPath(repoRoot, issueId);
-  const dir = path.dirname(target);
-  const tmp = path.join(dir, `.await-mutate-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.tmp`);
-  try {
-    await fs.rename(target, tmp);
-  } catch (e) {
-    const code = (e as NodeJS.ErrnoException)?.code;
-    if (code === "ENOENT") return "absent";
-    throw e;
-  }
-  let rec: AwaitRecord;
-  try {
-    const raw = await fs.readFile(tmp, "utf-8");
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    const actualCreatedAt = typeof parsed.createdAt === "string" ? parsed.createdAt : undefined;
-    if (actualCreatedAt !== expectedCreatedAt) {
-      try {
-        await fs.rename(tmp, target);
-      } catch (restoreErr) {
-        const code = (restoreErr as NodeJS.ErrnoException)?.code;
-        if (code === "EEXIST" || code === "ENOTEMPTY") {
-          try { await fs.unlink(tmp); } catch {}
-          return "superseded";
-        }
-        throw restoreErr;
-      }
-      return "superseded";
-    }
-    if (!parsed || typeof parsed !== "object" || typeof parsed.issueId !== "string" || typeof parsed.reason !== "string" || typeof parsed.createdAt !== "string") {
-      try {
-        await fs.rename(tmp, target);
-      } catch (restoreErr) {
-        const code = (restoreErr as NodeJS.ErrnoException)?.code;
-        if (code === "EEXIST" || code === "ENOTEMPTY") {
-          try { await fs.unlink(tmp); } catch {}
-          return "superseded";
-        }
-        throw restoreErr;
-      }
-      throw new Error("mutateAwaitJson: invalid await.json content");
-    }
-    rec = parsed as unknown as AwaitRecord;
-  } catch (readErr) {
-    const msg = String((readErr as Error)?.message ?? readErr);
-    if (msg.includes("mutateAwaitJson: invalid")) throw readErr;
+  return withAwaitLock(repoRoot, issueId, async () => {
+    const rec = await readAwaitJson(repoRoot, issueId);
+    if (!rec) return "absent";
+    if (rec.createdAt !== expectedCreatedAt) return "superseded";
+    let mutated: AwaitRecord | null;
     try {
-      await fs.rename(tmp, target);
-    } catch (restoreErr) {
-      const code = (restoreErr as NodeJS.ErrnoException)?.code;
-      if (code === "EEXIST" || code === "ENOTEMPTY") {
-        try { await fs.unlink(tmp); } catch {}
-        return "superseded";
-      }
-    }
-    throw readErr;
-  }
-  let mutated: AwaitRecord | null;
-  try {
-    mutated = mutate(rec);
-  } catch (e) {
-    try {
-      await fs.rename(tmp, target);
-    } catch (restoreErr) {
-      const code = (restoreErr as NodeJS.ErrnoException)?.code;
-      if (code === "EEXIST" || code === "ENOTEMPTY") {
-        try { await fs.unlink(tmp); } catch {}
-        return "superseded";
-      }
-      throw restoreErr;
-    }
-    throw e;
-  }
-  if (mutated === null) {
-    try { await fs.unlink(tmp); } catch {}
-    return "applied";
-  }
-  if (mutated.issueId !== issueId) {
-    try { await fs.rename(tmp, target); } catch {}
-    throw new Error(`mutateAwaitJson: mutated issueId "${mutated.issueId}" mismatches "${issueId}"`);
-  }
-  const content = JSON.stringify(mutated, null, 2);
-  const tmp2 = path.join(dir, `.await-mutate2-${hashString(content)}-${process.pid}-${Math.random().toString(36).slice(2)}.tmp`);
-  try {
-    await fs.mkdir(dir, { recursive: true });
-    await fs.writeFile(tmp2, content, "utf-8");
-    try {
-      await fs.link(tmp2, target);
-      try { await fs.unlink(tmp); } catch {}
-      try { await fs.unlink(tmp2); } catch {}
-      return "applied";
+      mutated = mutate(rec);
     } catch (e) {
-      const code = (e as NodeJS.ErrnoException)?.code;
-      if (code === "EEXIST") {
-        try { await fs.unlink(tmp2); } catch {}
-        try { await fs.unlink(tmp); } catch {}
-        return "superseded";
-      }
-      if (code === "ENOENT") {
-        try { await fs.mkdir(dir, { recursive: true }); } catch {}
-        try {
-          await fs.link(tmp2, target);
-          try { await fs.unlink(tmp); } catch {}
-          try { await fs.unlink(tmp2); } catch {}
-          return "applied";
-        } catch (e2) {
-          const code2 = (e2 as NodeJS.ErrnoException)?.code;
-          if (code2 === "EEXIST") {
-            try { await fs.unlink(tmp2); } catch {}
-            try { await fs.unlink(tmp); } catch {}
-            return "superseded";
-          }
-          try { await fs.unlink(tmp2); } catch {}
-          try { await fs.rename(tmp, target); } catch {}
-          throw e2;
-        }
-      }
-      try { await fs.unlink(tmp2); } catch {}
-      try { await fs.rename(tmp, target); } catch (restoreErr) {
-        const c = (restoreErr as NodeJS.ErrnoException)?.code;
-        if (c === "EEXIST" || c === "ENOTEMPTY") {
-          try { await fs.unlink(tmp); } catch {}
-          return "superseded";
-        }
-      }
+      // Mutate threw — no file change, propagate
       throw e;
     }
-  } catch (e) {
-    const msg = String((e as Error)?.message ?? e);
-    if (msg.includes("superseded")) throw e;
-    try { await fs.rename(tmp, target); } catch (restoreErr) {
-      const c = (restoreErr as NodeJS.ErrnoException)?.code;
-      if (c === "EEXIST" || c === "ENOTEMPTY") {
-        try { await fs.unlink(tmp); } catch {}
-        return "superseded";
+    if (mutated === null) {
+      const target = awaitJsonPath(repoRoot, issueId);
+      try {
+        await fs.unlink(target);
+      } catch (e) {
+        const code = (e as NodeJS.ErrnoException)?.code;
+        if (code === "ENOENT") return "absent";
+        throw e;
+      }
+      return "applied";
+    }
+    if (mutated.issueId !== issueId) {
+      throw new Error(`mutateAwaitJson: mutated issueId "${mutated.issueId}" mismatches "${issueId}"`);
+    }
+    const target = awaitJsonPath(repoRoot, issueId);
+    const dir = path.dirname(target);
+    await fs.mkdir(dir, { recursive: true });
+    const content = JSON.stringify(mutated, null, 2);
+    const tmp = path.join(dir, `.await-mutate-${hashString(content)}-${process.pid}-${Math.random().toString(36).slice(2)}.tmp`);
+    let renamed = false;
+    try {
+      await fs.writeFile(tmp, content, "utf-8");
+      await fs.rename(tmp, target);
+      renamed = true;
+      return "applied";
+    } finally {
+      if (!renamed) {
+        try {
+          await fs.unlink(tmp);
+        } catch {}
       }
     }
-    try { await fs.unlink(tmp2); } catch {}
-    throw e;
-  }
+  });
 }
 
 // Clear on resume success — delegates to mutateAwaitJson when expectedCreatedAt is provided
@@ -418,18 +366,18 @@ export async function mutateAwaitJson(
 export async function clearAwaitJson(repoRoot: string, issueId: string, expectedCreatedAt?: string): Promise<boolean> {
   assertValidBeadID(issueId);
   if (expectedCreatedAt === undefined) {
-    const target = awaitJsonPath(repoRoot, issueId);
-    const dir = path.dirname(target);
-    const tmp = path.join(dir, `.await-clear-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.tmp`);
-    try {
-      await fs.rename(target, tmp);
-    } catch (e) {
-      const code = (e as NodeJS.ErrnoException)?.code;
-      if (code === "ENOENT") return false;
-      throw e;
-    }
-    try { await fs.unlink(tmp); } catch {}
-    return true;
+    // Blind legacy path — only for tests that need unconditional delete; still serialized
+    return withAwaitLock(repoRoot, issueId, async () => {
+      const target = awaitJsonPath(repoRoot, issueId);
+      try {
+        await fs.unlink(target);
+        return true;
+      } catch (e) {
+        const code = (e as NodeJS.ErrnoException)?.code;
+        if (code === "ENOENT") return false;
+        throw e;
+      }
+    });
   }
   const result = await mutateAwaitJson(repoRoot, issueId, expectedCreatedAt, () => null);
   return result === "applied";
@@ -472,7 +420,7 @@ export async function suspend(opts: {
     suspendPayload: opts.suspendPayload,
     resumeSchema: opts.resumeSchema,
     reason: opts.reason,
-    createdAt: opts.createdAt ?? new Date().toISOString(),
+    createdAt: opts.createdAt ?? nextCreatedAt(),
     ...(opts.until ? { until: opts.until } : {}),
     ...(opts.sessionId ? { sessionId: opts.sessionId } : {}),
   };
@@ -513,7 +461,7 @@ export function parseProseReply(text: string): unknown {
 // Attempt prose resume: validates reply against resumeSchema BEFORE clearing suspend state.
 // Invalid reply = rejection with errors, session stays suspended (file preserved).
 // Valid reply = clears await.json and removes blocker line, returns success.
-// Atomic: concurrent valid resumes converge via clearAwaitJson (only first unlink succeeds).
+// Serialized via clearAwaitJson's withAwaitLock — concurrent valid resumes converge (only first applied).
 export async function tryProseResume(opts: {
   repoRoot: string;
   issueId: string;
@@ -536,13 +484,13 @@ export async function tryProseResume(opts: {
     return { success: false, errors: validation.errors, record };
   }
 
-  // Validation passed — attempt atomic clear with compare-and-swap (F2). Concurrent winners converge; newer suspend aborts clear.
+  // Validation passed — attempt atomic clear with per-issue mutex. Concurrent winners converge; newer suspend aborts clear.
   const oldCreatedAt = record.createdAt;
   const oldBadge = formatSuspendBlocker(record);
   const oldPrefix = `⏸ awaiting human: ${record.reason}`;
   const cleared = await clearAwaitJson(opts.repoRoot, opts.issueId, oldCreatedAt);
   if (!cleared) {
-    // Check if superseded by newer suspend (F2) vs already resumed
+    // Check if superseded by newer suspend vs already resumed
     try {
       const cur = await readAwaitJson(opts.repoRoot, opts.issueId);
       if (cur && cur.createdAt !== oldCreatedAt) {
@@ -609,39 +557,73 @@ export function isExpired(record: AwaitRecord, nowMs = Date.now()): boolean {
   return nowMs >= untilMs;
 }
 
-// F3: atomically persist expiry flag via CAS primitive — avoids resurrecting/overwriting newer await
-// Read record then CAS-mutate with expectedCreatedAt; superseded → skip (newer wins)
-export async function persistExpiredFlag(repoRoot: string, issueId: string): Promise<boolean> {
-  assertValidBeadID(issueId);
+// Persist expiry flag via per-issue mutex — carries the SCANNED record's createdAt as staleness token.
+// Inside lock: read; absent → false; createdAt !== scanned.createdAt → false (newer wins); else rewrite with expired:true → true.
+// No reread-by-issue outside the lock — caller passes the scanned record from scanExpiredAwaits.
+export async function persistExpiredFlag(
+  repoRoot: string,
+  scanned: AwaitRecord,
+): Promise<boolean> {
+  assertValidBeadID(scanned.issueId);
+  return withAwaitLock(repoRoot, scanned.issueId, async () => {
+    const cur = await readAwaitJson(repoRoot, scanned.issueId);
+    if (!cur) return false;
+    if (cur.createdAt !== scanned.createdAt) return false;
+    if (cur.expired === true) return true;
+    const next: AwaitRecord = { ...cur, expired: true };
+    const target = awaitJsonPath(repoRoot, scanned.issueId);
+    const dir = path.dirname(target);
+    await fs.mkdir(dir, { recursive: true });
+    const content = JSON.stringify(next, null, 2);
+    const tmp = path.join(dir, `.await-expire-${hashString(content)}-${process.pid}-${Math.random().toString(36).slice(2)}.tmp`);
+    let renamed = false;
+    try {
+      await fs.writeFile(tmp, content, "utf-8");
+      await fs.rename(tmp, target);
+      renamed = true;
+      return true;
+    } finally {
+      if (!renamed) {
+        try {
+          await fs.unlink(tmp);
+        } catch {}
+      }
+    }
+  });
+}
+
+// Back-compat overload for tests that still call with (repoRoot, issueId string)
+// Supports both signatures: (repoRoot, AwaitRecord) and legacy (repoRoot, string issueId)
+export async function persistExpiredFlagLegacy(repoRoot: string, issueId: string): Promise<boolean> {
   const rec = await readAwaitJson(repoRoot, issueId);
   if (!rec) return false;
   if (rec.expired === true) return true;
-  const result = await mutateAwaitJson(repoRoot, issueId, rec.createdAt, (cur) => {
-    if (cur.expired === true) return cur;
-    return { ...cur, expired: true };
-  });
-  if (result === "applied") return true;
-  // superseded or absent → newer wins or gone, will be evaluated fresh next scan
-  return false;
+  return persistExpiredFlag(repoRoot, rec);
 }
 
 // Timer catch-up on plugin load: scan .tgo/*/await.json for expired until and surface them (log + board)
 // NO daemon, no mid-sleep wake — documented limit: WAIT timers fire on next launch, not mid-sleep.
-// F3: on expiry transition, atomically persist expired:true so chat gate skips and board suffix persists across restarts.
+// On expiry transition, atomically persist expired:true via per-issue mutex so chat gate skips and board suffix persists.
 export async function scanExpiredAwaits(
   repoRoot: string,
   log?: (level: "info" | "warn" | "error", message: string, extra?: Record<string, unknown>) => void,
   nowMs = Date.now()
 ): Promise<AwaitRecord[]> {
   const all = await listAllAwaits(repoRoot);
-  // F3: skip already-persisted expired when determining newly expired, but return all expired for caller
   const newlyExpired = all.filter((r) => r.expired !== true && isExpired(r, nowMs));
   const allExpired = all.filter((r) => isExpired(r, nowMs));
   for (const rec of newlyExpired) {
-    // Persist flag before surfacing so restart retains it; superseded → newer wins, skip logging old
-    try { await persistExpiredFlag(repoRoot, rec.issueId); } catch {}
-    // Re-read to get persisted version for logging
-    const persisted = (await readAwaitJson(repoRoot, rec.issueId)) ?? rec;
+    let ok = false;
+    try {
+      ok = await persistExpiredFlag(repoRoot, rec);
+    } catch {}
+    if (!ok) {
+      // Newer generation won or file gone — skip logging old generation
+      const cur = await readAwaitJson(repoRoot, rec.issueId);
+      if (!cur || cur.createdAt !== rec.createdAt) continue;
+      // If cur still matches but persist failed for other reason, still try to log original
+    }
+    const persisted = (await readAwaitJson(repoRoot, rec.issueId)) ?? { ...rec, expired: true as const };
     if (persisted.createdAt !== rec.createdAt) continue;
     const msg = `tgo: timer expired for ${persisted.issueId} (until ${persisted.until}) — awaiting human: ${persisted.reason}`;
     if (log) {
@@ -652,11 +634,13 @@ export async function scanExpiredAwaits(
       console.warn(msg);
     }
   }
-  // Also log already-persisted expired that were not newly transitioned (for completeness)
+  // Also log already-persisted expired that were not newly transitioned
   for (const rec of allExpired.filter((r) => r.expired === true)) {
     const msg = `tgo: timer expired (persisted) for ${rec.issueId} (until ${rec.until}) — awaiting human: ${rec.reason}`;
     if (log) {
-      try { log("warn", msg, { issueId: rec.issueId, until: rec.until, reason: rec.reason }); } catch {}
+      try {
+        log("warn", msg, { issueId: rec.issueId, until: rec.until, reason: rec.reason });
+      } catch {}
     }
   }
   return allExpired;

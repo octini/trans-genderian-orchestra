@@ -17,7 +17,12 @@ import {
   getRequiredFields,
   formatSuspendBadge,
   getBoardBadgeForIssue,
+  withAwaitLock,
+  writeAwaitJson,
+  tryProseResume,
+  __clearAwaitLocksForTest,
 } from "../src/suspend";
+import type { AwaitRecord } from "../src/suspend";
 import { WatchdogController, type WatchdogConfig } from "../src/watchdog";
 import { buildBoardTextWithHints, renderBoard, createShim, getSuspendBadge } from "../src/board";
 import { readProgress } from "../src/progress";
@@ -682,6 +687,9 @@ describe("TOCTOU fix — unified CAS primitive", () => {
       const issueId = "tgo-exp-sup2";
       const past = new Date(Date.now() - 60_000).toISOString();
       const future = new Date(Date.now() + 60_000).toISOString();
+      // Use explicit distinct createdAt to avoid non-unique token collision within same ms
+      const oldAtExplicit = `${new Date(Date.now() - 60_000).toISOString()}#old`;
+      const newAtExplicit = `${new Date(Date.now()).toISOString()}#new`;
       const r1 = await suspend({
         repoRoot: dir,
         issueId,
@@ -690,8 +698,10 @@ describe("TOCTOU fix — unified CAS primitive", () => {
         resumeSchema: { type: "string" },
         reason: "old-exp",
         until: past,
+        createdAt: oldAtExplicit,
       });
       const oldAt = r1.record.createdAt;
+      expect(oldAt).toBe(oldAtExplicit);
       // Newer suspend overwrites before expiry persist
       await clearAwaitJson(dir, issueId, oldAt);
       const r2 = await suspend({
@@ -702,6 +712,7 @@ describe("TOCTOU fix — unified CAS primitive", () => {
         resumeSchema: { type: "string" },
         reason: "new-not-exp",
         until: future,
+        createdAt: newAtExplicit,
       });
       const newAt = r2.record.createdAt;
       // Attempt expiry mutate with stale oldAt — should be superseded and leave newer intact
@@ -787,7 +798,7 @@ describe("TOCTOU fix — unified CAS primitive", () => {
       expect(applied).toBe(1);
       expect(absent + superseded).toBe(4);
       expect(await readAwaitJson(dir, issueId)).toBeUndefined();
-      // Concurrent updates with same expected — only one should apply, others absent/superseded due to rename race
+      // Concurrent idempotent updates (expired flag) — under mutex all serialize and succeed; final state is expired
       const r2 = await suspend({
         repoRoot: dir,
         issueId,
@@ -801,7 +812,8 @@ describe("TOCTOU fix — unified CAS primitive", () => {
         Array.from({ length: 3 }, () => mutateAwaitJson(dir, issueId, at2, (cur) => ({ ...cur, expired: true })))
       );
       const applied2 = results2.filter((v) => v === "applied").length;
-      expect(applied2).toBe(1);
+      // Under per-issue mutex all three serialize and apply (idempotent); at least one must apply and final is expired
+      expect(applied2).toBe(3);
       const cur = await readAwaitJson(dir, issueId);
       expect(cur?.expired).toBe(true);
       expect(cur?.createdAt).toBe(at2);
@@ -852,6 +864,230 @@ describe("TOCTOU fix — unified CAS primitive", () => {
       expect(after?.suspendPayload).toBe("new");
       // Ensure old content not resurrected
       expect(after?.reason).not.toBe("old-reason");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("mutex deterministic outcomes (replaces timing-lucky Promise.all)", () => {
+  async function hasTmpFiles(dir: string): Promise<boolean> {
+    // Recursively check .tgo for any .tmp files
+    const tgo = path.join(dir, ".tgo");
+    try {
+      const entries = await fs.readdir(tgo, { withFileTypes: true });
+      for (const e of entries) {
+        const full = path.join(tgo, e.name);
+        if (e.isDirectory()) {
+          const inner = await fs.readdir(full);
+          if (inner.some((f) => f.includes(".tmp"))) return true;
+        } else if (e.name.includes(".tmp")) return true;
+      }
+    } catch {}
+    return false;
+  }
+
+  test("concurrent [resume(old), suspend(newer)] → newer file intact, resume superseded (deterministic via mutex)", async () => {
+    const dir = tmpDir();
+    try {
+      __clearAwaitLocksForTest();
+      const issueId = "tgo-mutex-resume-suspend";
+      const oldAt = "2025-01-01T00:00:00.000Z#old";
+      const newAt = "2025-01-02T00:00:00.000Z#new";
+      await suspend({
+        repoRoot: dir,
+        issueId,
+        suspendSchema: { type: "string" },
+        suspendPayload: "old-payload",
+        resumeSchema: { type: "object", properties: { ok: { type: "boolean" } }, required: ["ok"] },
+        reason: "old-reason",
+        createdAt: oldAt,
+      });
+      const oldRec = (await readAwaitJson(dir, issueId))!;
+      expect(oldRec.createdAt).toBe(oldAt);
+      // Newer record that will overwrite old if it wins
+      const newerRecord: AwaitRecord = {
+        issueId,
+        suspendSchema: { type: "string" },
+        suspendPayload: "new-payload",
+        resumeSchema: { type: "string" },
+        reason: "new-reason",
+        createdAt: newAt,
+      };
+      // Simulate concurrent resume(old) and suspend(newer) via mutate vs clear.
+      // suspend(newer) is modeled as mutate that replaces old with newer (atomic overwrite).
+      const pResume = tryProseResume({ repoRoot: dir, issueId, rawReply: JSON.stringify({ ok: true }) });
+      const pSuspendNewer = mutateAwaitJson(dir, issueId, oldAt, () => newerRecord);
+      const [resumeRes, suspendRes] = await Promise.all([pResume, pSuspendNewer]);
+      // Exactly one of them should have applied; the other superseded/absent
+      // Under mutex, suspend(newer) gets lock first (resume's lock is delayed by initial read), so newer wins deterministically.
+      expect(suspendRes).toBe("applied");
+      expect(resumeRes.success).toBe(false);
+      expect(resumeRes.errors?.join(" ")).toMatch(/superseded|already resumed/);
+      const cur = await readAwaitJson(dir, issueId);
+      expect(cur).toBeDefined();
+      expect(cur!.createdAt).toBe(newAt);
+      expect(cur!.reason).toBe("new-reason");
+      expect(cur!.suspendPayload).toBe("new-payload");
+      expect(await hasTmpFiles(dir)).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("concurrent [expire(old), suspend(newer)] → newer NOT expired", async () => {
+    const dir = tmpDir();
+    try {
+      __clearAwaitLocksForTest();
+      const issueId = "tgo-mutex-expire-suspend";
+      const oldAt = "2025-01-01T00:00:00.000Z#old-exp";
+      const newAt = "2025-01-02T00:00:00.000Z#new-exp";
+      const past = new Date(Date.now() - 60_000).toISOString();
+      const future = new Date(Date.now() + 60_000).toISOString();
+      const oldRec: AwaitRecord = {
+        issueId,
+        suspendSchema: { type: "string" },
+        suspendPayload: "old",
+        resumeSchema: { type: "string" },
+        reason: "old-exp",
+        createdAt: oldAt,
+        until: past,
+      };
+      // Direct write via withAwaitLock to create old with known token (bypass suspend's unique generator)
+      await withAwaitLock(dir, issueId, async () => {
+        const target = path.join(dir, ".tgo", issueId, "await.json");
+        await fs.mkdir(path.dirname(target), { recursive: true });
+        await fs.writeFile(target, JSON.stringify(oldRec, null, 2), "utf-8");
+      });
+      expect((await readAwaitJson(dir, issueId))!.until).toBe(past);
+      const newRec: AwaitRecord = {
+        issueId,
+        suspendSchema: { type: "string" },
+        suspendPayload: "new",
+        resumeSchema: { type: "string" },
+        reason: "new-not-exp",
+        createdAt: newAt,
+        until: future,
+      };
+      const scannedOld = oldRec;
+      const pExpire = persistExpiredFlag(dir, scannedOld);
+      const pSuspendNewer = mutateAwaitJson(dir, issueId, oldAt, () => newRec);
+      const [expireOk, suspendRes] = await Promise.all([pExpire, pSuspendNewer]);
+      // One of them wins, but final must be newer NOT expired
+      const cur = await readAwaitJson(dir, issueId);
+      expect(cur).toBeDefined();
+      expect(cur!.createdAt).toBe(newAt);
+      expect(cur!.reason).toBe("new-not-exp");
+      expect(cur!.expired).toBeUndefined();
+      expect(isExpired(cur!)).toBe(false);
+      // If expire won first, it would have set old to expired, but suspend then overwrites to newer (future) not expired.
+      // If suspend won first, expire is superseded (false). Either way newer not expired.
+      expect(expireOk === false || suspendRes === "applied").toBe(true);
+      expect(await hasTmpFiles(dir)).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("concurrent [cleanup(old), resume(old)] → exactly one applied", async () => {
+    const dir = tmpDir();
+    try {
+      __clearAwaitLocksForTest();
+      const issueId = "tgo-mutex-cleanup-resume";
+      const oldAt = "2025-01-01T00:00:00.000Z#cleanup";
+      await suspend({
+        repoRoot: dir,
+        issueId,
+        suspendSchema: { type: "string" },
+        suspendPayload: "old",
+        resumeSchema: { type: "object", properties: { ok: { type: "boolean" } }, required: ["ok"] },
+        reason: "to-clean",
+        createdAt: oldAt,
+      });
+      const pCleanup = clearAwaitJson(dir, issueId, oldAt);
+      const pResume = tryProseResume({ repoRoot: dir, issueId, rawReply: JSON.stringify({ ok: true }) });
+      const [cleanupOk, resumeRes] = await Promise.all([pCleanup, pResume]);
+      const appliedCount = (cleanupOk ? 1 : 0) + (resumeRes.success ? 1 : 0);
+      expect(appliedCount).toBe(1);
+      expect(await readAwaitJson(dir, issueId)).toBeUndefined();
+      expect(await hasTmpFiles(dir)).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("concurrent 5 deletes same expected → 1 applied 4 absent/superseded (mutex serializes)", async () => {
+    const dir = tmpDir();
+    try {
+      __clearAwaitLocksForTest();
+      const issueId = "tgo-mutex-5del";
+      const at = "2025-01-01T00:00:00.000Z#5del";
+      await suspend({
+        repoRoot: dir,
+        issueId,
+        suspendSchema: { type: "string" },
+        suspendPayload: "orig",
+        resumeSchema: { type: "string" },
+        reason: "orig",
+        createdAt: at,
+      });
+      const results = await Promise.all(
+        Array.from({ length: 5 }, () => mutateAwaitJson(dir, issueId, at, () => null))
+      );
+      expect(results.filter((v) => v === "applied").length).toBe(1);
+      expect(results.filter((v) => v === "absent" || v === "superseded").length).toBe(4);
+      expect(await readAwaitJson(dir, issueId)).toBeUndefined();
+      expect(await hasTmpFiles(dir)).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("no .tmp files left after any sequence (finally-guaranteed cleanup)", async () => {
+    const dir = tmpDir();
+    try {
+      __clearAwaitLocksForTest();
+      const issueId = "tgo-mutex-tmp";
+      const at1 = "2025-01-01T00:00:00.000Z#tmp1";
+      const at2 = "2025-01-02T00:00:00.000Z#tmp2";
+      await suspend({
+        repoRoot: dir,
+        issueId,
+        suspendSchema: { type: "string" },
+        suspendPayload: "a",
+        resumeSchema: { type: "string" },
+        reason: "first",
+        createdAt: at1,
+      });
+      // Mix of operations that all use tmp files internally
+      await Promise.all([
+        mutateAwaitJson(dir, issueId, at1, (cur) => ({ ...cur, reason: "mutated" })),
+        clearAwaitJson(dir, issueId, at1).catch(() => false),
+      ]);
+      // After delete, create anew and expire
+      await suspend({
+        repoRoot: dir,
+        issueId,
+        suspendSchema: { type: "string" },
+        suspendPayload: "b",
+        resumeSchema: { type: "string" },
+        reason: "second",
+        createdAt: at2,
+        until: new Date(Date.now() - 1000).toISOString(),
+      });
+      const cur = await readAwaitJson(dir, issueId);
+      if (cur) {
+        await persistExpiredFlag(dir, cur);
+      }
+      expect(await hasTmpFiles(dir)).toBe(false);
+      // Also check that a failing mutate (throws) still cleans tmp
+      const at3 = (await readAwaitJson(dir, issueId))?.createdAt ?? at2;
+      try {
+        await mutateAwaitJson(dir, issueId, at3, () => {
+          throw new Error("intentional mutate throw");
+        });
+      } catch {}
+      expect(await hasTmpFiles(dir)).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
