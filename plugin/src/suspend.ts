@@ -258,54 +258,181 @@ export async function readAwaitJson(repoRoot: string, issueId: string): Promise<
   }
 }
 
-// Clear on resume success — rename-aside-verify-restore compare-and-swap (F2)
-// Never delete by path blindly. Rename await.json to tmp, read tmp and verify createdAt matches expected;
-// if matches → safe to unlink tmp; if differs (newer suspend snuck in) → rename tmp BACK and abort (surface superseded).
-// Uses rename (atomic) to serialize concurrent resumes; verify prevents deleting newer suspend.
-export async function clearAwaitJson(repoRoot: string, issueId: string, expectedCreatedAt?: string): Promise<boolean> {
+// Unified CAS primitive — all await.json mutations must go through this
+// 1) rename(await.json → unique tmp) — if ENOENT return "absent"
+// 2) read tmp; if rec.createdAt !== expectedCreatedAt → restore (rename tmp → await.json) and return "superseded"
+//    If restore fails because await.json was recreated concurrently, discard tmp and return "superseded" (newer wins)
+// 3) Apply mutate: null → unlink tmp (delete); record → write mutated to second tmp then link into await.json only if absent
+//    (if target appeared concurrently, discard and return "superseded"); unlink first tmp
+// Returns "applied" only when the mutation for the expected generation succeeded.
+export async function mutateAwaitJson(
+  repoRoot: string,
+  issueId: string,
+  expectedCreatedAt: string,
+  mutate: (rec: AwaitRecord) => AwaitRecord | null
+): Promise<"applied" | "superseded" | "absent"> {
   assertValidBeadID(issueId);
   const target = awaitJsonPath(repoRoot, issueId);
   const dir = path.dirname(target);
-  const tmp = path.join(dir, `.await-clear-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.tmp`);
+  const tmp = path.join(dir, `.await-mutate-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.tmp`);
   try {
     await fs.rename(target, tmp);
   } catch (e) {
     const code = (e as NodeJS.ErrnoException)?.code;
-    if (code === "ENOENT") return false;
+    if (code === "ENOENT") return "absent";
     throw e;
   }
-  // Verify tmp content matches expected if provided
-  if (expectedCreatedAt !== undefined) {
-    try {
-      const raw = await fs.readFile(tmp, "utf-8");
-      const parsed = JSON.parse(raw) as Record<string, unknown>;
-      const actualCreatedAt = typeof parsed.createdAt === "string" ? parsed.createdAt : undefined;
-      if (actualCreatedAt !== expectedCreatedAt) {
-        // Newer suspend — restore
-        try {
-          await fs.rename(tmp, target);
-        } catch (restoreErr) {
-          // If restore fails because target now exists (new suspend created after our rename), keep new file and drop old tmp
-          const code = (restoreErr as NodeJS.ErrnoException)?.code;
-          if (code === "EEXIST" || code === "ENOTEMPTY") {
-            try { await fs.unlink(tmp); } catch {}
-            // Do not delete new file; surface superseded
-            return false;
-          }
-          throw restoreErr;
-        }
-        return false;
-      }
-    } catch (readErr) {
-      // If we can't read/parse tmp, restore it to avoid data loss
-      try { await fs.rename(tmp, target); } catch {}
-      throw readErr;
-    }
-  }
+  let rec: AwaitRecord;
   try {
-    await fs.unlink(tmp);
-  } catch {}
-  return true;
+    const raw = await fs.readFile(tmp, "utf-8");
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const actualCreatedAt = typeof parsed.createdAt === "string" ? parsed.createdAt : undefined;
+    if (actualCreatedAt !== expectedCreatedAt) {
+      try {
+        await fs.rename(tmp, target);
+      } catch (restoreErr) {
+        const code = (restoreErr as NodeJS.ErrnoException)?.code;
+        if (code === "EEXIST" || code === "ENOTEMPTY") {
+          try { await fs.unlink(tmp); } catch {}
+          return "superseded";
+        }
+        throw restoreErr;
+      }
+      return "superseded";
+    }
+    if (!parsed || typeof parsed !== "object" || typeof parsed.issueId !== "string" || typeof parsed.reason !== "string" || typeof parsed.createdAt !== "string") {
+      try {
+        await fs.rename(tmp, target);
+      } catch (restoreErr) {
+        const code = (restoreErr as NodeJS.ErrnoException)?.code;
+        if (code === "EEXIST" || code === "ENOTEMPTY") {
+          try { await fs.unlink(tmp); } catch {}
+          return "superseded";
+        }
+        throw restoreErr;
+      }
+      throw new Error("mutateAwaitJson: invalid await.json content");
+    }
+    rec = parsed as unknown as AwaitRecord;
+  } catch (readErr) {
+    const msg = String((readErr as Error)?.message ?? readErr);
+    if (msg.includes("mutateAwaitJson: invalid")) throw readErr;
+    try {
+      await fs.rename(tmp, target);
+    } catch (restoreErr) {
+      const code = (restoreErr as NodeJS.ErrnoException)?.code;
+      if (code === "EEXIST" || code === "ENOTEMPTY") {
+        try { await fs.unlink(tmp); } catch {}
+        return "superseded";
+      }
+    }
+    throw readErr;
+  }
+  let mutated: AwaitRecord | null;
+  try {
+    mutated = mutate(rec);
+  } catch (e) {
+    try {
+      await fs.rename(tmp, target);
+    } catch (restoreErr) {
+      const code = (restoreErr as NodeJS.ErrnoException)?.code;
+      if (code === "EEXIST" || code === "ENOTEMPTY") {
+        try { await fs.unlink(tmp); } catch {}
+        return "superseded";
+      }
+      throw restoreErr;
+    }
+    throw e;
+  }
+  if (mutated === null) {
+    try { await fs.unlink(tmp); } catch {}
+    return "applied";
+  }
+  if (mutated.issueId !== issueId) {
+    try { await fs.rename(tmp, target); } catch {}
+    throw new Error(`mutateAwaitJson: mutated issueId "${mutated.issueId}" mismatches "${issueId}"`);
+  }
+  const content = JSON.stringify(mutated, null, 2);
+  const tmp2 = path.join(dir, `.await-mutate2-${hashString(content)}-${process.pid}-${Math.random().toString(36).slice(2)}.tmp`);
+  try {
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(tmp2, content, "utf-8");
+    try {
+      await fs.link(tmp2, target);
+      try { await fs.unlink(tmp); } catch {}
+      try { await fs.unlink(tmp2); } catch {}
+      return "applied";
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException)?.code;
+      if (code === "EEXIST") {
+        try { await fs.unlink(tmp2); } catch {}
+        try { await fs.unlink(tmp); } catch {}
+        return "superseded";
+      }
+      if (code === "ENOENT") {
+        try { await fs.mkdir(dir, { recursive: true }); } catch {}
+        try {
+          await fs.link(tmp2, target);
+          try { await fs.unlink(tmp); } catch {}
+          try { await fs.unlink(tmp2); } catch {}
+          return "applied";
+        } catch (e2) {
+          const code2 = (e2 as NodeJS.ErrnoException)?.code;
+          if (code2 === "EEXIST") {
+            try { await fs.unlink(tmp2); } catch {}
+            try { await fs.unlink(tmp); } catch {}
+            return "superseded";
+          }
+          try { await fs.unlink(tmp2); } catch {}
+          try { await fs.rename(tmp, target); } catch {}
+          throw e2;
+        }
+      }
+      try { await fs.unlink(tmp2); } catch {}
+      try { await fs.rename(tmp, target); } catch (restoreErr) {
+        const c = (restoreErr as NodeJS.ErrnoException)?.code;
+        if (c === "EEXIST" || c === "ENOTEMPTY") {
+          try { await fs.unlink(tmp); } catch {}
+          return "superseded";
+        }
+      }
+      throw e;
+    }
+  } catch (e) {
+    const msg = String((e as Error)?.message ?? e);
+    if (msg.includes("superseded")) throw e;
+    try { await fs.rename(tmp, target); } catch (restoreErr) {
+      const c = (restoreErr as NodeJS.ErrnoException)?.code;
+      if (c === "EEXIST" || c === "ENOTEMPTY") {
+        try { await fs.unlink(tmp); } catch {}
+        return "superseded";
+      }
+    }
+    try { await fs.unlink(tmp2); } catch {}
+    throw e;
+  }
+}
+
+// Clear on resume success — delegates to mutateAwaitJson when expectedCreatedAt is provided
+// Keep return-signature compatibility: true = applied, false = superseded/absent
+export async function clearAwaitJson(repoRoot: string, issueId: string, expectedCreatedAt?: string): Promise<boolean> {
+  assertValidBeadID(issueId);
+  if (expectedCreatedAt === undefined) {
+    const target = awaitJsonPath(repoRoot, issueId);
+    const dir = path.dirname(target);
+    const tmp = path.join(dir, `.await-clear-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.tmp`);
+    try {
+      await fs.rename(target, tmp);
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException)?.code;
+      if (code === "ENOENT") return false;
+      throw e;
+    }
+    try { await fs.unlink(tmp); } catch {}
+    return true;
+  }
+  const result = await mutateAwaitJson(repoRoot, issueId, expectedCreatedAt, () => null);
+  return result === "applied";
 }
 
 export async function isSuspended(repoRoot: string, issueId: string): Promise<boolean> {

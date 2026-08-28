@@ -486,21 +486,26 @@ export const TgoPlugin: Plugin = async (
             }
             if (issueId) {
               try {
-                const existed = await clearAwaitJson(repoRoot, issueId);
-                if (existed) {
-                  appLog("info", `tgo: cleared orphaned await for deleted session ${deletedId} / ${issueId}`, { sessionID: deletedId, issueId });
-                  // Also remove blocker
-                  try {
-                    const { updateProgress } = await import("./progress");
-                    const rec = { reason: "", resumeSchema: {} } as unknown as import("./suspend").AwaitRecord;
-                    // Load original rec for accurate prefix if still available (best effort)
-                    // For now, filter any suspend blocker
-                    await updateProgress(repoRoot, issueId, (parts) => ({
-                      ...parts,
-                      blockers: parts.blockers.filter((b) => !b.startsWith("⏸ awaiting human:")) ,
-                    }));
-                  } catch {}
-                  try { board.invalidate(deletedId); } catch {}
+                const rec = await readAwaitJson(repoRoot, issueId);
+                if (!rec) {
+                  // no await to clear
+                } else {
+                  const existed = await clearAwaitJson(repoRoot, issueId, rec.createdAt);
+                  if (existed) {
+                    appLog("info", `tgo: cleared orphaned await for deleted session ${deletedId} / ${issueId}`, { sessionID: deletedId, issueId });
+                    // Also remove blocker
+                    try {
+                      const { updateProgress } = await import("./progress");
+                      const rec2 = { reason: "", resumeSchema: {} } as unknown as import("./suspend").AwaitRecord;
+                      // Load original rec for accurate prefix if still available (best effort)
+                      // For now, filter any suspend blocker
+                      await updateProgress(repoRoot, issueId, (parts) => ({
+                        ...parts,
+                        blockers: parts.blockers.filter((b) => !b.startsWith("⏸ awaiting human:")) ,
+                      }));
+                    } catch {}
+                    try { board.invalidate(deletedId); } catch {}
+                  }
                 }
               } catch (e) {
                 safeWarn(appLog, `tgo: failed to clear orphaned await for ${deletedId}: ${String(e)}`);
