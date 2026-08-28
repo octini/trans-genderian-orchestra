@@ -1,6 +1,6 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { estimateTokens } from "./config";
+import { estimateTokens, safeWarn } from "./config";
 import { readProgress, writeProgress, formatProgress, parseProgress, updateProgress } from "./progress";
 
 export interface SessionMapEntry {
@@ -119,9 +119,7 @@ export async function persistAbortHandback(opts: {
           throw new Error("no issueId in delegation prompt");
         }
       } catch (e) {
-        try {
-          opts.log?.("warn", `progress handback failed: ${String(e)}`);
-        } catch {}
+        safeWarn(opts.log, `progress handback failed: ${String(e)}`);
         return;
       }
       issueId = fetchedIssueId;
@@ -131,9 +129,7 @@ export async function persistAbortHandback(opts: {
         await saveSessionMap(opts.repoRoot, nextMap);
         map = nextMap;
       } catch (e) {
-        try {
-          opts.log?.("warn", `progress handback failed: ${String(e)}`);
-        } catch {}
+        safeWarn(opts.log, `progress handback failed: ${String(e)}`);
       }
     }
     if (!issueId) return;
@@ -141,14 +137,12 @@ export async function persistAbortHandback(opts: {
     const ok = await updateProgress(opts.repoRoot, issueId, (parts) => ({
       ...parts,
       blockers: [...parts.blockers, blocker],
-    }));
+    }), opts.log);
     if (!ok) {
       throw new Error(`writeProgress failed for ${issueId}`);
     }
   } catch (e) {
-    try {
-      opts.log?.("warn", `progress handback failed: ${String(e)}`);
-    } catch {}
+    safeWarn(opts.log, `progress handback failed: ${String(e)}`);
   }
 }
 
@@ -237,8 +231,6 @@ export async function captureDelegationSession(deps: { tool: string; input: unkn
     };
     await saveSessionMap(deps.repoRoot, upsertSession(map, issueId, entry));
   } catch (error) {
-    try {
-      deps.log?.("warn", `session-reuse capture failed: ${String(error)}`);
-    } catch {}
+    safeWarn(deps.log as unknown as (level: "warn" | "info" | "error", message: string, extra?: Record<string, unknown>) => void, `session-reuse capture failed: ${String(error)}`);
   }
 }

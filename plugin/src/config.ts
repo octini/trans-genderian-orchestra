@@ -17,6 +17,17 @@ export const BD_ENV = {
   HOME: os.homedir(),
 } as const;
 
+export function safeWarn(
+  log: ((level: "warn" | "info" | "error", message: string, extra?: Record<string, unknown>) => void) | undefined,
+  message: string,
+  extra?: Record<string, unknown>
+): void {
+  if (!log) return;
+  try {
+    log("warn", message, extra);
+  } catch {}
+}
+
 export const SEATS = [
   "bernstein",
   "horowitz",
@@ -162,7 +173,7 @@ export async function validateAgentDir(
   let checked = 0;
   const files = await fs.readdir(agentDir).catch((err) => {
     const msg = "tgo: validateAgentDir readdir failed";
-    if (log) log("warn", msg, { agentDir, error: String(err) });
+    if (log) safeWarn(log, msg, { agentDir, error: String(err) });
     else console.warn(`${msg}: ${String(err)}`, { agentDir });
     return [] as string[];
   });

@@ -1,5 +1,6 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import { safeWarn } from "./config";
 
 export const PROGRESS_LOCK_STALE_MS = 10_000;
 
@@ -114,6 +115,7 @@ export async function updateProgress(
   repoRoot: string,
   issueId: string,
   merge: (parts: ProgressParts) => ProgressParts,
+  log?: (level: "warn" | "info" | "error", message: string, extra?: Record<string, unknown>) => void,
 ): Promise<boolean> {
   try {
     const issueDir = path.join(repoRoot, ".tgo", issueId);
@@ -136,7 +138,8 @@ export async function updateProgress(
       try {
         next = merge(current);
       } catch (err) {
-        console.warn(`tgo: updateProgress merge failed: ${String(err)}`, { repoRoot, issueId });
+        if (log) safeWarn(log, "tgo: updateProgress merge failed", { error: String(err), repoRoot, issueId });
+        else console.warn(`tgo: updateProgress merge failed: ${String(err)}`, { repoRoot, issueId });
         return false;
       }
 

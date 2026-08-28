@@ -372,4 +372,24 @@ describe("plugin gate: parentID undefined treated as primary + chat.message fall
     expect(fourth.action).toBe("already-set-up");
     rmSync(dir, { recursive: true, force: true });
   });
+
+  test("concurrent maybeSetup dedupes to single execution", async () => {
+    const dir = tmpDir();
+    let runCalls = 0;
+    const c = controller({
+      run: async () => {
+        runCalls++;
+        await new Promise((r) => setTimeout(r, 10));
+        return "";
+      },
+    });
+    const [a, b] = await Promise.all([c.maybeSetup(dir), c.maybeSetup(dir)]);
+    expect(a.action).toBe("completed");
+    expect(b.action).toBe("completed");
+    expect(runCalls).toBe(2);
+    const third = await c.maybeSetup(dir);
+    expect(third.action).toBe("already-set-up");
+    expect(runCalls).toBe(2);
+    rmSync(dir, { recursive: true, force: true });
+  });
 });

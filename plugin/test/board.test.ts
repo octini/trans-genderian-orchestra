@@ -380,4 +380,94 @@ describe("BoardController", () => {
     expect(ok).toBe(true);
     expect(logs.some((l) => l.message.includes("tgo: board loadAgents failed"))).toBe(true);
   });
+
+  test("sessionMessages cache cap enforced and single-flight bounded", async () => {
+    const repoRoot = mkdtempSync(path.join(os.tmpdir(), "tgo-board-cap-"));
+    try {
+      const ids = Array.from({ length: 33 }, (_, i) => `tgo-cap-${i}`);
+      const sids = Array.from({ length: 33 }, (_, i) => `ses_${String(i).padStart(6, "0")}ABC`);
+      const map: Record<string, { sessionId: string; updatedAt: string }> = {};
+      ids.forEach((id, i) => (map[id] = { sessionId: sids[i]!, updatedAt: new Date().toISOString() }));
+      mkdirSync(path.join(repoRoot, ".tgo"), { recursive: true });
+      writeFileSync(path.join(repoRoot, ".tgo", "sessions.json"), JSON.stringify(map));
+      const inProg = JSON.stringify(ids.map((id) => ({ id, title: `issue ${id}`, priority: 1 })));
+      const run: BdRunner = async (cmd: string) => {
+        if (cmd.includes("in_progress")) return inProg;
+        if (cmd.includes("bd ready")) return "[]";
+        if (cmd.includes("bd blocked")) return "[]";
+        if (cmd.includes("bd memories")) return "{}";
+        return "";
+      };
+      let msgCalls = 0;
+      const client = {
+        session: {
+          messages: async (_opts: { path: { id: string } }) => {
+            msgCalls++;
+            await new Promise((r) => setTimeout(r, 2));
+            return [{ parts: [{ type: "text", text: "hello world" }] }];
+          },
+        },
+      };
+      const ctrl = new BoardController({
+        run,
+        refreshMs: 10_000,
+        sessionReuse: { repoRoot, client: client as any, maxContextTokens: 100000, supported: true, enabled: true },
+      });
+      await ctrl.renderFor("board-cap-1");
+      expect(msgCalls).toBe(33);
+      const cache = (ctrl as unknown as { sessionMessagesCache: Map<string, unknown> }).sessionMessagesCache;
+      expect(cache.size).toBe(32);
+      expect(cache.has(sids[0]!)).toBe(false);
+      expect(cache.has(sids[32]!)).toBe(true);
+      msgCalls = 0;
+      await (ctrl as unknown as { fetchSessionMessagesCached: (sid: string) => Promise<unknown> }).fetchSessionMessagesCached(sids[5]!);
+      expect(msgCalls).toBe(0);
+      const sidNew = "ses_NEW999999";
+      const p1 = (ctrl as unknown as { fetchSessionMessagesCached: (sid: string) => Promise<unknown> }).fetchSessionMessagesCached(sidNew);
+      const p2 = (ctrl as unknown as { fetchSessionMessagesCached: (sid: string) => Promise<unknown> }).fetchSessionMessagesCached(sidNew);
+      await Promise.all([p1, p2]);
+      expect(msgCalls).toBe(1);
+    } finally {
+      rmSync(repoRoot, { recursive: true, force: true });
+    }
+  });
+
+  test("reset clears sessionMessages cache", async () => {
+    const repoRoot = mkdtempSync(path.join(os.tmpdir(), "tgo-board-reset-"));
+    try {
+      const sid = "ses_RESET12345";
+      mkdirSync(path.join(repoRoot, ".tgo"), { recursive: true });
+      writeFileSync(path.join(repoRoot, ".tgo", "sessions.json"), JSON.stringify({ "tgo-reset": { sessionId: sid, updatedAt: new Date().toISOString() } }));
+      const inProg = JSON.stringify([{ id: "tgo-reset", title: "reset", priority: 1 }]);
+      const run: BdRunner = async (cmd: string) => {
+        if (cmd.includes("in_progress")) return inProg;
+        if (cmd.includes("bd ready")) return "[]";
+        if (cmd.includes("bd blocked")) return "[]";
+        if (cmd.includes("bd memories")) return "{}";
+        return "";
+      };
+      let msgCalls = 0;
+      const client = {
+        session: {
+          messages: async () => {
+            msgCalls++;
+            return [{ parts: [{ type: "text", text: "x" }] }];
+          },
+        },
+      };
+      const ctrl = new BoardController({ run, refreshMs: 10_000, sessionReuse: { repoRoot, client: client as any, maxContextTokens: 100000, supported: true, enabled: true } });
+      await ctrl.renderFor("reset-sess-1");
+      expect(msgCalls).toBe(1);
+      const cache = (ctrl as unknown as { sessionMessagesCache: Map<string, unknown> }).sessionMessagesCache;
+      expect(cache.size).toBe(1);
+      ctrl.reset("reset-sess-1");
+      expect(cache.size).toBe(0);
+      ctrl.invalidate("reset-sess-1");
+      expect(cache.size).toBe(0);
+      await ctrl.renderFor("reset-sess-2");
+      expect(msgCalls).toBe(2);
+    } finally {
+      rmSync(repoRoot, { recursive: true, force: true });
+    }
+  });
 });

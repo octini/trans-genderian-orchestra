@@ -26,6 +26,7 @@ export class SetupController {
   private readonly installBd: SetupControllerOptions["installBd"];
   private readonly attempted = new Set<string>();
   private readonly failureCounts = new Map<string, number>();
+  private readonly inflight = new Map<string, Promise<SetupResult>>();
   private static readonly MAX_SETUP_FAILURES = 3;
 
   constructor(opts: SetupControllerOptions) {
@@ -72,68 +73,73 @@ export class SetupController {
       this.attempted.add(directory);
       return { action: "already-set-up" };
     }
+    const existing = this.inflight.get(directory);
+    if (existing) return existing;
+    const promise = (async (): Promise<SetupResult> => {
+      let needs: boolean;
+      try {
+        needs = await this.needsSetup(directory);
+      } catch (error) {
+        this.failureCounts.set(directory, failCount + 1);
+        return { action: "failed", error: String(error) };
+      }
+      if (!needs) {
+        this.attempted.add(directory);
+        this.failureCounts.delete(directory);
+        return { action: "already-set-up" };
+      }
 
-    let needs: boolean;
-    try {
-      needs = await this.needsSetup(directory);
-    } catch (error) {
-      this.failureCounts.set(directory, failCount + 1);
-      return { action: "failed", error: String(error) };
-    }
-    if (!needs) {
+      try {
+        if (!(await this.hasBd())) {
+          if (this.installBd) {
+            try {
+              await this.installBd();
+            } catch (error) {
+              this.failureCounts.set(directory, failCount + 1);
+              return { action: "failed", error: `bd install failed: ${String(error)}` };
+            }
+          }
+          if (!(await this.hasBd())) {
+            this.attempted.add(directory);
+            this.failureCounts.delete(directory);
+            return { action: "no-bd" };
+          }
+        }
+      } catch (error) {
+        this.failureCounts.set(directory, failCount + 1);
+        return { action: "failed", error: String(error) };
+      }
+
+      const steps: string[] = [];
+      let missing: string[];
+      try {
+        missing = await this.missingSteps(directory);
+      } catch (error) {
+        this.failureCounts.set(directory, failCount + 1);
+        return { action: "failed", error: String(error) };
+      }
+      try {
+        for (const step of missing) {
+          if (step === "bd init" || step === "bd setup opencode") {
+            const result = await this.run(step, directory);
+            if (typeof result !== "string" && result.exitCode !== 0) {
+              const detail = [result.stderr.trim(), result.stdout.trim()].filter(Boolean).join("\n");
+              throw new Error(`${step} exited ${result.exitCode}${detail ? `: ${detail}` : ""}`);
+            }
+          } else if (step === "AGENTS fragment") {
+            await mergeAgentsFragment(directory);
+          }
+          steps.push(step);
+        }
+      } catch (error) {
+        this.failureCounts.set(directory, failCount + 1);
+        return { action: "failed", error: String(error) };
+      }
       this.attempted.add(directory);
       this.failureCounts.delete(directory);
-      return { action: "already-set-up" };
-    }
-
-    try {
-      if (!(await this.hasBd())) {
-        if (this.installBd) {
-          try {
-            await this.installBd();
-          } catch (error) {
-            this.failureCounts.set(directory, failCount + 1);
-            return { action: "failed", error: `bd install failed: ${String(error)}` };
-          }
-        }
-        if (!(await this.hasBd())) {
-          this.attempted.add(directory);
-          this.failureCounts.delete(directory);
-          return { action: "no-bd" };
-        }
-      }
-    } catch (error) {
-      this.failureCounts.set(directory, failCount + 1);
-      return { action: "failed", error: String(error) };
-    }
-
-    const steps: string[] = [];
-    let missing: string[];
-    try {
-      missing = await this.missingSteps(directory);
-    } catch (error) {
-      this.failureCounts.set(directory, failCount + 1);
-      return { action: "failed", error: String(error) };
-    }
-    try {
-      for (const step of missing) {
-        if (step === "bd init" || step === "bd setup opencode") {
-          const result = await this.run(step, directory);
-          if (typeof result !== "string" && result.exitCode !== 0) {
-            const detail = [result.stderr.trim(), result.stdout.trim()].filter(Boolean).join("\n");
-            throw new Error(`${step} exited ${result.exitCode}${detail ? `: ${detail}` : ""}`);
-          }
-        } else if (step === "AGENTS fragment") {
-          await mergeAgentsFragment(directory);
-        }
-        steps.push(step);
-      }
-    } catch (error) {
-      this.failureCounts.set(directory, failCount + 1);
-      return { action: "failed", error: String(error) };
-    }
-    this.attempted.add(directory);
-    this.failureCounts.delete(directory);
-    return { action: "completed", steps };
+      return { action: "completed", steps };
+    })().finally(() => this.inflight.delete(directory));
+    this.inflight.set(directory, promise);
+    return promise;
   }
 }

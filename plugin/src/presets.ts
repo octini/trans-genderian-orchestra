@@ -1,4 +1,4 @@
-import { PRESET_NAMES, SEATS, type TgoConfig } from "./config";
+import { PRESET_NAMES, SEATS, safeWarn, type TgoConfig } from "./config";
 
 export const PRESET_MEMORY_KEY = "tgo.preset";
 export const BD_MEMORIES_COMMAND = "bd memories --json";
@@ -30,7 +30,7 @@ export async function readPresetNudge(
 ): Promise<Record<string, unknown>> {
   const raw = await run(BD_MEMORIES_COMMAND).catch((err) => {
     const msg = "tgo: readPresetNudge bd memories failed";
-    if (log) log("warn", msg, { error: String(err) });
+    if (log) safeWarn(log, msg, { error: String(err) });
     else console.warn(`${msg}: ${String(err)}`);
     return "";
   });

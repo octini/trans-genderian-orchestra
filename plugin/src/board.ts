@@ -1,4 +1,5 @@
 import * as crypto from "node:crypto";
+import { safeWarn } from "./config";
 import { readProgress } from "./progress";
 import { estimateSessionTokens, loadSessionMap, shouldReuse } from "./session-reuse";
 
@@ -314,6 +315,8 @@ export class BoardController {
   private readonly sessionReuse?: SessionReuseDeps;
   private readonly log?: (level: "warn" | "info" | "error", message: string, extra?: Record<string, unknown>) => void;
   private readonly sessionMessagesCache = new Map<string, { raw: any; at: number }>();
+  private readonly sessionMessagesPending = new Map<string, Promise<any>>();
+  private static readonly MAX_SESSION_MESSAGES_CACHE = 32;
 
   constructor(opts: {
     run: BdRunner;
@@ -333,9 +336,23 @@ export class BoardController {
     const now = Date.now();
     const cached = this.sessionMessagesCache.get(sid);
     if (cached && now - cached.at < this.refreshMs) return cached.raw;
-    const raw = await this.sessionReuse!.client.session.messages({ path: { id: sid } });
-    this.sessionMessagesCache.set(sid, { raw, at: now });
-    return raw;
+    const pending = this.sessionMessagesPending.get(sid);
+    if (pending) return pending;
+    const promise = (async () => {
+      try {
+        const raw = await this.sessionReuse!.client.session.messages({ path: { id: sid } });
+        if (this.sessionMessagesCache.size >= BoardController.MAX_SESSION_MESSAGES_CACHE) {
+          const oldest = this.sessionMessagesCache.keys().next().value as string | undefined;
+          if (oldest !== undefined) this.sessionMessagesCache.delete(oldest);
+        }
+        this.sessionMessagesCache.set(sid, { raw, at: Date.now() });
+        return raw;
+      } finally {
+        this.sessionMessagesPending.delete(sid);
+      }
+    })();
+    this.sessionMessagesPending.set(sid, promise);
+    return promise;
   }
 
   get shimState(): BoardShim {
@@ -350,7 +367,7 @@ export class BoardController {
     const byName = new Map<string, "primary" | "subagent" | "all">();
     const res = await client.app.agents().catch((err) => {
       const msg = "tgo: board loadAgents failed";
-      if (this.log) this.log("warn", msg, { error: String(err) });
+      if (this.log) safeWarn(this.log, msg, { error: String(err) });
       else console.warn(`${msg}: ${String(err)}`);
       return undefined;
     });
@@ -383,7 +400,7 @@ export class BoardController {
     this.injectedSessions.add(input.sessionID);
     const session = await client.session.get({ path: { id: input.sessionID } }).catch((err) => {
       const msg = "tgo: board gate session.get failed";
-      if (this.log) this.log("warn", msg, { sessionID: input.sessionID, error: String(err) });
+      if (this.log) safeWarn(this.log, msg, { sessionID: input.sessionID, error: String(err) });
       else console.warn(`${msg}: ${String(err)}`, { sessionID: input.sessionID });
       return undefined;
     });
@@ -399,10 +416,14 @@ export class BoardController {
   reset(sessionID: string): void {
     this.injectedSessions.delete(sessionID);
     this.renderCache.delete(sessionID);
+    this.sessionMessagesCache.clear();
+    this.sessionMessagesPending.clear();
   }
 
   invalidate(sessionID: string): void {
     this.renderCache.delete(sessionID);
+    this.sessionMessagesCache.clear();
+    this.sessionMessagesPending.clear();
   }
 
   public async buildBoardTextWithHints(
@@ -469,7 +490,7 @@ export class BoardController {
           raw = await this.fetchSessionMessagesCached(sid);
         } catch (err) {
           const msg = "tgo: board session.messages failed";
-          if (this.log) this.log("warn", msg, { sessionId: sid, error: String(err) });
+          if (this.log) safeWarn(this.log, msg, { sessionId: sid, error: String(err) });
           else console.warn(`${msg}: ${String(err)}`, { sessionId: sid });
           continue;
         }

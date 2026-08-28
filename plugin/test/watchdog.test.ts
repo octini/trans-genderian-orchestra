@@ -787,4 +787,9 @@ describe("WatchdogController", () => {
     expect(notifies[0]?.text).toContain("stuck-loop");
     wd.dispose();
   });
+  test("FNV-1a vector pinned stable", () => {
+    expect(toolSignature("read", { path: "foo.ts" })).toBe("read:foo.ts:b5c9292a");
+  });
+
 });
+

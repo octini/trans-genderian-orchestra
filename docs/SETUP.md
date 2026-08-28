@@ -150,7 +150,7 @@ Two other checks people find useful:
 
 - **Register + concision are live:** peek at `~/.config/opencode/agent/dylan.md` for the house-style block and the `present in *register* mode by default` line — that’s the register that took effect at install (`register` in `plugin/src/config.ts:78`, default `"concise"`).
 - **The runtime concision hook is firing:** start opencode with `TGO_DEBUG_EVENTS=1`; the line `event concision.appended <session-id> {"register":"concise"}` appears each time the instruction is injected. No line means the hook isn’t firing.
-- **The version check ran:** look for `TGO update available: installed < npm — run: opencode plugin trans-genderian-orchestra --force -g and restart` in the structured `tgo` log stream. The check itself is `plugin/src/version.ts:checkVersionDrift` (3 s timeout, behind `config.checkVersion` defaulting to `true`).
+- **The version check ran:** look for `TGO update available: installed < npm — self-update will refresh cache on restart; if slot stuck: rm -rf ~/.cache/opencode/packages/trans-genderian-orchestra* and restart (opencode plugin --force is a no-op against exact-pinned slots tgo-6m6)` in the structured `tgo` log stream. The check itself is `plugin/src/version.ts:checkVersionDrift` (3 s timeout, behind `config.checkVersion` defaulting to `true`).
 
 Plugin diagnostics, by the way, go through `client.app.log({ service: "tgo" })` — never `console.log`, which in opencode 1.18.15 leaked into the TUI’s input box. `TGO_DEBUG_EVENTS=1` traces events through the same structured log.
 

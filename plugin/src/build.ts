@@ -48,6 +48,7 @@ export async function renderSeats(
 ): Promise<RenderedSeat[]> {
   const houseStyle = await loadHouseStyle();
   const files = await fs.readdir(sourceDir).catch((err) => {
+    // build-time: no plugin logger available, console.warn is intentional (review tgo-73s)
     console.warn(`tgo: renderSeats readdir failed: ${String(err)}`, { sourceDir });
     return [] as string[];
   });

@@ -2,6 +2,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { REGISTER_SLOT, type Register } from "./build";
+import { safeWarn } from "./config";
 
 export { REGISTER_SLOT };
 
@@ -64,7 +65,7 @@ export class ConcisionController {
     if (cached !== undefined) return cached;
     const res = await client.session.get({ path: { id: sessionID } }).catch((err) => {
       const msg = "tgo: concision isPrimary session.get failed";
-      if (this.log) this.log("warn", msg, { sessionID, error: String(err) });
+      if (this.log) safeWarn(this.log, msg, { sessionID, error: String(err) });
       else console.warn(`${msg}: ${String(err)}`, { sessionID });
       return undefined;
     });

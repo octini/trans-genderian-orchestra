@@ -1,4 +1,5 @@
 import { analyzeStyleDrift, type DriftMode, type DriftRegister, type OutputClass, type DriftInput } from "./drift";
+import { safeWarn } from "./config";
 
 export const STYLE_NUDGE = "Self-audit the next response for correctness-neutral style drift; preserve all technical content and required caveats.";
 
@@ -59,7 +60,7 @@ export class StyleReinforcementController {
     if (cached !== undefined) return cached;
     const result = await client.session.get({ path: { id: sessionID } }).catch((err) => {
       const msg = "tgo: style-reinforcement isPrimary session.get failed";
-      if (this.log) this.log("warn", msg, { sessionID, error: String(err) });
+      if (this.log) safeWarn(this.log, msg, { sessionID, error: String(err) });
       else console.warn(`${msg}: ${String(err)}`, { sessionID });
       return undefined;
     });

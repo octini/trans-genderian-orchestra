@@ -56,7 +56,7 @@ export const TgoPlugin: Plugin = async (
         if (drift?.drift) {
           appLog(
             "warn",
-            `TGO update available: installed ${drift.local} < npm ${drift.latest} — run: opencode plugin trans-genderian-orchestra --force -g and restart`,
+            `TGO update available: installed ${drift.local} < npm ${drift.latest} — self-update will refresh cache on restart; if slot stuck: rm -rf ~/.cache/opencode/packages/trans-genderian-orchestra* and restart (opencode plugin --force is a no-op against exact-pinned slots tgo-6m6)`,
             { local: drift.local, latest: drift.latest }
           );
         }
