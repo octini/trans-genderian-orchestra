@@ -1,6 +1,7 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { safeWarn } from "./config";
+import { assertValidBeadID } from "./def-snapshot";
 
 export const PROGRESS_LOCK_STALE_MS = 10_000;
 
@@ -117,6 +118,7 @@ export async function updateProgress(
   merge: (parts: ProgressParts) => ProgressParts,
   log?: (level: "warn" | "info" | "error", message: string, extra?: Record<string, unknown>) => void,
 ): Promise<boolean> {
+  assertValidBeadID(issueId);
   try {
     const issueDir = path.join(repoRoot, ".tgo", issueId);
     const lockPath = path.join(issueDir, "progress.lock");

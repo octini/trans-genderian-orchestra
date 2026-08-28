@@ -153,6 +153,7 @@ export async function persistAbortHandback(opts: {
   try {
     let map = await loadSessionMap(opts.repoRoot);
     let issueId = issueIdBySession(map, opts.sessionID);
+    if (issueId) assertValidBeadID(issueId);
     if (!issueId && opts.fetchSessionMessages) {
       let fetchedIssueId: string | undefined;
       try {
@@ -199,6 +200,7 @@ export async function persistAbortHandback(opts: {
         return;
       }
       issueId = fetchedIssueId;
+      assertValidBeadID(issueId);
       try {
         const entry: SessionMapEntry = { sessionId: opts.sessionID, updatedAt: new Date().toISOString() };
         const nextMap = upsertSession(map, issueId, entry);
@@ -209,6 +211,7 @@ export async function persistAbortHandback(opts: {
       }
     }
     if (!issueId) return;
+    assertValidBeadID(issueId);
     const blocker = `watchdog abort (${opts.reason}) at ${new Date().toISOString()} — session ${opts.sessionID}; re-dispatch may reuse its task_id`;
     const ok = await updateProgress(opts.repoRoot, issueId, (parts) => ({
       ...parts,
