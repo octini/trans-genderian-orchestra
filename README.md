@@ -2,7 +2,7 @@
 
 > Mirrored byte-for-byte in `plugin/README.md` (the npm readme) — edit one, copy to the other.
 
-[![npm version](https://img.shields.io/badge/npm-0.1.8-6a4c93)](https://www.npmjs.com/package/trans-genderian-orchestra)
+[![npm version](https://img.shields.io/badge/npm-0.2.0-6a4c93)](https://www.npmjs.com/package/trans-genderian-orchestra)
 [![License: MIT](https://img.shields.io/badge/license-MIT-6a4c93)](LICENSE)
 [![OpenCode 1.18.13](https://img.shields.io/badge/OpenCode-1.18.13-6a4c93)](https://opencode.ai)
 
@@ -28,7 +28,7 @@ You only install the plugin once. After that, every new folder takes care of its
 **Step one — install it globally.** One command gives you both surfaces — the server-side board that lives in chat, and the TUI sidebar you see on the right. No second install to remember.
 
 ```bash
-opencode plugin add trans-genderian-orchestra
+opencode plugin trans-genderian-orchestra -g
 ```
 
 One npm package exposes both via dual-package exports since v0.1.5 (`exports "./server" → "./dist/server.js"` and `"./tui" → "./dist/tui.js"`; peers `solid-js`, `@opentui/solid`, `@opentui/core` are resolved by the host, not bundled). The board lives on the server (`experimental.chat.messages.transform` / `experimental.chat.system.transform` in `dist/server.js`); the sidebar lives on the TUI (`slots.register` at `order 450` in `tui.jsonc` — tucked between Todo at `400` and Modified Files at `500` — in `dist/tui.js`). The interactive sidebar itself landed in 0.1.6; 0.1.5 shipped the dual exports and a read-only `tgo_beads_snapshot` tool.
@@ -36,7 +36,7 @@ One npm package exposes both via dual-package exports since v0.1.5 (`exports "./
 If you prefer to wire it by hand, this also works in `opencode.jsonc`:
 
 ```json
-{ "plugin": ["trans-genderian-orchestra@0.1.8"] }
+{ "plugin": ["trans-genderian-orchestra@0.2.0"] }
 ```
 
 Restart opencode after it installs. That’s the global layer done.
@@ -69,7 +69,7 @@ That builds the seat prompts from templates, writes the global config fragment, 
 
 **You’ll know it worked** when that sidebar on the right lights up. Within about a second or two of the setup finishing — no manual `/bd-refresh` — you should see your beads appear. The TUI polls every 1.5 seconds (`POLL_MS 1500` in `plugin/src/sidebar/tui.tsx:20`) but it doesn’t do it the wasteful way: it keeps a cheap signature of the `.beads` directory (`plugin/src/sidebar/bd.ts` walks `.beads` for the newest mtime plus entry count) and only re-reads when something actually changed. The fallback view even pulls `bd list --all` (`plugin/src/sidebar/scope.ts:93`) so in-progress work still shows up before an epic scope fully forms. If you pinned an epic with `/bd-focus`, you can clear it with `/bd-unfocus` and the panel goes back to following whatever bead was last touched.
 
-**A small heads-up that’s new in 0.1.8.** On startup TGO quietly compares your installed version (`plugin/package.json`) with what npm says is latest (`https://registry.npmjs.org/trans-genderian-orchestra/latest`). The logic lives in `plugin/src/version.ts` — `compareVersions` handles `v` prefixes and pre-releases, `fetchLatestVersion` gives npm three seconds before it gives up, and `checkVersionDrift` puts it together. If you’re behind, you’ll see a gentle warning in the structured log (`client.app.log` with `service: "tgo"`): *“TGO update available: installed X < npm Y — run: opencode plugin trans-genderian-orchestra --force -g and restart”*. It’s on by default (`config.checkVersion` in `plugin/src/config.ts:80` defaults to `true`), but it never throws and never blocks startup — it’s fire-and-forget, and you can turn it off with `"checkVersion": false` if you prefer.
+**A small heads-up that’s new in 0.2.0.** On startup TGO quietly compares your installed version (`plugin/package.json`) with what npm says is latest (`https://registry.npmjs.org/trans-genderian-orchestra/latest`). The logic lives in `plugin/src/version.ts` — `compareVersions` handles `v` prefixes and pre-releases, `fetchLatestVersion` gives npm three seconds before it gives up, and `checkVersionDrift` puts it together. If you’re behind, you’ll see a gentle warning in the structured log (`client.app.log` with `service: "tgo"`): *“TGO update available: installed X < npm Y — run: opencode plugin trans-genderian-orchestra --force -g and restart”*. It’s on by default (`config.checkVersion` in `plugin/src/config.ts:80` defaults to `true`), but it never throws and never blocks startup — it’s fire-and-forget, and you can turn it off with `"checkVersion": false` if you prefer.
 
 Lean check, if you like receipts: `grep -c slots.register plugin/dist/server.js` should be `0` and `grep -c experimental.chat plugin/dist/tui.js` should be `0` — server has no TUI slots, TUI has no chat hooks. The build and CI enforce it (`plugin/src/build.ts`).
 
@@ -102,6 +102,10 @@ Bernstein sketches the work as a dependency-ordered DAG, sends each piece out wi
 
 The Background Job Board is the view that follows you through all of this. Each turn the plugin re-derives a short board snapshot from Beads — `bd list`, `bd ready`, `bd blocked`, `bd memories` when the host exposes them — and shares it with the model as context. It’s read-only context, not a license to write. Creating, claiming, closing, reopening, or recovering beads outside that read path stays disabled until the host boundary for lifecycle writes is proven; the current plugin stays metadata-only there (`beadsLifecycle.allowed: false`).
 
+- **Session reuse** — follow-up delegations continue the same subagent session (`task_id`) instead of spawning fresh; context-size guarded; state in `.tgo/sessions.json`.
+- **Progress files** — per-issue `.tgo/<issueId>/progress.md` (Objective / Touch set / Decisions / Blockers / Status) written by Dylan, read by Bernstein/Horowitz; survives session end.
+- **Termination conditions** — composable completion detection stops post-completion waffle and hands the report back.
+
 ## The roster
 
 | Seat | What they’re good at |
@@ -128,7 +132,9 @@ Put options in the second element of the plugin tuple: `["trans-genderian-orches
 | `concision` | `{ enabled, reinforcement }` — the always-on house-style switch and an opt-in, once-per-attempt reinforcement nudge. Inert by default without explicit context. | `true`, `false` |
 | `setup` | `{ enabled, autoInstallBeads }` — the auto-init described above; disable it or ask it to report a missing `bd` instead of installing. | `true`, `true` |
 | `checkVersion` | Whether to do that gentle npm drift check on startup. | `true` |
-| `watchdog` | `{ enabled, wallClockMs, idleMs, checkMs }` — aborts a delegated session that’s hung or gone silent and asks Bernstein to re-dispatch. | `true`, 20m, 15m, 10s |
+| `sessionReuse` | `{ enabled, maxContextTokens }` — continues prior delegation sessions via task_id when the stored session is under the token budget. | `true`, 100000 |
+| `termination` | `{ enabled }` — stops a delegated session after it declares STATUS: complete with its exit gate satisfied and then makes a residual tool call. | `true` |
+| `watchdog` | `{ enabled, wallClockMs, idleMs, checkMs, stuckLoopTools, stuckLoopMs }` — aborts a delegated session that’s hung or gone silent and asks Bernstein to re-dispatch. stuck-loop = <3 distinct tool signatures across the last 20 tools within 5m (read-only seats no longer false-trip). | `true`, 30m, 15m, 10s, stuckLoopTools 20, stuckLoopMs 5m |
 
 The JSON schema is at `plugin/schema/tgo.config.schema.json`.
 

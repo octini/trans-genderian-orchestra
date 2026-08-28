@@ -2,6 +2,7 @@ import { test, expect, describe } from "bun:test";
 import {
   WatchdogController,
   WATCHDOG_ABORT_MARKER,
+  toolSignature,
   type WatchdogConfig,
 } from "../src/watchdog";
 
@@ -29,7 +30,7 @@ function makeDeps() {
       log: (level: string, message: string) => {
         logs.push({ level, message });
       },
-      abort: async (sessionID: string) => {
+      abort: async (sessionID: string, _reason: "wall-clock" | "idle" | "stuck-loop") => {
         aborts.push(sessionID);
       },
       notifyParent: async (parentID: string, text: string) => {
@@ -467,6 +468,9 @@ describe("WatchdogController", () => {
   });
 
   test("stuck loop without edits aborts as stuck-loop after count+time", async () => {
+    // Updated to distinct-signature window: repeated identical signatures (same file) fill the window
+    // with distinct=1 (<3) and elapsed since oldest >= stuckLoopMs -> abort. This is the same
+    // behavioral intent as before — a tight loop aborts — but now based on signature window.
     let wall = 1_000_000;
     let uptime = 500_000;
     const { deps, aborts, notifies } = makeDeps();
@@ -480,21 +484,21 @@ describe("WatchdogController", () => {
     );
     wd.noteSessionCreated({ id: "s-sub", parentID: "p" });
     wd.noteStatus("s-sub", "busy");
-    // 4 non-progress tools quickly — not enough count, no abort
+    // 4 identical tool calls quickly — window not yet full, no abort even though time could be enough later
     for (let i = 0; i < 4; i++) {
-      wd.noteToolStart("s-sub");
+      wd.noteToolStart("s-sub", false, "read", { path: "same.ts" });
       wd.noteToolEnd("s-sub", false, false);
     }
     wall += 20_000;
     uptime += 20_000;
     await wd.check();
     expect(aborts).toEqual([]);
-    // 6th tool pushes over count (5) but time only 20s < 30s — no abort
-    wd.noteToolStart("s-sub");
+    // 5th identical pushes window to full (5) but elapsed since oldest only 20s < 30s — no abort yet
+    wd.noteToolStart("s-sub", false, "read", { path: "same.ts" });
     wd.noteToolEnd("s-sub", false, false);
     await wd.check();
     expect(aborts).toEqual([]);
-    // Advance past stuckLoopMs with no edit — now count 5+ and time 40s
+    // Advance past stuckLoopMs with window full and distinct=1 -> now aborts as stuck-loop
     wall += 20_000;
     uptime += 20_000;
     await wd.check();
@@ -503,7 +507,9 @@ describe("WatchdogController", () => {
     wd.dispose();
   });
 
-  test("edit progress resets stuck-loop counter (no false abort)", async () => {
+  test("distinct signatures prevent stuck-loop (healthy broad reading)", async () => {
+    // Capability-agnostic fix: read-only lanes that read many distinct files must not abort.
+    // With 5 distinct signatures, distinct=5 >=3 so even after long elapsed no abort.
     let wall = 1_000_000;
     let uptime = 500_000;
     const { deps, aborts } = makeDeps();
@@ -517,27 +523,243 @@ describe("WatchdogController", () => {
     );
     wd.noteSessionCreated({ id: "s-sub", parentID: "p" });
     wd.noteStatus("s-sub", "busy");
-    for (let i = 0; i < 4; i++) {
-      wd.noteToolStart("s-sub");
+    for (let i = 0; i < 5; i++) {
+      wd.noteToolStart("s-sub", false, "read", { path: `file-${i}.ts` });
       wd.noteToolEnd("s-sub", false, false);
     }
-    // A meaningful edit resets the loop detector
-    wd.noteToolStart("s-sub");
-    wd.noteToolEnd("s-sub", false, true);
     wall += 40_000;
     uptime += 40_000;
     await wd.check();
     expect(aborts).toEqual([]);
-    // Need 5 more non-progress after the edit to trip again
-    for (let i = 0; i < 5; i++) {
-      wd.noteToolStart("s-sub");
+    // Even with another 5 distinct after, still no abort
+    for (let i = 5; i < 10; i++) {
+      wd.noteToolStart("s-sub", false, "read", { path: `file-${i}.ts` });
       wd.noteToolEnd("s-sub", false, false);
     }
     wall += 5_000;
     uptime += 5_000;
     await wd.check();
-    // Time since edit only 45s >30s but count just hit, so now aborts
+    expect(aborts).toEqual([]);
+    wd.dispose();
+  });
+
+  test("20 distinct signatures do not abort (healthy broad reading / Horowitz review)", async () => {
+    let wall = 1_000_000;
+    let uptime = 500_000;
+    const { deps, aborts } = makeDeps();
+    const wd = new WatchdogController(
+      makeConfig({ wallClockMs: 600_000, idleMs: 600_000, stuckLoopTools: 20, stuckLoopMs: 30_000, checkMs: 1_000 }),
+      {
+        ...deps,
+        wallNow: () => wall,
+        uptimeNow: () => uptime,
+      }
+    );
+    wd.noteSessionCreated({ id: "s-sub", parentID: "p" });
+    wd.noteStatus("s-sub", "busy");
+    for (let i = 0; i < 20; i++) {
+      wd.noteToolStart("s-sub", false, "read", { path: `distinct-${i}.ts` });
+      wd.noteToolEnd("s-sub", false, false);
+    }
+    // Elapsed since oldest > stuckLoopMs but distinct=20 >=3 so no abort
+    wall += 400_000;
+    uptime += 400_000;
+    await wd.check();
+    expect(aborts).toEqual([]);
+    wd.dispose();
+  });
+
+  test("alternating 2 signatures filling the window aborts as stuck-loop", async () => {
+    let wall = 1_000_000;
+    let uptime = 500_000;
+    const { deps, aborts, notifies } = makeDeps();
+    const wd = new WatchdogController(
+      makeConfig({ wallClockMs: 600_000, idleMs: 600_000, stuckLoopTools: 6, stuckLoopMs: 30_000, checkMs: 1_000 }),
+      {
+        ...deps,
+        wallNow: () => wall,
+        uptimeNow: () => uptime,
+      }
+    );
+    wd.noteSessionCreated({ id: "s-sub", parentID: "p" });
+    wd.noteStatus("s-sub", "busy");
+    // Fill window with alternating A,B,A,B,A,B (distinct=2 <3)
+    const sigs = ["a.ts", "b.ts"];
+    for (let i = 0; i < 6; i++) {
+      wd.noteToolStart("s-sub", false, "read", { path: sigs[i % 2]! });
+      wd.noteToolEnd("s-sub", false, false);
+    }
+    wall += 40_000;
+    uptime += 40_000;
+    await wd.check();
     expect(aborts).toEqual(["s-sub"]);
+    expect(notifies[0]?.text).toContain("stuck-loop");
+    wd.dispose();
+  });
+
+  test("window not yet full does not abort regardless of elapsed", async () => {
+    let wall = 1_000_000;
+    let uptime = 500_000;
+    const { deps, aborts } = makeDeps();
+    const wd = new WatchdogController(
+      makeConfig({ wallClockMs: 600_000, idleMs: 600_000, stuckLoopTools: 5, stuckLoopMs: 30_000, checkMs: 1_000 }),
+      {
+        ...deps,
+        wallNow: () => wall,
+        uptimeNow: () => uptime,
+      }
+    );
+    wd.noteSessionCreated({ id: "s-sub", parentID: "p" });
+    wd.noteStatus("s-sub", "busy");
+    // Only 4 tools, window size 4 < 5, elapsed huge -> still no abort
+    for (let i = 0; i < 4; i++) {
+      wd.noteToolStart("s-sub", false, "read", { path: "same.ts" });
+      wd.noteToolEnd("s-sub", false, false);
+    }
+    wall += 500_000;
+    uptime += 500_000;
+    await wd.check();
+    expect(aborts).toEqual([]);
+    wd.dispose();
+  });
+
+  test("toolSignature helper normalizes primary arguments", () => {
+    expect(toolSignature("read", { path: "foo.ts" })).toBe("read:foo.ts");
+    expect(toolSignature("grep", { pattern: "hello.*", path: "src" })).toBe("grep:hello.*:src");
+    expect(toolSignature("bash", { command: "ls -la" })).toBe("bash:ls -la");
+    expect(toolSignature("glob", { path: "src/**/*.ts" })).toBe("glob:src/**/*.ts");
+    const long = "a".repeat(300);
+    const sig = toolSignature("read", { path: long });
+    expect(sig.length).toBeLessThanOrEqual("read:".length + 200);
+    expect(toolSignature("unknown", null)).toBe("unknown");
+    // grep same pattern different paths must yield different signatures
+    expect(toolSignature("grep", { pattern: "foo", path: "a.ts" })).not.toBe(toolSignature("grep", { pattern: "foo", path: "b.ts" }));
+    // grep includes both pattern and path
+    expect(toolSignature("grep", { pattern: "foo", path: "a.ts" })).toContain("foo");
+    expect(toolSignature("grep", { pattern: "foo", path: "a.ts" })).toContain("a.ts");
+    // read uses path, bash uses command, others use JSON truncated
+    expect(toolSignature("read", { path: "x.ts" })).toBe("read:x.ts");
+    expect(toolSignature("bash", { command: "echo hi" })).toBe("bash:echo hi");
+    expect(toolSignature("unknownTool", { foo: "bar" })).toBe('unknownTool:{"foo":"bar"}');
+  });
+
+  test("same grep pattern, different paths filling the window → NO abort", async () => {
+    let wall = 1_000_000;
+    let uptime = 500_000;
+    const { deps, aborts } = makeDeps();
+    const wd = new WatchdogController(
+      makeConfig({ wallClockMs: 600_000, idleMs: 600_000, stuckLoopTools: 5, stuckLoopMs: 30_000, checkMs: 1_000 }),
+      { ...deps, wallNow: () => wall, uptimeNow: () => uptime }
+    );
+    wd.noteSessionCreated({ id: "s-sub", parentID: "p" });
+    wd.noteStatus("s-sub", "busy");
+    for (let i = 0; i < 5; i++) {
+      wd.noteToolStart("s-sub", false, "grep", { pattern: "hello.*", path: `src/file-${i}.ts` });
+      wd.noteToolEnd("s-sub", false);
+    }
+    wall += 40_000;
+    uptime += 40_000;
+    await wd.check();
+    expect(aborts).toEqual([]);
+    wd.dispose();
+  });
+
+  test("read/edit alternation filling the window → NO abort (edits keep clearing)", async () => {
+    let wall = 1_000_000;
+    let uptime = 500_000;
+    const { deps, aborts } = makeDeps();
+    const wd = new WatchdogController(
+      makeConfig({ wallClockMs: 600_000, idleMs: 600_000, stuckLoopTools: 5, stuckLoopMs: 30_000, checkMs: 1_000 }),
+      { ...deps, wallNow: () => wall, uptimeNow: () => uptime }
+    );
+    wd.noteSessionCreated({ id: "s-sub", parentID: "p" });
+    wd.noteStatus("s-sub", "busy");
+    for (let i = 0; i < 5; i++) {
+      wd.noteToolStart("s-sub", false, "read", { path: `file-${i}.ts` });
+      wd.noteToolEnd("s-sub", false);
+      wd.noteToolStart("s-sub", false, "edit", { filePath: `file-${i}.ts`, oldString: "a", newString: "b" });
+      wd.noteToolEnd("s-sub", false, true);
+      // also exercise case-insensitive variants and write/multiedit
+      wd.noteToolStart("s-sub", false, "Write", { filePath: `w-${i}.ts`, content: "x" });
+      wd.noteToolEnd("s-sub", false);
+      wd.noteToolStart("s-sub", false, "MULTIEDIT", { filePath: `m-${i}.ts` });
+      wd.noteToolEnd("s-sub", false);
+    }
+    wall += 40_000;
+    uptime += 40_000;
+    await wd.check();
+    expect(aborts).toEqual([]);
+    wd.dispose();
+  });
+
+  test("stuck-loop check deferred while toolInFlight > 0", async () => {
+    let wall = 1_000_000;
+    let uptime = 500_000;
+    const { deps, aborts } = makeDeps();
+    const wd = new WatchdogController(
+      makeConfig({ wallClockMs: 600_000, idleMs: 600_000, stuckLoopTools: 5, stuckLoopMs: 30_000, checkMs: 1_000 }),
+      { ...deps, wallNow: () => wall, uptimeNow: () => uptime }
+    );
+    wd.noteSessionCreated({ id: "s-sub", parentID: "p" });
+    wd.noteStatus("s-sub", "busy");
+    for (let i = 0; i < 5; i++) {
+      wd.noteToolStart("s-sub", false, "read", { path: "same.ts" });
+      wd.noteToolEnd("s-sub", false);
+    }
+    wall += 40_000;
+    uptime += 40_000;
+    // Keep a foreground tool in flight while checking — stuck-loop must be deferred
+    wd.noteToolStart("s-sub", false, "read", { path: "same.ts" });
+    await wd.check();
+    expect(aborts).toEqual([]);
+    wd.noteToolEnd("s-sub", false);
+    await wd.check();
+    expect(aborts).toEqual(["s-sub"]);
+    wd.dispose();
+  });
+
+  test("identical-repeat still aborts as stuck-loop", async () => {
+    let wall = 1_000_000;
+    let uptime = 500_000;
+    const { deps, aborts, notifies } = makeDeps();
+    const wd = new WatchdogController(
+      makeConfig({ wallClockMs: 600_000, idleMs: 600_000, stuckLoopTools: 5, stuckLoopMs: 30_000, checkMs: 1_000 }),
+      { ...deps, wallNow: () => wall, uptimeNow: () => uptime }
+    );
+    wd.noteSessionCreated({ id: "s-sub", parentID: "p" });
+    wd.noteStatus("s-sub", "busy");
+    for (let i = 0; i < 5; i++) {
+      wd.noteToolStart("s-sub", false, "read", { path: "same.ts" });
+      wd.noteToolEnd("s-sub", false);
+    }
+    wall += 40_000;
+    uptime += 40_000;
+    await wd.check();
+    expect(aborts).toEqual(["s-sub"]);
+    expect(notifies[0]?.text).toContain("stuck-loop");
+    wd.dispose();
+  });
+
+  test("2-alternating non-edit loop still aborts", async () => {
+    let wall = 1_000_000;
+    let uptime = 500_000;
+    const { deps, aborts, notifies } = makeDeps();
+    const wd = new WatchdogController(
+      makeConfig({ wallClockMs: 600_000, idleMs: 600_000, stuckLoopTools: 6, stuckLoopMs: 30_000, checkMs: 1_000 }),
+      { ...deps, wallNow: () => wall, uptimeNow: () => uptime }
+    );
+    wd.noteSessionCreated({ id: "s-sub", parentID: "p" });
+    wd.noteStatus("s-sub", "busy");
+    const sigs = ["a.ts", "b.ts"];
+    for (let i = 0; i < 6; i++) {
+      wd.noteToolStart("s-sub", false, "read", { path: sigs[i % 2]! });
+      wd.noteToolEnd("s-sub", false);
+    }
+    wall += 40_000;
+    uptime += 40_000;
+    await wd.check();
+    expect(aborts).toEqual(["s-sub"]);
+    expect(notifies[0]?.text).toContain("stuck-loop");
     wd.dispose();
   });
 });

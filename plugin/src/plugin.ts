@@ -12,9 +12,11 @@ import { preapproveExternalDirectory, resolveWorktreeFamily } from "./permission
 import { DEPENDENCIES, installMissing, runShellCommand } from "./deps";
 import { applyPreset, readPresetNudge, resolveActivePreset } from "./presets";
 import { validateDelegationBoundary, validateDelegationPacket, verifyClaimObserved as verifyDelegationClaimObserved } from "./delegation";
+import { captureDelegationSession, probeSessionReuseCapability, persistAbortHandback } from "./session-reuse";
 import { authorizeLifecycleSession, evaluateClosure, verifyClaimObserved } from "./lifecycle";
 import { loadBeadsTui, renderBeadsTui } from "./tui";
 import { checkVersionDrift } from "./version";
+import { parseCompletionSignal, terminationDecision, type CompletionSignal } from "./termination";
 // No runtime function re-exports here: opencode's legacy plugin loader calls
 // EVERY exported function as a plugin factory (input, options), so an entry
 // re-export like evaluateClosure gets invoked as one and throws inside the
@@ -40,6 +42,12 @@ export const TgoPlugin: Plugin = async (
   const appLog = (level: "info" | "warn" | "error", message: string, extra?: Record<string, unknown>) => {
     client.app.log({ body: { service: "tgo", level, message, extra } }).catch(() => {});
   };
+
+  // version source unavailable in plugin SDK; assumes v1 task tool (TGO pins opencode 1.18.23) — sessionReuse.enabled is the escape hatch
+  const reuseCapability = probeSessionReuseCapability(undefined);
+  if (!reuseCapability.supported) {
+    appLog("warn", `session reuse disabled: ${reuseCapability.reason}`);
+  }
 
   if (config.checkVersion !== false) {
     void checkVersionDrift()
@@ -82,6 +90,13 @@ export const TgoPlugin: Plugin = async (
   const board = new BoardController({
     run: runBd,
     refreshMs: config.board?.refreshMs ?? 5000,
+    sessionReuse: {
+      repoRoot: directory ?? worktree ?? (project as unknown as { worktree?: string })?.worktree ?? ".",
+      client,
+      maxContextTokens: config.sessionReuse?.maxContextTokens ?? 100000,
+      supported: reuseCapability.supported,
+      enabled: config.sessionReuse?.enabled !== false,
+    },
   });
 
   const reconciler = new SessionReconciler({ shim: board.shimState });
@@ -103,8 +118,27 @@ export const TgoPlugin: Plugin = async (
   // orchestrator re-dispatches instead of trusting an empty result.
   const watchdog = new WatchdogController(config.watchdog, {
     log: appLog,
-    abort: async (sessionID) => {
+    abort: async (sessionID, reason) => {
       await client.session.abort({ path: { id: sessionID } });
+      try {
+        const repoRoot = directory ?? worktree ?? (project as unknown as { worktree?: string })?.worktree ?? ".";
+        await persistAbortHandback({
+          repoRoot,
+          sessionID,
+          reason,
+          log: appLog,
+          fetchSessionMessages: async (id) => {
+            const raw = (await client.session.messages({ path: { id } } as unknown as { path: { id: string } })) as unknown as
+              | Array<{ info: unknown; parts: Array<{ type: string; text?: string }> }>
+              | { data?: Array<{ info: unknown; parts: Array<{ type: string; text?: string }> }> };
+            const arr = Array.isArray(raw) ? raw : Array.isArray((raw as { data?: unknown })?.data) ? (raw as { data: Array<{ info: unknown; parts: Array<{ type: string; text?: string }> }> }).data : undefined;
+            if (!arr) return undefined;
+            return arr.map((m) => ({ role: (m as { info?: { role?: string } })?.info?.role, parts: Array.isArray((m as { parts?: unknown })?.parts) ? (m as { parts: Array<{ type: string; text?: string }> }).parts : [] }));
+          },
+        });
+      } catch (e) {
+        appLog("warn", `progress handback failed: ${String(e)}`);
+      }
     },
     notifyParent: async (parentID, text) => {
       await client.session.prompt({
@@ -115,6 +149,10 @@ export const TgoPlugin: Plugin = async (
       });
     },
   });
+
+  const delegatedSessionIds = new Set<string>();
+  const completionSignals = new Map<string, { signal: CompletionSignal; text: string; exitGateRequired: boolean }>();
+  const terminationParentIds = new Map<string, string | undefined>();
 
   const setup = new SetupController({
     run: async (command, cwd) => {
@@ -233,7 +271,28 @@ export const TgoPlugin: Plugin = async (
           parentID: info.parentID ?? null,
         });
         watchdog.noteSessionCreated(info);
+        try {
+          if (info.id && info.parentID && info.parentID !== "") delegatedSessionIds.add(info.id);
+        } catch {}
+        try {
+          if (info.id) terminationParentIds.set(info.id, info.parentID ?? undefined);
+        } catch {}
         void handleSessionCreated(event.properties.info);
+      } else if (event.type === "session.deleted") {
+        const deletedInfo = (event.properties as { info?: { id?: string }; sessionID?: string; id?: string })?.info;
+        const deletedId = deletedInfo?.id ?? (event.properties as { sessionID?: string })?.sessionID ?? (event.properties as { id?: string })?.id;
+        if (deletedId) {
+          try {
+            delegatedSessionIds.delete(deletedId);
+          } catch {}
+          try {
+            completionSignals.delete(deletedId);
+          } catch {}
+          try {
+            terminationParentIds.delete(deletedId);
+          } catch {}
+        }
+        logEvent("session.deleted", deletedId ?? "?", {});
       }
     },
 
@@ -308,6 +367,42 @@ export const TgoPlugin: Plugin = async (
     },
 
     "tool.execute.before": async (input, output) => {
+      // termination: residual waffle guard — abort the next tool after completion declared
+      try {
+        if (config.termination?.enabled !== false && delegatedSessionIds.has(input.sessionID)) {
+          const entry = completionSignals.get(input.sessionID);
+          if (entry) {
+            const exitGateRequired = entry.exitGateRequired ?? false;
+            const shouldTerminate = terminationDecision({ signal: entry.signal, exitGateRequired, toolCallsAfterCompletion: 1 });
+            if (shouldTerminate) {
+              completionSignals.delete(input.sessionID);
+              try {
+                await client.session.abort({ path: { id: input.sessionID } });
+              } catch {}
+              try {
+                appLog("info", "termination condition met — stopping residual tool calls");
+              } catch {}
+              try {
+                let parentID = terminationParentIds.get(input.sessionID);
+                if (!parentID) {
+                  try {
+                    const sess = await client.session.get({ path: { id: input.sessionID } }) as unknown as { data?: { parentID?: string | null }; parentID?: string | null };
+                    const data = (sess as { data?: unknown })?.data as { parentID?: string | null } | undefined;
+                    parentID = (data?.parentID ?? (sess as { parentID?: string | null })?.parentID ?? undefined) as string | undefined;
+                  } catch {}
+                }
+                if (parentID) {
+                  const truncated = entry.text.slice(0, 2000);
+                  await client.session.prompt({
+                    path: { id: parentID },
+                    body: { parts: [{ type: "text", text: `TGO TERMINATION: completion declared with exit gate satisfied — residual tool call stopped. Report:\n\n${truncated}`, synthetic: true }] },
+                  });
+                }
+              } catch {}
+            }
+          }
+        }
+      } catch {}
       const args = output?.args;
       const delegation = input.tool === "task" ? validateDelegationBoundary(args) : undefined;
       if (delegation && !delegation.valid) {
@@ -329,7 +424,7 @@ export const TgoPlugin: Plugin = async (
         output?.args != null &&
         typeof output.args === "object" &&
         (output.args as Record<string, unknown>).background === true;
-      watchdog.noteToolStart(input.sessionID, background);
+      watchdog.noteToolStart(input.sessionID, background, input.tool, output?.args);
     },
 
     "tool.execute.after": async (input, output) => {
@@ -340,6 +435,9 @@ export const TgoPlugin: Plugin = async (
       const isProgress = input.tool === "edit";
       watchdog.noteToolEnd(input.sessionID, background, isProgress);
       watchdog.noteActivity(input.sessionID);
+      if (reuseCapability.supported) {
+        await captureDelegationSession({ tool: input.tool, input, output, repoRoot: directory ?? worktree ?? (project as unknown as { worktree?: string })?.worktree ?? ".", enabled: config.sessionReuse?.enabled !== false, log: appLog });
+      }
       if (input.tool === "task" && typeof output?.output === "string") {
         const report = parseTaskReport(output.output);
         if (output && typeof output === "object") {
@@ -385,6 +483,44 @@ export const TgoPlugin: Plugin = async (
     },
 
     "experimental.chat.messages.transform": async (_input, output) => {
+      try {
+        if (config.termination?.enabled !== false) {
+          const msgs = output.messages as unknown as Array<{ info: { role?: string; sessionID?: string; id?: string }; parts: Array<{ type: string; text?: string }> }>;
+          let lastAssistantText: string | undefined;
+          let sessionID: string | undefined;
+          for (let i = msgs.length - 1; i >= 0; i--) {
+            const m = msgs[i];
+            if (!m) continue;
+            const role = (m.info as { role?: string })?.role;
+            if (role === "assistant") {
+              const text = m.parts.filter((p) => p.type === "text").map((p) => p.text ?? "").join("\n");
+              lastAssistantText = text;
+              sessionID = (m.info as { sessionID?: string })?.sessionID;
+              break;
+            }
+          }
+          if (lastAssistantText !== undefined && sessionID !== undefined) {
+            if (delegatedSessionIds.has(sessionID)) {
+              try {
+                const signal = parseCompletionSignal(lastAssistantText);
+                if (lastAssistantText.trim().length === 0 || signal.complete === false) {
+                  completionSignals.delete(sessionID);
+                } else if (signal.complete === true) {
+                  let exitGateRequired = false;
+                  try {
+                    const firstUser = msgs.find((msg) => (msg.info as { role?: string })?.role === "user");
+                    const userText = firstUser ? firstUser.parts.filter((p) => p.type === "text").map((p) => p.text ?? "").join("\n") : "";
+                    exitGateRequired = /"?exitGate"?\s*:\s*true/i.test(userText);
+                  } catch {
+                    exitGateRequired = false;
+                  }
+                  completionSignals.set(sessionID, { signal, text: lastAssistantText, exitGateRequired });
+                }
+              } catch {}
+            }
+          }
+        }
+      } catch {}
       if (config.board?.enabled === false) return;
       await board.transform(output.messages as unknown as BoardMessage[]);
     },

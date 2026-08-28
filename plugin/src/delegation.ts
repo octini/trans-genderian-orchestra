@@ -17,6 +17,8 @@ export interface DelegationPacket {
   claimExitCode?: unknown;
   delegationId?: unknown;
   beadsOperator?: unknown;
+  taskId?: unknown;
+  progressPath?: string;
 }
 
 export interface DelegationBoundaryArgs {
@@ -158,6 +160,22 @@ export function validateDelegationPacket(
       if (!malformed.includes("issueStatusObserved") && !missing.includes("issueStatusObserved")) {
         // ensure the forged packet is marked invalid even if caller only sent issueClaimed
       }
+    }
+  }
+
+  if ("taskId" in value) {
+    const taskId = value.taskId;
+    if (typeof taskId !== "string" || taskId.trim().length === 0 || !/^ses_[A-Za-z0-9]+$/.test(taskId.trim())) {
+      malformed.push("taskId");
+      diagnostics.push("taskId must be a session identifier matching ses_<alphanumeric>.");
+    }
+  }
+
+  if ("progressPath" in value) {
+    const progressPath = value.progressPath;
+    if (typeof progressPath !== "string" || progressPath.trim().length === 0 || !/^\.tgo\/[A-Za-z0-9-]+\/progress\.md$/.test(progressPath.trim())) {
+      malformed.push("progressPath");
+      diagnostics.push("progressPath must match .tgo/<issueId>/progress.md");
     }
   }
 

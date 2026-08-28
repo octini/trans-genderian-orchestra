@@ -89,7 +89,7 @@
           "description": "Max total busy time for a delegated session before it is aborted.",
           "type": "integer",
           "exclusiveMinimum": 0,
-          "default": 1200000
+          "default": 1800000
         },
         "idleMs": {
           "description": "Max silent (no tool/message activity) time while a delegation is busy before it is aborted.",
@@ -114,6 +114,33 @@
           "type": "integer",
           "exclusiveMinimum": 0,
           "default": 300000
+        }
+      },
+      "additionalProperties": false
+    },
+    "sessionReuse": {
+      "description": "Delegation session reuse settings.",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true
+        },
+        "maxContextTokens": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 100000
+        }
+      },
+      "additionalProperties": false
+    },
+    "termination": {
+      "description": "Delegation termination settings.",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true
         }
       },
       "additionalProperties": false

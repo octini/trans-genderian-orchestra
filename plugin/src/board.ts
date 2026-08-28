@@ -1,4 +1,6 @@
 import * as crypto from "node:crypto";
+import { readProgress } from "./progress";
+import { estimateSessionTokens, loadSessionMap, shouldReuse } from "./session-reuse";
 
 export const BOARD_SENTINEL_START = "<!-- tgo:board -->";
 export const BOARD_SENTINEL_END = "<!-- /tgo:board -->";
@@ -124,6 +126,70 @@ export function buildBoardText(data: {
   return sections.join("\n");
 }
 
+export async function buildBoardTextWithHints(
+  data: {
+    inProgress: BdIssue[];
+    ready: BdIssue[];
+    blocked: BdIssue[];
+    memories: Array<{ key: string; value: string }>;
+    streaming: Array<{ id: string; target: string }>;
+  },
+  reusableSet?: Set<string>,
+  sessionIdsByIssue?: Map<string, string>,
+  maxListed = 6,
+  repoRoot?: string
+): Promise<string> {
+  const sections: string[] = ["## TGO JOB BOARD"];
+  if (data.memories.length > 0) {
+    sections.push(
+      "MEMORIES:",
+      ...data.memories.map((m) => `- ${clipTitle(m.value, 120)}`)
+    );
+  }
+  if (data.inProgress.length > 0) {
+    const inProgressLines: string[] = [];
+    for (const issue of data.inProgress) {
+      inProgressLines.push(line(issue));
+      if (reusableSet?.has(issue.id) && sessionIdsByIssue?.has(issue.id)) {
+        const sid = sessionIdsByIssue.get(issue.id)!;
+        inProgressLines.push(`reusable session ${sid} — pass task_id: "${sid}" on the next task call to continue it.`);
+      }
+      if (repoRoot) {
+        try {
+          const p = await readProgress(repoRoot, issue.id);
+          if (p !== undefined) inProgressLines.push(`progress: .tgo/${issue.id}/progress.md`);
+        } catch {}
+      }
+    }
+    sections.push("IN PROGRESS:", ...inProgressLines);
+  }
+  if (data.ready.length > 0) {
+    const shown = data.ready.slice(0, maxListed);
+    sections.push("READY:", ...shown.map(line));
+    if (data.ready.length > shown.length) {
+      sections.push(`- … and ${data.ready.length - shown.length} more ready`);
+    }
+  }
+  if (data.blocked.length > 0) {
+    const shown = data.blocked.slice(0, maxListed);
+    const blocked = shown.map((issue) => {
+      const deps = issue.blockedBy?.length ? ` ← ${issue.blockedBy.join(",")}` : "";
+      return `${line(issue)}${deps}`;
+    });
+    sections.push("BLOCKED:", ...blocked);
+    if (data.blocked.length > shown.length) {
+      sections.push(`- … and ${data.blocked.length - shown.length} more blocked`);
+    }
+  }
+  if (data.streaming.length > 0) {
+    sections.push(
+      "STREAMING:",
+      ...data.streaming.map((s) => `- ${s.id} → ${s.target}`)
+    );
+  }
+  return sections.join("\n");
+}
+
 export async function renderBoard(
   run: BdRunner,
   shim: BoardShim
@@ -229,6 +295,14 @@ export function deriveContext(messages: BoardMessage[]): TransformContext | unde
 
 export const DEFAULT_BOARD_REFRESH_MS = 5000;
 
+export type SessionReuseDeps = {
+  repoRoot: string;
+  client: { session: { messages(options: { path: { id: string } }): Promise<any> } };
+  maxContextTokens: number;
+  supported: boolean;
+  enabled?: boolean;
+};
+
 export class BoardController {
   private readonly shim: BoardShim;
   private readonly run: BdRunner;
@@ -237,15 +311,18 @@ export class BoardController {
   private readonly sessionEligibility = new Map<string, boolean>();
   private readonly injectedSessions = new Set<string>();
   private agentCache: { byName: Map<string, "primary" | "subagent" | "all">; at: number } | undefined;
+  private readonly sessionReuse?: SessionReuseDeps;
 
   constructor(opts: {
     run: BdRunner;
     shim?: BoardShim;
     refreshMs?: number;
+    sessionReuse?: SessionReuseDeps;
   }) {
     this.run = opts.run;
     this.shim = opts.shim ?? createShim();
     this.refreshMs = opts.refreshMs ?? DEFAULT_BOARD_REFRESH_MS;
+    this.sessionReuse = opts.sessionReuse;
   }
 
   get shimState(): BoardShim {
@@ -305,11 +382,95 @@ export class BoardController {
     this.renderCache.delete(sessionID);
   }
 
-  private async renderFor(sessionID: string): Promise<string | undefined> {
+  public async buildBoardTextWithHints(
+    data: {
+      inProgress: BdIssue[];
+      ready: BdIssue[];
+      blocked: BdIssue[];
+      memories: Array<{ key: string; value: string }>;
+      streaming: Array<{ id: string; target: string }>;
+    },
+    reusableSet?: Set<string>,
+    sessionIdsByIssue?: Map<string, string>,
+    maxListed = 6
+  ): Promise<string> {
+    return buildBoardTextWithHints(data, reusableSet, sessionIdsByIssue, maxListed, this.sessionReuse?.repoRoot);
+  }
+
+  public async renderFor(sessionID: string): Promise<string | undefined> {
     const now = Date.now();
     const cached = this.renderCache.get(sessionID);
     if (cached && now - cached.at < this.refreshMs) return cached.text;
-    const text = await renderBoard(this.run, this.shim);
+
+    const reuseActive =
+      Boolean(this.sessionReuse) &&
+      this.sessionReuse!.supported === true &&
+      this.sessionReuse!.enabled !== false;
+
+    if (!reuseActive) {
+      const text = await renderBoard(this.run, this.shim);
+      if (text) this.renderCache.set(sessionID, { text, at: now });
+      return text;
+    }
+
+    const [inProgressRaw, readyRaw, blockedRaw, memoriesRaw] = await Promise.all([
+      this.run("bd list --status in_progress --json"),
+      this.run("bd ready --json"),
+      this.run("bd blocked --json"),
+      this.run("bd memories --json"),
+    ]);
+    if (!inProgressRaw && !readyRaw && !blockedRaw && !memoriesRaw) return undefined;
+    const inProgress = parseIssues(inProgressRaw);
+    const ready = parseIssues(readyRaw);
+    const blocked = parseIssues(blockedRaw);
+    const memories = parseMemories(memoriesRaw);
+    const streaming = Array.from(this.shim.streaming, ([id, s]) => ({ id, target: s.target }));
+
+    let reusableSet: Set<string> | undefined;
+    let sessionIdsByIssue: Map<string, string> | undefined;
+    let map: Record<string, { sessionId: string }> = {};
+    try {
+      map = (await loadSessionMap(this.sessionReuse!.repoRoot)) as Record<string, { sessionId: string }>;
+    } catch {
+      map = {};
+    }
+    if (map && typeof map === "object" && Object.keys(map).length > 0 && inProgress.length > 0) {
+      reusableSet = new Set<string>();
+      sessionIdsByIssue = new Map<string, string>();
+      for (const issue of inProgress) {
+        const entry = (map as Record<string, any>)[issue.id];
+        if (!entry || typeof entry.sessionId !== "string" || !entry.sessionId) continue;
+        const sid = entry.sessionId as string;
+        let raw: any;
+        try {
+          raw = await this.sessionReuse!.client.session.messages({ path: { id: sid } });
+        } catch {
+          continue;
+        }
+        const messages: Array<{ parts: Array<{ type: string; text?: string }> }> = Array.isArray(raw)
+          ? raw
+          : Array.isArray(raw?.data)
+            ? raw.data
+            : [];
+        let estimate: number;
+        try {
+          estimate = estimateSessionTokens(messages as Array<{ parts: Array<{ type: string; text?: string }> }>);
+        } catch {
+          continue;
+        }
+        if (shouldReuse(estimate, this.sessionReuse!.maxContextTokens)) {
+          reusableSet.add(issue.id);
+          sessionIdsByIssue.set(issue.id, sid);
+        }
+      }
+    }
+
+    const inner = await this.buildBoardTextWithHints(
+      { inProgress, ready, blocked, memories, streaming },
+      reusableSet,
+      sessionIdsByIssue
+    );
+    const text = `${BOARD_SENTINEL_START}\n${inner}\n${BOARD_SENTINEL_END}`;
     if (text) this.renderCache.set(sessionID, { text, at: now });
     return text;
   }

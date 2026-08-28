@@ -2,7 +2,7 @@
 description: TGO read-only lookup — recon, research, docs
 mode: subagent
 temperature: 0.2
-steps: 20
+steps: 60
 permission:
   edit: deny
   bash: deny

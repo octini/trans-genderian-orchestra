@@ -2,7 +2,7 @@
 description: TGO reviewer — reviews work that exists; never implements
 mode: subagent
 temperature: 0.1
-steps: 20
+steps: 40
 permission:
   edit: deny
   read: allow

@@ -40,6 +40,8 @@ The plugin's core runtime boundary has four hooks, verified against `@opencode-a
 3. **Task-fit rejection normalization** — `tool.execute.after` on the `task` tool. Turns a specialist's "this isn't my lane" rejection into a REROUTE-NOT-RETRY signal so Bernstein reroutes to the right seat instead of retrying the same one.
 4. **Always-on concision transform** — `experimental.chat.system.transform`. Appends the house-style instruction to the primary loop's system prompt every turn. Subagent seats get the same ruleset folded into their prompts at build time; Bernstein has no fold slot, so he is never double-injected. See `docs/CONCISION.md`.
 
+> **Supporting state:** `.tgo/sessions.json` (issue→session map for delegation reuse) and `.tgo/<issueId>/progress.md` (per-issue shared context) are gitignored working state; watchdog stuck-loop is a distinct-signature window (<3 distinct tool signatures across the last 20 tools within 5m), not since-last-edit counting.
+
 At plugin load, the `config` hook applies the active preset (seat→model/variant maps) and pre-approves `external_directory` reads for the project's worktree family. Presets are data, applied once per session — OpenCode's `task` tool takes no model parameter, so per-seat models are fixed at session start.
 
 Two additional code paths sit outside the hooks: the **installer** (builds seats, writes the global config fragment, installs missing dependencies) and the **per-repo setup auto-trigger** on `session.created` (beads init + AGENTS fragment, idempotent and no-clobber). Both are documented in `docs/SETUP.md`.

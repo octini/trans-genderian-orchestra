@@ -13,5 +13,8 @@ plugin/node_modules/
 
 # Publish prep exclusions
 .beads/
+.tgo/
 .agents/skills.bk/
 2026_08_06_pocock_video_transcript.txt
+.cortexkit/
+tmp-repro/

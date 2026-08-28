@@ -89,4 +89,4 @@ A change that pushes the payload out of band or removes a pinned rule breaks CI 
 
 ## Releasing
 
-The changelog (`CHANGELOG.md`) is human-readable and versioned. Bump `plugin/package.json`'s `version`, add a changelog entry, and commit with the `chore(release): bump X -> Y (short summary)` pattern. Publish is handled separately — no CI, no release automation in this repo.
+The changelog (`CHANGELOG.md`) is human-readable and versioned. Version-bump locations: `plugin/package.json`, `README.md` (badge + plugin tuple), `plugin/README.md` (kept as an identical copy of README.md), `docs/SETUP.md` (version references), plus the `CHANGELOG.md` entry (current `0.2.0`). Bump versions, add the changelog entry, and commit with the `chore(release): bump X -> Y (short summary)` pattern. Release gate: `bun test` green, `bunx tsc --noEmit` clean, `bun run validate` clean. Publish is handled separately — no CI, no release automation in this repo.

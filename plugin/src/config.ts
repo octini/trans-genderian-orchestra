@@ -59,11 +59,20 @@ const setupConfig = z.object({
 
 const watchdogConfig = z.object({
   enabled: z.boolean().default(true),
-  wallClockMs: z.number().int().positive().default(20 * 60 * 1000),
+  wallClockMs: z.number().int().positive().default(30 * 60 * 1000),
   idleMs: z.number().int().positive().default(15 * 60 * 1000),
   checkMs: z.number().int().positive().default(10 * 1000),
   stuckLoopTools: z.number().int().positive().default(20),
   stuckLoopMs: z.number().int().positive().default(5 * 60 * 1000),
+});
+
+const sessionReuseConfig = z.object({
+  enabled: z.boolean().default(true),
+  maxContextTokens: z.number().int().positive().default(100000),
+});
+
+const terminationConfig = z.object({
+  enabled: z.boolean().default(true),
 });
 
 export const tgoConfigSchema = z.object({
@@ -83,12 +92,14 @@ export const tgoConfigSchema = z.object({
   setup: setupConfig.optional().default(() => ({ enabled: true, autoInstallBeads: true })),
   watchdog: watchdogConfig.optional().default(() => ({
     enabled: true,
-    wallClockMs: 20 * 60 * 1000,
+    wallClockMs: 30 * 60 * 1000,
     idleMs: 15 * 60 * 1000,
     checkMs: 10 * 1000,
     stuckLoopTools: 20,
     stuckLoopMs: 5 * 60 * 1000,
   })),
+  sessionReuse: sessionReuseConfig.optional().default(() => ({ enabled: true, maxContextTokens: 100000 })),
+  termination: terminationConfig.optional().default(() => ({ enabled: true })),
 });
 
 export type TgoConfig = z.infer<typeof tgoConfigSchema>;

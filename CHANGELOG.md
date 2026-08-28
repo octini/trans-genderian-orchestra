@@ -2,6 +2,17 @@
 
 All notable changes to TGO, in reverse chronological order. Versions track `plugin/package.json`.
 
+## [0.2.0] - 2026-08-28
+
+- **Steps + watchdog retune (tgo-6fv):** seat steps caps raised — Dylan 100, Nas 60, Horowitz 40 (were 20); `watchdog.wallClockMs` 20m → 30m.
+- **Session reuse (tgo-1pv):** follow-up delegations can continue the same subagent session via `task_id`; `.tgo/sessions.json` issue→session map, capability probe (v1/v2), context-size reuse guard (`sessionReuse.maxContextTokens`, default 100000), board hints.
+- **Progress files (tgo-30d):** per-issue `.tgo/<issueId>/progress.md` (Objective / Touch set / Decisions / Blockers / Status) written by Dylan, read by Bernstein/Horowitz; owner-token lock, atomic writes; survives session end (built-in compaction is off under Magic Context).
+- **Fresh-vs-continue policy (tgo-8k7):** Bernstein lane-card rule — continue via `taskId` when the board shows a reusable session; start fresh on new issue, material touch-set change, or context loss.
+- **Abort handback (tgo-ywp):** watchdog aborts append a blocker line to the issue's progress file (session→issue reverse lookup with delegation-prompt fallback) so re-dispatches resume cleanly.
+- **Termination conditions (tgo-dho):** composable completion detection — a delegated session that declares `STATUS: complete` with its exit gate satisfied and then makes a residual tool call is stopped and its report forwarded to the parent (`termination.enabled`).
+- **Stuck-loop redesign (tgo-b71):** distinct-signature window (<3 distinct tool signatures across the last 20 tools within 5m) replaces since-last-edit counting — read-only review/research lanes no longer false-trip; edit tools clear the window.
+- **Docs:** README/SETUP quick-start verb fixed (`opencode plugin <name> -g` — there is no `add` verb), config tables updated (sessionReuse/termination/watchdog), schema parity for new config blocks.
+
 ## [0.1.12] - 2026-08-27
 
 - **Ox Alpha withdrawal reconfiguration:** the dead `ox-alpha-free` seat model (revealed as GLM-5.3-Flash at higher cost/quota) removed from all presets. Balanced — Bernstein/Nirvana → `glm-5.3-flash` (max, best Go-fit agentic), Horowitz → `gpt-5.6-luna` (max, best Go-fit coder), Dylan/Nas/band-members → `muse-spark-1.2-contributor` (xhigh). Cheap — Muse Spark (xhigh) on every seat. Frontier (light month) — Bernstein → `glm-5.3` (max), Horowitz → `kimi-k3` (max), Nirvana → `grok-4.6` (xhigh), workhorses → Muse Spark (xhigh). All balanced/cheap seats fit their Go request caps; frontier caps are tight (Grok 4.6 845 / Kimi K3 490 / GLM-5.3 1,080 req/mo). Variant support verified in `~/.cache/opencode/models.json`: Muse Spark and Grok 4.6 top out at `xhigh` (no `max`); the rest support `max`. Updated `plugin/assets/presets.json`, `plugin/test/presets.test.ts`, `docs/spec/roster.md`, `docs/ROSTER.md`, `CONTEXT.md:63`.

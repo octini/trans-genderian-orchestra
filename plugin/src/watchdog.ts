@@ -18,7 +18,7 @@ export interface WatchdogAbortSignal {
 
 export interface WatchdogDeps {
   log: (level: "info" | "warn" | "error", message: string, extra?: Record<string, unknown>) => void;
-  abort: (sessionID: string) => Promise<void>;
+  abort: (sessionID: string, reason: "wall-clock" | "idle" | "stuck-loop") => Promise<void>;
   notifyParent: (parentID: string, text: string) => Promise<void>;
   // Injectable clocks for testing. Defaults read the real wall/uptime clocks.
   wallNow?: () => number;
@@ -56,11 +56,13 @@ interface TrackedSession {
   lastProgress: number;
   // Wall time the oldest in-flight tool started, for diagnostics.
   toolStartedAt: number;
-  // Loop-aware progress: wall time of the last *meaningful* write (edit) that
-  // signals forward progress. A tight read/grep loop without edits increments
-  // nonProgressCount and is aborted when both count and time thresholds hit.
-  lastMeaningfulProgress: number;
-  nonProgressCount: number;
+  // Rolling FIFO window of the last stuckLoopTools tool signatures. A tight
+  // loop without edits previously used nonProgressCount since last edit, but
+  // read-only seats never edit so any review session died at 20 tools + 5min.
+  // The window tracks distinct signatures — true loops reuse 1-2 signatures,
+  // healthy broad reading uses many.
+  stuckWindow: string[];
+  stuckWindowTimes: number[];
 }
 
 export const WATCHDOG_ABORT_REASON_STUCK_LOOP = "stuck-loop";
@@ -82,6 +84,77 @@ function defaultUptimeNow(): number {
   // process.uptime() is a monotonic clock that does NOT advance during system
   // sleep (kernel ticks are suspended); Date.now() is wall clock that DOES.
   return Math.round(process.uptime() * 1000);
+}
+
+export function toolSignature(tool: string, input: unknown): string {
+  const t = (tool ?? "").trim();
+  let primary = "";
+  if (input != null) {
+    if (typeof input === "string") {
+      primary = input;
+    } else if (typeof input === "object") {
+      const obj = input as Record<string, unknown>;
+      const lower = t.toLowerCase();
+      const isGrep = lower.includes("grep");
+      const isRead = lower.includes("read") || lower === "read";
+      const isGlob = lower.includes("glob");
+      const isList = lower.includes("list");
+      const isBash = lower.includes("bash");
+      if (isGrep) {
+        const pattern = (obj.pattern as string | undefined) ?? (obj.query as string | undefined);
+        const pathVal = (obj.path as string | undefined) ?? (obj.filePath as string | undefined) ?? (obj.target as string | undefined);
+        const patStr = pattern != null ? String(pattern).trim() : "";
+        const pathStr = pathVal != null ? String(pathVal).trim() : "";
+        if (patStr && pathStr) primary = `${patStr}:${pathStr}`;
+        else if (patStr) primary = patStr;
+        else if (pathStr) primary = pathStr;
+        else {
+          try {
+            primary = JSON.stringify(input);
+          } catch {
+            primary = String(input);
+          }
+        }
+      } else if (isRead || isGlob || isList) {
+        const pathVal = (obj.path as string | undefined) ?? (obj.filePath as string | undefined) ?? (obj.target as string | undefined);
+        if (pathVal != null && String(pathVal).trim().length > 0) {
+          primary = String(pathVal);
+        } else {
+          try {
+            primary = JSON.stringify(input);
+          } catch {
+            primary = String(input);
+          }
+        }
+      } else if (isBash) {
+        const candidate =
+          (obj.command as string | undefined) ??
+          (obj.cmd as string | undefined) ??
+          (typeof obj.input === "string" ? (obj.input as string) : undefined);
+        if (candidate != null && String(candidate).trim().length > 0) {
+          primary = String(candidate);
+        } else {
+          try {
+            primary = JSON.stringify(input);
+          } catch {
+            primary = String(input);
+          }
+        }
+      } else {
+        try {
+          primary = JSON.stringify(input);
+        } catch {
+          primary = String(input);
+        }
+      }
+    } else {
+      primary = String(input);
+    }
+  }
+  let norm = primary.trim();
+  if (norm.length > 200) norm = norm.slice(0, 200);
+  if (norm) return `${t || "unknown"}:${norm}`;
+  return t || "unknown";
 }
 
 // Wall-clock and idle guards for delegated (subagent) sessions. opencode's task
@@ -139,8 +212,8 @@ export class WatchdogController {
       toolStartedAt: 0,
       backgroundInFlight: 0,
       lastProgress: now,
-      lastMeaningfulProgress: now,
-      nonProgressCount: 0,
+      stuckWindow: [],
+      stuckWindowTimes: [],
     });
   }
 
@@ -175,14 +248,45 @@ export class WatchdogController {
   // the idle clock is paused so long-running bash doesn't false-trip the idle
   // cap. Background-intent tools (args.background === true) are tracked
   // separately: they neither pause idle nor count against wall-clock.
-  noteToolStart(sessionID: string, background = false): void {
+  noteToolStart(sessionID: string, background: boolean | string = false, tool?: string, input?: unknown): void {
     const tracked = this.sessions.get(sessionID);
     if (!tracked || tracked.aborted) return;
-    if (background) {
+    // Flexible overload: background may be a tool name string for backwards-compat
+    // or direct signature calls.
+    let bg = false;
+    let toolName: string | undefined = tool;
+    let toolInput: unknown = input;
+    if (typeof background === "string") {
+      toolName = background;
+      toolInput = tool;
+      bg = false;
+    } else {
+      bg = background;
+    }
+    if (bg) {
       tracked.backgroundInFlight += 1;
     } else {
       tracked.toolInFlight += 1;
       if (tracked.toolInFlight === 1) tracked.toolStartedAt = this.awakeNow();
+      const now = this.awakeNow();
+      const lower = (toolName ?? "").toLowerCase();
+      const isEditTool = lower === "edit" || lower === "write" || lower === "multiedit";
+      if (isEditTool) {
+        tracked.stuckWindow = [];
+        tracked.stuckWindowTimes = [];
+        tracked.lastProgress = now;
+      } else {
+        // Push signature onto rolling FIFO window for stuck-loop detection.
+        const sig = toolSignature(toolName ?? "unknown", toolInput);
+        tracked.stuckWindow.push(sig);
+        tracked.stuckWindowTimes.push(now);
+        // Keep window bounded to stuckLoopTools size.
+        const max = this.config.stuckLoopTools;
+        while (tracked.stuckWindow.length > max) {
+          tracked.stuckWindow.shift();
+          tracked.stuckWindowTimes.shift();
+        }
+      }
     }
     tracked.lastActivity = this.awakeNow();
   }
@@ -191,9 +295,11 @@ export class WatchdogController {
   // A completed FOREGROUND tool is forward progress: record it as the wall-clock
   // baseline so a long-but-productive session isn't killed by a fixed budget
   // (test-9). Background completions don't move the baseline.
-  // isProgress signals a *meaningful* write (edit/write) that resets the stuck-loop
-  // detector; read/grep loops without edits increment nonProgressCount.
-  noteToolEnd(sessionID: string, background = false, isProgress = false): void {
+  // isProgress is retained for call-site compatibility but no longer drives the
+  // stuck-loop detector — the distinct-signature window is capability-agnostic.
+  // Edit-tool calls (edit/write/multiedit, case-insensitive) are unambiguous
+  // progress: clear the rolling window and update lastProgress.
+  noteToolEnd(sessionID: string, background = false, _isProgress = false): void {
     const tracked = this.sessions.get(sessionID);
     if (!tracked || tracked.aborted) return;
     const now = this.awakeNow();
@@ -203,12 +309,14 @@ export class WatchdogController {
       tracked.toolInFlight -= 1;
       if (tracked.toolInFlight === 0) tracked.toolStartedAt = 0;
       tracked.lastProgress = now;
-      if (isProgress) {
-        tracked.lastMeaningfulProgress = now;
-        tracked.nonProgressCount = 0;
-      } else {
-        tracked.nonProgressCount += 1;
+      if (_isProgress) {
+        tracked.stuckWindow = [];
+        tracked.stuckWindowTimes = [];
       }
+    } else if (_isProgress) {
+      tracked.stuckWindow = [];
+      tracked.stuckWindowTimes = [];
+      tracked.lastProgress = now;
     }
     tracked.lastActivity = now;
   }
@@ -287,12 +395,18 @@ export class WatchdogController {
       // past the wall-clock cap (the test-8 false abort).
       const wallClockExempt = tracked.backgroundInFlight > 0 && tracked.toolInFlight === 0;
       const idleElapsed = tracked.toolInFlight > 0 ? 0 : now - tracked.lastActivity;
-      const stuckElapsed = now - tracked.lastMeaningfulProgress;
+      const windowSize = tracked.stuckWindow.length;
+      const distinct = new Set(tracked.stuckWindow).size;
+      const windowElapsed =
+        windowSize > 0 && tracked.stuckWindowTimes.length > 0 ? now - tracked.stuckWindowTimes[0]! : 0;
       const isStuckLoop =
-        tracked.nonProgressCount >= this.config.stuckLoopTools &&
-        stuckElapsed >= this.config.stuckLoopMs;
+        tracked.toolInFlight === 0 &&
+        windowSize >= this.config.stuckLoopTools &&
+        this.config.stuckLoopTools > 0 &&
+        distinct < 3 &&
+        windowElapsed >= this.config.stuckLoopMs;
       if (isStuckLoop) {
-        await this.abort(tracked, "stuck-loop", stuckElapsed);
+        await this.abort(tracked, "stuck-loop", windowElapsed);
       } else if (!wallClockExempt && wallElapsed >= this.config.wallClockMs) {
         await this.abort(tracked, "wall-clock", wallElapsed);
       } else if (idleElapsed >= this.config.idleMs) {
@@ -320,7 +434,7 @@ export class WatchdogController {
       parentID: tracked.parentID ?? null,
     });
     try {
-      await this.deps.abort(tracked.sessionID);
+      await this.deps.abort(tracked.sessionID, reason);
     } catch (error) {
       this.deps.log("error", `watchdog abort call failed for ${tracked.sessionID}`, {
         error: String(error),
@@ -330,7 +444,7 @@ export class WatchdogController {
       tracked.notified = true;
       const detail =
         reason === "stuck-loop"
-          ? `was stuck in a read/grep loop without making edits (${tracked.nonProgressCount} tools, ${Math.round(elapsedMs / 1000)}s since last edit)`
+          ? `was stuck in a loop (${tracked.stuckWindow.length} tools, ${Math.round(elapsedMs / 1000)}s window, ${new Set(tracked.stuckWindow).size} distinct signatures)`
           : reason === "idle"
             ? `stopped producing output (idle ${Math.round(elapsedMs / 1000)}s)`
             : `exceeded the wall-clock cap (wall ${Math.round(elapsedMs / 1000)}s)`;

@@ -113,7 +113,7 @@ describe("config schema", () => {
     // tgo-hcm: idle default is 15m (was 5m) so a briefly-silent active session
     // (long single response, tool latency) isn't falsely aborted.
     expect(cfg.watchdog?.idleMs).toBe(15 * 60 * 1000);
-    expect(cfg.watchdog?.wallClockMs).toBe(20 * 60 * 1000);
+    expect(cfg.watchdog?.wallClockMs).toBe(30 * 60 * 1000);
   });
 
   test("watchdog can be disabled and tuned", async () => {
