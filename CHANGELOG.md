@@ -2,6 +2,18 @@
 
 All notable changes to TGO, in reverse chronological order. Versions track `plugin/package.json`.
 
+## [0.2.2] - 2026-08-28
+
+- **Seat frontmatter reconciliation at plugin load (tgo-v2e):** rendered-seat diff against installed agents via shared `resolveAgentsDir`, atomic backup-safe writes (`.bak` + tmp+rename); fixes silently-stale `steps`/`permission` caps on existing installs where self-update swapped the slot but seat files retained old frontmatter (191811a, 00affad).
+- **Silent-failure logging (tgo-73s):** threaded `safeWarn`/`safeLog` through ~12 fire-and-forget catches (self-update, seat sync, board, watchdog, setup, progress) so swallowed errors surface via `client.app.log` instead of vanishing.
+- **Setup retry + single-flight dedup:** `setup.ts` retry with backoff for transient `bd`/`opencode` bootstrap failures; in-flight single-flight dedup prevents concurrent setup races from double-initializing.
+- **Board render memoization (N+1 fix):** bounded cache (cap 32) with single-flight coalescing and explicit `reset`/`invalidate` clearing; eliminates per-message re-render of the beads board.
+- **Watchdog toolSignature hashing:** FNV-1a full-arg hashing replaces `>200-char` truncation — fixes false stuck-loop aborts when distinct long args collided on prefix.
+- **Delegation progressPath hardening:** charset aligned with `VALID_BEAD_ID` (accepts dots/underscores, blocks traversal) for per-issue `.tgo/<id>/progress.md` paths.
+- **version.ts build-metadata strip:** `compareVersions` strips `+build` metadata before semver compare so `0.2.2+build` equals `0.2.2`.
+- **Docs version drift + Troubleshooting rewrite:** version references reconciled; Troubleshooting rewritten with self-update as primary repair path and `opencode plugin --force` documented as no-op (tgo-6m6).
+- **New test suites:** version, self-update edges, install helpers, seat-sync (570 pass / 0 fail across 36 files at release).
+
 ## [0.2.1] - 2026-08-28
 
 - **Self-update on drift (tgo-5yu):** when npm's latest published version is newer than the running one, TGO refreshes its own plugin cache slot (`~/.cache/opencode/packages/<name>@latest`) in the background and logs `self-updated ... — restart opencode to activate`. Never downgrades; silent skip when offline; disable with `selfUpdate.enabled: false`. Works around the OpenCode `plugin --force` no-op (tgo-6m6 root cause: same-spec config patch noop + `Npm.add` existence fast-path).

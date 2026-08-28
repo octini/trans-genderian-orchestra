@@ -14310,6 +14310,13 @@ function safeWarn(log, message, extra) {
     log("warn", message, extra);
   } catch {}
 }
+function resolveAgentsDir(opts) {
+  if (opts.agentDir)
+    return opts.agentDir;
+  const configDir = opts.configDir ?? path.join(os.homedir(), ".config", "opencode");
+  const subdir = opts.agentsSubdir ?? "agent";
+  return path.join(configDir, subdir);
+}
 var SEATS = [
   "bernstein",
   "horowitz",
@@ -15321,12 +15328,39 @@ import * as fs4 from "node:fs/promises";
 import * as path4 from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 var packageRoot = path4.resolve(path4.dirname(fileURLToPath2(import.meta.url)), "..");
+var HOUSE_STYLE_SLOT = "{{TGO_HOUSE_STYLE}}";
 var REGISTER_SLOT = "{{TGO_REGISTER}}";
 var AGENTS_MARKER_BEGIN = "<!-- TGO: thin always-on advice layer";
 var AGENTS_MARKER_END = "<!-- END TGO advice layer -->";
+async function loadHouseStyle() {
+  const file2 = path4.join(packageRoot, "assets", "house-style.md");
+  return fs4.readFile(file2, "utf-8");
+}
 async function loadAgentsFragment() {
   const file2 = path4.join(packageRoot, "assets", "AGENTS.fragment.md");
   return fs4.readFile(file2, "utf-8");
+}
+function foldHouseStyle(template, houseStyle, register = "concise") {
+  if (!template.includes(HOUSE_STYLE_SLOT))
+    return template;
+  return template.replace(HOUSE_STYLE_SLOT, houseStyle.trim()).replace(new RegExp(REGISTER_SLOT, "g"), register);
+}
+async function renderSeats(sourceDir, register = "concise") {
+  const houseStyle = await loadHouseStyle();
+  const files = await fs4.readdir(sourceDir).catch((err) => {
+    console.warn(`tgo: renderSeats readdir failed: ${String(err)}`, { sourceDir });
+    return [];
+  });
+  const seats = [];
+  for (const file2 of files) {
+    if (!file2.endsWith(".md"))
+      continue;
+    const template = await fs4.readFile(path4.join(sourceDir, file2), "utf-8");
+    const content = foldHouseStyle(template, houseStyle, register);
+    assertPromptUnderBudget(content, file2);
+    seats.push({ fileName: file2, content });
+  }
+  return seats;
 }
 async function mergeAgentsFragment(configDir) {
   const fragment = await loadAgentsFragment();
@@ -17267,9 +17301,103 @@ async function selfUpdate(deps) {
   }
 }
 
-// src/plugin.ts
+// src/seat-sync.ts
+import * as fs9 from "node:fs/promises";
 import * as path10 from "node:path";
+function parseSteps(content) {
+  const m = content.match(/^\s*steps:\s*(\d+)/m);
+  return m ? m[1] : null;
+}
+async function reconcileSeats(assetsAgentsDir, installedAgentsDir, log, register = "concise") {
+  const summary = [];
+  let renderedSeats;
+  try {
+    renderedSeats = await renderSeats(assetsAgentsDir, register);
+  } catch (err) {
+    safeWarn(log, "tgo: seat sync render failed", { assetsAgentsDir, error: String(err) });
+    return summary;
+  }
+  if (renderedSeats.length === 0) {
+    try {
+      await fs9.readdir(assetsAgentsDir);
+    } catch (err) {
+      safeWarn(log, "tgo: seat sync readdir failed", { assetsAgentsDir, error: String(err) });
+    }
+    if (renderedSeats.length === 0)
+      return summary;
+  }
+  for (const seat of renderedSeats) {
+    const file2 = seat.fileName;
+    const expectedContent = seat.content;
+    const seatName = path10.basename(file2, ".md");
+    const installedPath = path10.join(installedAgentsDir, file2);
+    let installedContent;
+    let installedExists = false;
+    try {
+      installedContent = await fs9.readFile(installedPath, "utf-8");
+      installedExists = true;
+    } catch (err) {
+      const code = err?.code;
+      if (code === "ENOENT") {
+        installedExists = false;
+        installedContent = undefined;
+      } else {
+        safeWarn(log, "tgo: seat sync read installed failed", { file: file2, error: String(err) });
+        continue;
+      }
+    }
+    if (installedExists && installedContent === expectedContent) {
+      continue;
+    }
+    try {
+      await fs9.mkdir(installedAgentsDir, { recursive: true });
+    } catch (err) {
+      safeWarn(log, "tgo: seat sync mkdir failed", { installedAgentsDir, error: String(err) });
+      continue;
+    }
+    if (installedExists && installedContent !== undefined) {
+      try {
+        await fs9.writeFile(`${installedPath}.bak`, installedContent, "utf-8");
+      } catch (err) {
+        safeWarn(log, "tgo: seat sync backup failed", { file: file2, error: String(err) });
+        continue;
+      }
+    }
+    const tmp = path10.join(installedAgentsDir, `.${file2}.${process.pid}.${Date.now()}.tmp`);
+    try {
+      await fs9.writeFile(tmp, expectedContent, "utf-8");
+      await fs9.rename(tmp, installedPath);
+    } catch (err) {
+      safeWarn(log, "tgo: seat sync write failed", { file: file2, error: String(err) });
+      try {
+        await fs9.rm(tmp, { force: true });
+      } catch {}
+      continue;
+    }
+    const oldSteps = installedContent ? parseSteps(installedContent) : null;
+    const newSteps = parseSteps(expectedContent);
+    let change;
+    if (!installedExists) {
+      if (newSteps)
+        change = `steps →${newSteps}`;
+      else
+        change = "created";
+    } else if (oldSteps && newSteps && oldSteps !== newSteps) {
+      change = `steps ${oldSteps}→${newSteps}`;
+    } else if (oldSteps && newSteps && oldSteps === newSteps) {
+      change = "updated";
+    } else {
+      change = "updated";
+    }
+    summary.push(`${seatName} (${change})`);
+  }
+  return summary;
+}
+
+// src/plugin.ts
+import * as path11 from "node:path";
 import * as os3 from "node:os";
+import { fileURLToPath as fileURLToPath5 } from "node:url";
 var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => {
   const config2 = await loadTgoConfig(options);
   const appLog = (level, message, extra) => {
@@ -17322,7 +17450,25 @@ var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => 
       appLog("warn", "tgo: self-update failed", { error: String(err) });
     });
   }
-  const seatDir = config2.agentDir ?? path10.join(os3.homedir(), ".config", "opencode", "agent");
+  const seatDir = resolveAgentsDir({ agentDir: config2.agentDir });
+  (async () => {
+    try {
+      const packageRoot3 = path11.resolve(path11.dirname(fileURLToPath5(import.meta.url)), "..");
+      const assetsAgentsDir = path11.join(packageRoot3, "assets", "agents");
+      const summary = await reconcileSeats(assetsAgentsDir, seatDir, appLog, config2.register);
+      if (summary.length > 0) {
+        let version2 = "unknown";
+        try {
+          version2 = await readLocalVersion() ?? "unknown";
+        } catch {}
+        appLog("warn", `tgo: seat frontmatter refreshed to match ${version2}: ${summary.join(", ")}`);
+      }
+    } catch (err) {
+      safeWarn(appLog, "tgo: seat sync failed", { error: String(err) });
+    }
+  })().catch((err) => {
+    safeWarn(appLog, "tgo: seat sync failed", { error: String(err) });
+  });
   try {
     const checked = await validateAgentDir(seatDir, appLog);
     if (checked > 0) {
@@ -17537,7 +17683,7 @@ var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => 
       const nextPermission = preapproveExternalDirectory(input.permission, worktreeRoot);
       if (nextPermission && Object.keys(nextPermission).length > 0) {
         input.permission = nextPermission;
-        const parent = worktreeRoot ? path10.dirname(worktreeRoot) : undefined;
+        const parent = worktreeRoot ? path11.dirname(worktreeRoot) : undefined;
         appLog("info", `pre-approved external_directory for worktree family ${parent}/*`, {
           worktreeRoot,
           projectWorktree: project?.worktree ?? null,
