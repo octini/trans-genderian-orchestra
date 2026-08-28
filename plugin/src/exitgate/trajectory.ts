@@ -1,21 +1,28 @@
 /**
  * Trajectory scorer — deterministic code-based check over the run step log.
  *
- * Contract (sibling writer implements):
+ * Contract v2 (sibling writer adapts separately — reader side here):
  * .tgo/runs/<runId>.jsonl — append-only, one JSON per line:
- * {"ts":<epoch ms>,"type":"step"|"heartbeat"|"status","seat":"dylan"|...,"tool":"...","argsHash":"<fnv hex>","ok":true|false,"durationMs":<n>,"note":"..."}
- * runId matches VALID_BEAD_ID charset (reuse assertValidBeadID for any path construction).
+ * {"ts", "type":"step"|"heartbeat"|"status", "seat", "tool", "argsHash", "ok", "durationMs", "note", "cmd"?, "issueId"?}
+ * - tool REQUIRED non-empty on ALL lines (heartbeats use tool:"heartbeat")
+ * - ok REQUIRED boolean on ALL lines (no coercion — "ok":"false" is ignored)
+ * - issueId REQUIRED valid bead ID on ALL lines
+ * - cmd OPTIONAL string: for bash/edit/write, actual command/target (truncated ~500, control chars stripped) — THIS is what blacklist matches
+ * - type:"status" RESERVED for terminal delegation outcomes only (note: complete|failed|aborted); tool completions are "step"
+ * runId matches VALID_BEAD_ID charset (reuse assertValidBeadID / isValidBeadID for any path construction).
  *
  * This scorer implements:
  * - expected tool sequence hints check
  * - efficiency signal (step count, repeated loops)
- * - blacklist hard-fail (destructive bash patterns from gate profile)
+ * - blacklist hard-fail (destructive patterns matched against tool+cmd+note, capped input)
  * ZERO LLM on hot path. When no run log exists, SKIP with WARNING.
+ * F4 ReDoS choice: blacklist patterns are capped regex (max 200 chars) and haystack capped to 500 chars before match; see profile.ts.
+ * F5: if no terminal type:"status" line, trajectory is incomplete → WARNING TRAJECTORY_INCOMPLETE.
  */
 
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { assertValidBeadID } from "../def-snapshot";
+import { assertValidBeadID, isValidBeadID } from "../def-snapshot";
 import { compileBlacklist, type GateProfile, DEFAULT_GATE_PROFILE } from "./profile";
 import type { Finding } from "./triage";
 
@@ -28,6 +35,8 @@ export interface RunLogEntry {
   ok: boolean;
   durationMs: number;
   note: string;
+  issueId: string;
+  cmd?: string;
   // allow extra fields without failing
   [k: string]: unknown;
 }
@@ -48,33 +57,58 @@ function parseEntry(line: string, lineNo: number): RunLogEntry | undefined {
   if (trimmed.length === 0) return undefined;
   try {
     const obj = JSON.parse(trimmed) as Record<string, unknown>;
-    // Validate required fields — keep deterministic, tolerant of extra fields
     if (!isRecord(obj)) return undefined;
-    const ts = typeof obj.ts === "number" ? obj.ts : Number(obj.ts);
-    const type = obj.type as string;
-    const seat = typeof obj.seat === "string" ? obj.seat : String(obj.seat ?? "");
-    const tool = typeof obj.tool === "string" ? obj.tool : String(obj.tool ?? "");
-    const argsHash = typeof obj.argsHash === "string" ? obj.argsHash : String(obj.argsHash ?? "");
-    const ok = typeof obj.ok === "boolean" ? obj.ok : Boolean(obj.ok);
-    const durationMs = typeof obj.durationMs === "number" ? obj.durationMs : Number(obj.durationMs ?? 0);
-    const note = typeof obj.note === "string" ? obj.note : String(obj.note ?? "");
+    // Strict required-field validation — lines failing are IGNORED (not coerced)
+    const tsRaw = obj.ts;
+    const ts = typeof tsRaw === "number" ? tsRaw : Number(tsRaw);
     if (!Number.isFinite(ts)) return undefined;
+    const type = obj.type;
     if (type !== "step" && type !== "heartbeat" && type !== "status") return undefined;
-    if (!seat || !tool) return undefined;
-    // argsHash should look like hex but we don't enforce strictly for determinism
+    const seat = obj.seat;
+    if (typeof seat !== "string" || seat.trim().length === 0) return undefined;
+    const tool = obj.tool;
+    if (typeof tool !== "string" || tool.trim().length === 0) return undefined;
+    // Heartbeats must use tool:"heartbeat" per contract v2 — enforce, but if reader sees heartbeat with other tool, treat as invalid and ignore
+    if (type === "heartbeat" && tool !== "heartbeat") {
+      // Still allow but could be considered malformed; for strictness, ignore heartbeat with non-heartbeat tool
+      // However contract says heartbeats use tool:"heartbeat", so we enforce: if type heartbeat and tool != heartbeat → ignore
+      return undefined;
+    }
+    const argsHash = obj.argsHash;
+    if (typeof argsHash !== "string" || argsHash.trim().length === 0) return undefined;
+    const okRaw = obj.ok;
+    if (typeof okRaw !== "boolean") return undefined; // no coercion: "ok":"false" must NOT become true → ignore line
+    const ok = okRaw;
+    const durationMsRaw = obj.durationMs;
+    const durationMs = typeof durationMsRaw === "number" ? durationMsRaw : Number(durationMsRaw);
+    if (!Number.isFinite(durationMs)) return undefined;
+    const note = obj.note;
+    if (typeof note !== "string") return undefined;
+    const issueIdRaw = obj.issueId;
+    if (typeof issueIdRaw !== "string" || !isValidBeadID(issueIdRaw)) return undefined;
+    const issueId = issueIdRaw;
+    // cmd optional: if present must be string, control chars stripped, truncated ~500 (writer does, reader just validates string type)
+    let cmd: string | undefined;
+    if ("cmd" in obj) {
+      if (obj.cmd !== undefined && obj.cmd !== null) {
+        if (typeof obj.cmd !== "string") return undefined;
+        // control chars stripped and truncated already by writer; reader just stores as-is but caps for matching later
+        cmd = obj.cmd;
+      }
+    }
     return {
       ts,
       type: type as RunLogEntry["type"],
-      seat,
-      tool,
-      argsHash,
+      seat: seat as string,
+      tool: tool as string,
+      argsHash: argsHash as string,
       ok,
-      durationMs: Number.isFinite(durationMs) ? durationMs : 0,
-      note,
+      durationMs,
+      note: note as string,
+      issueId,
+      ...(cmd !== undefined ? { cmd } : {}),
     };
   } catch {
-    // Malformed line — surface as a coherence WARNING? But keep deterministic:
-    // ignore malformed lines rather than hard-fail, to avoid blocking on writer bugs.
     return undefined;
   }
 }
@@ -148,7 +182,6 @@ export async function scoreTrajectory(
   }
 
   if (entries.length === 0) {
-    // Empty log is also considered skip? But treat as WARNING not CRITICAL
     findings.push({
       axis: "completeness",
       severity: "WARNING",
@@ -159,17 +192,28 @@ export async function scoreTrajectory(
     return { entries, findings, skipped: true, skipReason: "empty" };
   }
 
-  // Blacklist hard-fail — compile patterns
+  // F5: if no terminal type:"status" line, trajectory is incomplete → WARNING, not a pass
+  const hasTerminalStatus = entries.some((e) => e.type === "status");
+  if (!hasTerminalStatus) {
+    findings.push({
+      axis: "completeness",
+      severity: "WARNING",
+      message: "Trajectory incomplete: no terminal status line (type:\"status\") — log may be truncated or writer still in-flight",
+      source: "trajectory",
+      code: "TRAJECTORY_INCOMPLETE",
+    });
+    // Do not return; continue with other checks but this warning ensures not a silent pass
+  }
+
+  // Blacklist hard-fail — compile patterns (capped at 200 chars per profile, haystack capped 500)
   const effectiveBlacklist = profile.blacklist.length > 0 ? profile.blacklist : DEFAULT_GATE_PROFILE.blacklist;
   const blacklistRes = compileBlacklist(effectiveBlacklist);
 
-  // Scan each step's note and tool for blacklist matches
+  // Scan each entry's tool + cmd + note for blacklist matches (F2: cmd is primary for bash/edit/write)
   for (let idx = 0; idx < entries.length; idx++) {
     const entry = entries[idx]!;
-    // Only check step-type entries with tool bash? Spec says destructive bash patterns, but we check any step's note
-    // For precision: if tool is bash OR note looks like a command, run blacklist.
-    // We check note and tool+note combined
-    const haystack = `${entry.tool} ${entry.note}`;
+    const rawHaystack = `${entry.tool} ${(entry as unknown as { cmd?: string }).cmd ?? ""} ${entry.note}`;
+    const haystack = rawHaystack.length > 500 ? rawHaystack.slice(0, 500) : rawHaystack;
     for (const re of blacklistRes) {
       if (re.test(haystack)) {
         findings.push({
@@ -305,11 +349,23 @@ export function scoreTrajectoryEntries(
       ],
     };
   }
+  // F5 incomplete check for in-memory entries
+  const hasTerminalStatus = entries.some((e) => e.type === "status");
+  if (!hasTerminalStatus) {
+    findings.push({
+      axis: "completeness",
+      severity: "WARNING",
+      message: "Trajectory incomplete: no terminal status line",
+      source: "trajectory",
+      code: "TRAJECTORY_INCOMPLETE",
+    });
+  }
   const effectiveBlacklist = profile.blacklist.length > 0 ? profile.blacklist : DEFAULT_GATE_PROFILE.blacklist;
   const blacklistRes = compileBlacklist(effectiveBlacklist);
   for (let idx = 0; idx < entries.length; idx++) {
     const entry = entries[idx]!;
-    const haystack = `${entry.tool} ${entry.note}`;
+    const rawHaystack = `${entry.tool} ${(entry as unknown as { cmd?: string }).cmd ?? ""} ${entry.note}`;
+    const haystack = rawHaystack.length > 500 ? rawHaystack.slice(0, 500) : rawHaystack;
     for (const re of blacklistRes) {
       if (re.test(haystack)) {
         findings.push({
