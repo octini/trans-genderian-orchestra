@@ -2,7 +2,7 @@
 
 > Mirrored byte-for-byte in `plugin/README.md` (the npm readme) — edit one, copy to the other.
 
-[![npm version](https://img.shields.io/badge/npm-0.2.0-6a4c93)](https://www.npmjs.com/package/trans-genderian-orchestra)
+[![npm version](https://img.shields.io/badge/npm-0.2.1-ba0ce9e)](https://www.npmjs.com/package/trans-genderian-orchestra)
 [![License: MIT](https://img.shields.io/badge/license-MIT-6a4c93)](LICENSE)
 [![OpenCode 1.18.13](https://img.shields.io/badge/OpenCode-1.18.13-6a4c93)](https://opencode.ai)
 
@@ -36,7 +36,7 @@ One npm package exposes both via dual-package exports since v0.1.5 (`exports "./
 If you prefer to wire it by hand, this also works in `opencode.jsonc`:
 
 ```json
-{ "plugin": ["trans-genderian-orchestra@0.2.0"] }
+{ "plugin": ["trans-genderian-orchestra@0.2.1"] }
 ```
 
 Restart opencode after it installs. That’s the global layer done.
@@ -69,7 +69,7 @@ That builds the seat prompts from templates, writes the global config fragment, 
 
 **You’ll know it worked** when that sidebar on the right lights up. Within about a second or two of the setup finishing — no manual `/bd-refresh` — you should see your beads appear. The TUI polls every 1.5 seconds (`POLL_MS 1500` in `plugin/src/sidebar/tui.tsx:20`) but it doesn’t do it the wasteful way: it keeps a cheap signature of the `.beads` directory (`plugin/src/sidebar/bd.ts` walks `.beads` for the newest mtime plus entry count) and only re-reads when something actually changed. The fallback view even pulls `bd list --all` (`plugin/src/sidebar/scope.ts:93`) so in-progress work still shows up before an epic scope fully forms. If you pinned an epic with `/bd-focus`, you can clear it with `/bd-unfocus` and the panel goes back to following whatever bead was last touched.
 
-**A small heads-up that’s new in 0.2.0.** On startup TGO quietly compares your installed version (`plugin/package.json`) with what npm says is latest (`https://registry.npmjs.org/trans-genderian-orchestra/latest`). The logic lives in `plugin/src/version.ts` — `compareVersions` handles `v` prefixes and pre-releases, `fetchLatestVersion` gives npm three seconds before it gives up, and `checkVersionDrift` puts it together. If you’re behind, you’ll see a gentle warning in the structured log (`client.app.log` with `service: "tgo"`): *“TGO update available: installed X < npm Y — run: opencode plugin trans-genderian-orchestra --force -g and restart”*. It’s on by default (`config.checkVersion` in `plugin/src/config.ts:80` defaults to `true`), but it never throws and never blocks startup — it’s fire-and-forget, and you can turn it off with `"checkVersion": false` if you prefer.
+**A small heads-up that’s new in 0.2.1.** On startup TGO quietly compares your installed version (`plugin/package.json`) with what npm says is latest (`https://registry.npmjs.org/trans-genderian-orchestra/latest`). The logic lives in `plugin/src/version.ts` — `compareVersions` handles `v` prefixes and pre-releases, `fetchLatestVersion` gives npm three seconds before it gives up, and `checkVersionDrift` puts it together. If you’re behind, you’ll see a gentle warning in the structured log (`client.app.log` with `service: "tgo"`): *“TGO update available: installed X < npm Y — run: opencode plugin trans-genderian-orchestra --force -g and restart”*. It’s on by default (`config.checkVersion` in `plugin/src/config.ts:80` defaults to `true`), but it never throws and never blocks startup — it’s fire-and-forget, and you can turn it off with `"checkVersion": false` if you prefer.
 
 Lean check, if you like receipts: `grep -c slots.register plugin/dist/server.js` should be `0` and `grep -c experimental.chat plugin/dist/tui.js` should be `0` — server has no TUI slots, TUI has no chat hooks. The build and CI enforce it (`plugin/src/build.ts`).
 
@@ -186,7 +186,11 @@ For the human-readable long form: `docs/ARCHITECTURE.md` (shape and hooks), `doc
 
 ### Updating TGO
 
-Normally automatic via self-update (activates on restart) — when npm has a newer version, TGO refreshes its own plugin cache slot in the background and the update activates on next restart. If a slot is ever stuck, manual refresh is `rm -rf ~/.cache/opencode/packages/trans-genderian-orchestra*` then restart — `opencode plugin --force -g` is a no-op for same-spec entries (upstream behavior).
+**Automatic (default):** when npm has a newer version than the running one, TGO refreshes its own plugin cache slot in the background (`~/.cache/opencode/packages/trans-genderian-orchestra*` / `…@latest`) and logs `self-updated trans-genderian-orchestra to <version> — restart opencode to activate`. Never downgrades. Disable with `["trans-genderian-orchestra", { "selfUpdate": { "enabled": false } }]`.
+
+**Fallback (stuck slot):** `rm -rf ~/.cache/opencode/packages/trans-genderian-orchestra*` then restart opencode.
+
+**Warning:** `opencode plugin trans-genderian-orchestra --force -g` is a **NO-OP** against exact-pinned cache slots — root cause tgo-6m6: the host's same-spec `opencode.jsonc` patch is deduped as a no-op and the `Npm.add` existence fast-path never consults the registry, so the cached tarball is reused even when stale.
 
 ## Developing on TGO
 

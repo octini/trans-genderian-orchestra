@@ -623,24 +623,49 @@ describe("WatchdogController", () => {
     wd.dispose();
   });
 
-  test("toolSignature helper normalizes primary arguments", () => {
-    expect(toolSignature("read", { path: "foo.ts" })).toBe("read:foo.ts");
-    expect(toolSignature("grep", { pattern: "hello.*", path: "src" })).toBe("grep:hello.*:src");
-    expect(toolSignature("bash", { command: "ls -la" })).toBe("bash:ls -la");
-    expect(toolSignature("glob", { path: "src/**/*.ts" })).toBe("glob:src/**/*.ts");
+  test("toolSignature helper normalizes primary arguments (hash-based)", () => {
+    // hash format: tool:prefix:8hex — prefix is readable, hash ensures full distinctness
+    const readSig = toolSignature("read", { path: "foo.ts" });
+    expect(readSig).toMatch(/^read:foo\.ts:[0-9a-f]{8}$/);
+    const grepSig = toolSignature("grep", { pattern: "hello.*", path: "src" });
+    expect(grepSig).toMatch(/^grep:hello\.\*:src:[0-9a-f]{8}$/);
+    const bashSig = toolSignature("bash", { command: "ls -la" });
+    expect(bashSig).toMatch(/^bash:ls -la:[0-9a-f]{8}$/);
+    const globSig = toolSignature("glob", { path: "src/**/*.ts" });
+    expect(globSig).toMatch(/^glob:src\/\*\*\/\*\.ts:[0-9a-f]{8}$/);
     const long = "a".repeat(300);
     const sig = toolSignature("read", { path: long });
-    expect(sig.length).toBeLessThanOrEqual("read:".length + 200);
+    // hashed signature stays bounded (prefix 48 + hash 8 + colons) not 200-slice
+    expect(sig).toMatch(/^read:a+:[0-9a-f]{8}$/);
+    expect(sig.length).toBeLessThan(100);
     expect(toolSignature("unknown", null)).toBe("unknown");
     // grep same pattern different paths must yield different signatures
     expect(toolSignature("grep", { pattern: "foo", path: "a.ts" })).not.toBe(toolSignature("grep", { pattern: "foo", path: "b.ts" }));
-    // grep includes both pattern and path
+    // grep includes both pattern and path in prefix
     expect(toolSignature("grep", { pattern: "foo", path: "a.ts" })).toContain("foo");
     expect(toolSignature("grep", { pattern: "foo", path: "a.ts" })).toContain("a.ts");
-    // read uses path, bash uses command, others use JSON truncated
-    expect(toolSignature("read", { path: "x.ts" })).toBe("read:x.ts");
-    expect(toolSignature("bash", { command: "echo hi" })).toBe("bash:echo hi");
-    expect(toolSignature("unknownTool", { foo: "bar" })).toBe('unknownTool:{"foo":"bar"}');
+    // read uses path, bash uses command, others use JSON + hash
+    expect(toolSignature("read", { path: "x.ts" })).toMatch(/^read:x\.ts:[0-9a-f]{8}$/);
+    expect(toolSignature("bash", { command: "echo hi" })).toMatch(/^bash:echo hi:[0-9a-f]{8}$/);
+    expect(toolSignature("unknownTool", { foo: "bar" })).toMatch(/^unknownTool:\{"foo":"bar"\}:[0-9a-f]{8}$/);
+  });
+
+  test("two >200-char args differing only after char 200 produce distinct signatures", () => {
+    const prefix = "a".repeat(250);
+    const a = prefix + "X";
+    const b = prefix + "Y";
+    const sigA = toolSignature("read", { path: a });
+    const sigB = toolSignature("read", { path: b });
+    // old slice-to-200 would collapse them to identical; hash must keep distinct
+    expect(sigA).not.toBe(sigB);
+    expect(sigA).toMatch(/:[0-9a-f]{8}$/);
+    expect(sigB).toMatch(/:[0-9a-f]{8}$/);
+    // also verify ast_grep-like long pattern case
+    const longPatternA = "pattern:" + "b".repeat(250) + "-tailA";
+    const longPatternB = "pattern:" + "b".repeat(250) + "-tailB";
+    expect(toolSignature("ast_grep_search", { pattern: longPatternA })).not.toBe(
+      toolSignature("ast_grep_search", { pattern: longPatternB })
+    );
   });
 
   test("same grep pattern, different paths filling the window → NO abort", async () => {

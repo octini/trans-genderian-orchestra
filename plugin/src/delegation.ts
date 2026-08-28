@@ -173,9 +173,9 @@ export function validateDelegationPacket(
 
   if ("progressPath" in value) {
     const progressPath = value.progressPath;
-    if (typeof progressPath !== "string" || progressPath.trim().length === 0 || !/^\.tgo\/[A-Za-z0-9-]+\/progress\.md$/.test(progressPath.trim())) {
+    if (typeof progressPath !== "string" || progressPath.trim().length === 0 || !/^\.tgo\/[A-Za-z0-9][A-Za-z0-9._-]*\/progress\.md$/.test(progressPath.trim())) {
       malformed.push("progressPath");
-      diagnostics.push("progressPath must match .tgo/<issueId>/progress.md");
+      diagnostics.push("progressPath must match .tgo/<issueId>/progress.md where <issueId> matches [A-Za-z0-9][A-Za-z0-9._-]*");
     }
   }
 

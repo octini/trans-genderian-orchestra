@@ -735,3 +735,62 @@ describe("recoverOrphans", () => {
     await expect(fs.stat(`${dir}.tgo-backup`)).rejects.toThrow();
   });
 });
+
+// -- tgo-vtn additions: semverGt edges, build-metadata stripping, shouldRefresh malformed --
+
+describe("semverGt edges (tgo-vtn)", () => {
+  test("v prefix is stripped", () => {
+    expect(semverGt("v1.0.1", "v1.0.0")).toBe(true);
+    expect(semverGt("v1.0.0", "1.0.0")).toBe(false);
+    expect(semverGt("1.0.1", "v1.0.0")).toBe(true);
+  });
+  test("equal versions with and without build metadata are not gt", () => {
+    expect(semverGt("1.0.0+build.1", "1.0.0+build.2")).toBe(false);
+    expect(semverGt("1.0.0+abc", "1.0.0")).toBe(false);
+    expect(semverGt("1.0.0", "1.0.0+xyz")).toBe(false);
+  });
+  test("build metadata stripped before prerelease comparison", () => {
+    // parseSemver strips +metadata, so these should be equal not gt
+    expect(semverGt("1.0.0-alpha+001", "1.0.0-alpha+002")).toBe(false);
+    expect(semverGt("1.0.0-alpha+001", "1.0.0-alpha")).toBe(false);
+    expect(semverGt("1.0.0+build", "1.0.0-alpha")).toBe(true);
+  });
+  test("lexical prerelease vs numeric precedence", () => {
+    expect(semverGt("1.0.0-alpha.2", "1.0.0-alpha.1")).toBe(true);
+    expect(semverGt("1.0.0-alpha.1", "1.0.0-alpha.2")).toBe(false);
+    expect(semverGt("1.0.0-1", "1.0.0-alpha")).toBe(false);
+    expect(semverGt("1.0.0-alpha", "1.0.0-1")).toBe(true);
+  });
+  test("patch/minor/major ordering", () => {
+    expect(semverGt("1.0.10", "1.0.2")).toBe(true);
+    expect(semverGt("1.10.0", "1.9.9")).toBe(true);
+    expect(semverGt("2.0.0", "1.99.99")).toBe(true);
+  });
+  test("malformed inputs return false not throw", () => {
+    expect(semverGt("01.0.0", "1.0.0")).toBe(false);
+    expect(semverGt("1.0", "1.0.0")).toBe(false);
+    expect(semverGt("1.0.0-", "1.0.0")).toBe(false);
+    expect(semverGt("1.0.0+ ", "1.0.0")).toBe(false);
+  });
+});
+
+describe("shouldRefresh malformed handling (tgo-vtn)", () => {
+  test("returns false not throw on malformed npm version", () => {
+    expect(() => shouldRefresh("0.2.0", "not-a-version")).not.toThrow();
+    expect(shouldRefresh("0.2.0", "not-a-version")).toBe(false);
+    expect(shouldRefresh("0.2.0", "")).toBe(false);
+    expect(shouldRefresh("0.2.0", "latest")).toBe(false);
+    expect(shouldRefresh("0.2.0", "1.0")).toBe(false);
+    expect(shouldRefresh("0.2.0", "01.0.0")).toBe(false);
+    expect(shouldRefresh("0.2.0", "v1.0")).toBe(false);
+  });
+  test("returns false on malformed running version", () => {
+    expect(shouldRefresh("not-a-version", "1.0.0")).toBe(false);
+    expect(shouldRefresh("", "1.0.0")).toBe(false);
+  });
+  test("build metadata does not trigger refresh", () => {
+    expect(shouldRefresh("1.0.0", "1.0.0+build")).toBe(false);
+    expect(shouldRefresh("1.0.0+build", "1.0.0")).toBe(false);
+    expect(shouldRefresh("1.0.0-alpha+001", "1.0.0-alpha+002")).toBe(false);
+  });
+});

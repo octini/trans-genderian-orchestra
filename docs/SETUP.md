@@ -12,12 +12,12 @@ You don’t need to install two things or wire two configs. A single `opencode p
 opencode plugin trans-genderian-orchestra -g
 ```
 
-Under the hood that’s one npm package (`trans-genderian-orchestra@0.2.0`) with dual-package exports since v0.1.5 — `"./server" → "./dist/server.js"` for the board that lives in chat, and `"./tui" → "./dist/tui.js"` for the sidebar you see on the right. The host-resolved peers (`solid-js`, `@opentui/solid`, `@opentui/core`) are shared, not bundled twice. On the server the plugin hooks `experimental.chat.messages.transform` and `experimental.chat.system.transform` in `dist/server.js`; in the TUI it calls `slots.register` at `order 450` in `tui.jsonc` (right between the built-in Todo at `400` and Modified Files at `500`) in `dist/tui.js`. The interactive sidebar itself arrived in 0.1.6 — 0.1.5 shipped the dual exports and the renderer-only `tgo_beads_snapshot` tool, not the live sidebar.
+Under the hood that’s one npm package (`trans-genderian-orchestra@0.2.1`) with dual-package exports since v0.1.5 — `"./server" → "./dist/server.js"` for the board that lives in chat, and `"./tui" → "./dist/tui.js"` for the sidebar you see on the right. The host-resolved peers (`solid-js`, `@opentui/solid`, `@opentui/core`) are shared, not bundled twice. On the server the plugin hooks `experimental.chat.messages.transform` and `experimental.chat.system.transform` in `dist/server.js`; in the TUI it calls `slots.register` at `order 450` in `tui.jsonc` (right between the built-in Todo at `400` and Modified Files at `500`) in `dist/tui.js`. The interactive sidebar itself arrived in 0.1.6 — 0.1.5 shipped the dual exports and the renderer-only `tgo_beads_snapshot` tool, not the live sidebar.
 
 If you’d rather declare it explicitly, the manual `opencode.jsonc` form works just as well:
 
 ```json
-{ "plugin": ["trans-genderian-orchestra@0.2.0"] }
+{ "plugin": ["trans-genderian-orchestra@0.2.1"] }
 ```
 
 OpenCode installs the package and its peers. Restart opencode and you’re globally ready. That’s the whole manual step — everything else is lazy.
