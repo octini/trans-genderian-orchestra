@@ -351,10 +351,24 @@ export const TgoPlugin: Plugin = async (
   const terminationParentIds = new Map<string, string | undefined>();
 
   // ── Worktree lane auto-enforcement (tgo-bh0) — additive, zero overhead when lane not set ──
+  // G1 investigation (5-min box, 2026-08-28): does task tool's input schema accept worktree/cwd for child session?
+  // Investigated via opencode task tool source (github sst/opencode packages/opencode/src/tool/task.ts): BaseParameterFields
+  // are description, prompt, subagent_type, task_id, command + optional background — NO worktree/cwd param.
+  // SHIPPED: strict fallback — relative paths in child tool calls resolve against child's actual cwd (parent checkout)
+  // → outside the lane worktree → BLOCKED with corrective error "your lane requires worktree <path> — ask the orchestrator to re-dispatch with the worktree".
+  // See worktree-lane.ts isPathInsideWorktree and buildWorktreeViolationMessage for fallback handling.
   const worktreeLaneBySession = new Map<string, { lane: Lane; issueId: string; worktreePath: string }>();
+  // G1(a)+(b): pending keyed by parent sessionID (not issue-only) — enables session.created handler mirroring sessionToRunId pattern
+  // Map<parentSessionID, {lane, issueId, worktreePath}>
+  const pendingWorktreeLaneByParentSession = new Map<string, { lane: Lane; issueId: string; worktreePath: string }>();
+  // Legacy pending by issue for after-hook fallback (kept for backward compat until G3 cleans up)
   const pendingWorktreeLaneByIssue = new Map<string, { lane: Lane; issueId: string }>();
 
-  function rememberWorktreeLaneForDelegation(packet: Record<string, unknown>): void {
+  function rememberWorktreeLaneForDelegation(
+    packet: Record<string, unknown>,
+    parentSessionId: string,
+    repoRoot: string,
+  ): void {
     const laneRaw = packet.lane;
     if (laneRaw === undefined) return;
     if (laneRaw !== "worktree" && laneRaw !== "inline") return;
@@ -364,6 +378,10 @@ export const TgoPlugin: Plugin = async (
     if (typeof issueIdRaw !== "string") return;
     const issueId = issueIdRaw.trim();
     if (!issueId || !isValidBeadID(issueId)) return;
+    const worktreePath = worktreePathForIssue(repoRoot, issueId);
+    // G1(a): remember at dispatch time in tool.execute.before — packet identifies child via parent session mapping
+    pendingWorktreeLaneByParentSession.set(parentSessionId, { lane, issueId, worktreePath });
+    // Also keep legacy issue-keyed for after-hook fallback
     pendingWorktreeLaneByIssue.set(issueId, { lane, issueId });
   }
 
@@ -382,6 +400,30 @@ export const TgoPlugin: Plugin = async (
     } catch (e) {
       safeWarn(appLog, `worktree lane after-capture ensure failed for ${issueId}: ${String(e)}`);
     }
+    pendingWorktreeLaneByIssue.delete(issueId);
+  }
+
+  // G1(b) helper for session.created path — mirrors sessionToRunId wiring shape (parent -> child)
+  async function captureWorktreeLaneForChildSessionViaParent(
+    childSessionId: string,
+    parentSessionId: string,
+    repoRoot: string,
+  ): Promise<void> {
+    const pending = pendingWorktreeLaneByParentSession.get(parentSessionId);
+    if (!pending || pending.lane !== "worktree") return;
+    if (!isValidBeadID(pending.issueId)) {
+      pendingWorktreeLaneByParentSession.delete(parentSessionId);
+      return;
+    }
+    const { issueId, worktreePath } = pending;
+    worktreeLaneBySession.set(childSessionId, { lane: "worktree", issueId, worktreePath });
+    try {
+      await ensureWorktreeExists({ repoRoot, issueId, worktreePath, log: appLog as unknown as (level: "info" | "warn" | "error", message: string, extra?: Record<string, unknown>) => void });
+    } catch (e) {
+      safeWarn(appLog, `worktree lane session.created ensure failed for ${issueId}: ${String(e)}`);
+    }
+    // Clean both pending maps
+    pendingWorktreeLaneByParentSession.delete(parentSessionId);
     pendingWorktreeLaneByIssue.delete(issueId);
   }
 
@@ -634,6 +676,13 @@ export const TgoPlugin: Plugin = async (
           parentID: info.parentID ?? null,
         });
         watchdog.noteSessionCreated(info);
+        // G1(b) worktree lane: resolve child's lane from parent session's mapping — mirrors sessionToRunId pattern
+        try {
+          if (info.id && info.parentID) {
+            const repoRootWt = directory ?? worktree ?? (project as unknown as { worktree?: string })?.worktree ?? ".";
+            await captureWorktreeLaneForChildSessionViaParent(info.id, info.parentID, repoRootWt);
+          }
+        } catch {}
         // F1 seed child sessions at creation — resolve runId from parent's current mapping
         try {
           if (info.id && info.parentID) {
@@ -933,6 +982,15 @@ export const TgoPlugin: Plugin = async (
     },
 
     "tool.execute.before": async (input, output) => {
+      // G1(a): remember lane→child mapping at dispatch time — packet lane identifies child via parent session (strict fallback shipped: NO worktree/cwd param)
+      try {
+        const rawDispatch = output?.args as Record<string, unknown> | undefined;
+        const pktDispatch = rawDispatch?.delegationPacket as Record<string, unknown> | undefined;
+        if (pktDispatch && typeof pktDispatch.lane === "string" && pktDispatch.lane === "worktree") {
+          const rr = directory ?? worktree ?? (project as unknown as { worktree?: string })?.worktree ?? ".";
+          rememberWorktreeLaneForDelegation(pktDispatch, input.sessionID, rr);
+        }
+      } catch {}
       // termination: residual waffle guard — abort the next tool after completion declared
       try {
         if (config.termination?.enabled !== false && delegatedSessionIds.has(input.sessionID)) {
@@ -1079,12 +1137,15 @@ export const TgoPlugin: Plugin = async (
           throw e;
         }
       }
-      // ── Worktree lane: remember delegation lane for child session capture (additive) ──
+      // ── Worktree lane: remember delegation lane for child session capture (additive, validated path) ──
       try {
         if (delegation?.valid && input.tool === "task") {
           const rawArgs2 = output?.args as Record<string, unknown> | undefined;
           const pkt2 = rawArgs2?.delegationPacket as Record<string, unknown> | undefined;
-          if (pkt2) rememberWorktreeLaneForDelegation(pkt2);
+          if (pkt2) {
+            const rr2 = directory ?? worktree ?? (project as unknown as { worktree?: string })?.worktree ?? ".";
+            rememberWorktreeLaneForDelegation(pkt2, input.sessionID, rr2);
+          }
         }
       } catch {}
       // A tool is about to execute (bash, edit, etc.). While a foreground tool
@@ -1482,9 +1543,10 @@ export const TgoPlugin: Plugin = async (
       heartbeatIntervals.clear();
       sessionToRunId.clear();
       runToolStarts.clear();
-      // worktree lane cleanup
+      // worktree lane cleanup (G1 + G3)
       try { worktreeLaneBySession.clear(); } catch {}
       try { pendingWorktreeLaneByIssue.clear(); } catch {}
+      try { pendingWorktreeLaneByParentSession.clear(); } catch {}
     },
   };
 };

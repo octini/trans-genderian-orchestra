@@ -50,14 +50,16 @@ describe("worktree lane helpers", () => {
     // absolute outside (main repo)
     expect(isPathInsideWorktree("/tmp/repo/src/foo.ts", wt, repo)).toBe(false);
     expect(isPathInsideWorktree("/tmp/other/file.ts", wt, repo)).toBe(false);
-    // relative inside (resolved against worktree)
-    expect(isPathInsideWorktree("src/foo.ts", wt, repo)).toBe(true);
-    expect(isPathInsideWorktree("plugin/src/foo.ts", wt, repo)).toBe(true);
-    // relative escaping via ../
+    // G1 strict fallback: relative in lane=worktree child resolves against repoRoot (parent checkout) → outside worktree → blocked
+    expect(isPathInsideWorktree("src/foo.ts", wt, repo)).toBe(false);
+    expect(isPathInsideWorktree("plugin/src/foo.ts", wt, repo)).toBe(false);
+    // relative escaping via ../ also blocked
     expect(isPathInsideWorktree("../repo/src/foo.ts", wt, repo)).toBe(false);
     expect(isPathInsideWorktree("../../etc/passwd", wt, repo)).toBe(false);
     // edge: sibling file with similar prefix not inside
     expect(isPathInsideWorktree("/tmp/tgo-123-lane2/file.ts", wt, repo)).toBe(false);
+    // helper: when repoRoot absent, relative resolves against worktree (backward compat for unit test helper)
+    expect(isPathInsideWorktree("src/foo.ts", wt)).toBe(true);
   });
 
   test("extractFilePathFromArgs", () => {
@@ -74,7 +76,9 @@ describe("worktree lane helpers", () => {
     const repo = "/tmp/repo";
     // Inside worktree → not blocked
     expect(shouldBlockOutsideWorktree({ tool: "edit", args: { filePath: "/tmp/tgo-123-lane/src/foo.ts" }, worktreePath: wt, repoRoot: repo }).block).toBe(false);
-    expect(shouldBlockOutsideWorktree({ tool: "edit", args: { filePath: "src/foo.ts" }, worktreePath: wt, repoRoot: repo }).block).toBe(false);
+    // G1 fallback: relative in child session resolves against parent checkout → blocked with fallback phrase
+    const relBlocked = shouldBlockOutsideWorktree({ tool: "edit", args: { filePath: "src/foo.ts" }, worktreePath: wt, repoRoot: repo });
+    expect(relBlocked.block).toBe(true);
     // Outside worktree absolute → blocked
     const outside = shouldBlockOutsideWorktree({ tool: "edit", args: { filePath: "/tmp/repo/src/foo.ts" }, worktreePath: wt, repoRoot: repo });
     expect(outside.block).toBe(true);
@@ -359,8 +363,9 @@ describe("worktree lane matrix — plugin hook enforcement", () => {
     // Inside worktree → pass
     const insidePath = path.join(worktreePath, "src/a.ts");
     await expect(before({ sessionID: childId, callID: "c-edit-in", tool: "edit" } as never, { args: { filePath: insidePath } } as never)).resolves.toBeUndefined();
-    // Relative path considered inside after rewrite
-    await expect(before({ sessionID: childId, callID: "c-edit-rel", tool: "edit" } as never, { args: { filePath: "src/a.ts" } } as never)).resolves.toBeUndefined();
+    // G1 strict fallback: relative path in child session resolves against parent checkout → outside worktree → BLOCKED with fallback phrase
+    await expect(before({ sessionID: childId, callID: "c-edit-rel", tool: "edit" } as never, { args: { filePath: "src/a.ts" } } as never)).rejects.toThrow(/your lane requires worktree.*ask the orchestrator to re-dispatch with the worktree/i);
+    await expect(before({ sessionID: childId, callID: "c-edit-rel", tool: "edit" } as never, { args: { filePath: "src/a.ts" } } as never)).rejects.toThrow(worktreePath);
     // Bash without outside path should pass inside lane
     await expect(before({ sessionID: childId, callID: "c-bash-in", tool: "bash" } as never, { args: { command: "bun test" } } as never)).resolves.toBeUndefined();
     // Bash with inside path should pass

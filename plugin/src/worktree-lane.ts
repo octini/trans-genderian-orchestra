@@ -1,5 +1,7 @@
 import * as fs from "node:fs/promises";
+import * as fsSync from "node:fs";
 import * as path from "node:path";
+import * as os from "node:os";
 import { assertValidBeadID, isValidBeadID } from "./def-snapshot";
 import { safeWarn } from "./config";
 
@@ -47,7 +49,12 @@ export function worktreePathForIssue(repoRoot: string, issueId: string): string 
 /**
  * Check if a target file path is inside a given worktree path.
  * - If targetPath is absolute, resolves and checks prefix.
- * - If targetPath is relative, resolves against worktreePath (session's rewritten context)
+ * - If targetPath is relative, resolves against repoRoot (child's actual cwd =
+ *   parent checkout) when provided — this implements the G1 strict fallback:
+ *   relative paths in lane=worktree child sessions resolve outside the worktree
+ *   and are BLOCKED with corrective error asking orchestrator to re-dispatch
+ *   with the worktree. When repoRoot is absent, falls back to worktreePath for
+ *   backward compat (unit-test helper).</comment>
  *   and checks if it stays inside (prevents ../ escapes).
  * Returns true if inside, false if outside.
  * Also handles repoRoot-relative resolution for absolute checks when targetPath
@@ -56,18 +63,22 @@ export function worktreePathForIssue(repoRoot: string, issueId: string): string 
 export function isPathInsideWorktree(
   targetPath: string,
   worktreePath: string,
-  // repoRoot is accepted for API compatibility but not used for relative resolution;
-  // relative paths are resolved against worktreePath per "rewrite context" semantics.
-  _repoRoot?: string,
+  repoRoot?: string,
 ): boolean {
   if (!targetPath || !worktreePath) return false;
   const resolvedWorktree = path.resolve(worktreePath);
   let resolvedTarget: string;
   if (path.isAbsolute(targetPath)) {
     resolvedTarget = path.resolve(targetPath);
+  } else if (targetPath.startsWith("~/")) {
+    // Expand ~/ against homedir then check
+    const home = process.env.HOME ?? os.homedir();
+    resolvedTarget = path.resolve(home, targetPath.slice(2));
   } else {
-    // Relative → resolve against worktree (rewritten context)
-    resolvedTarget = path.resolve(resolvedWorktree, targetPath);
+    // G1 strict fallback: relative → resolve against repoRoot (child's actual cwd = parent checkout)
+    // When repoRoot is provided, relative resolves outside worktree → blocked. Fallback to worktreePath only if repoRoot absent.
+    const base = repoRoot ? path.resolve(repoRoot) : resolvedWorktree;
+    resolvedTarget = path.resolve(base, targetPath);
   }
   // Exact match is inside
   if (resolvedTarget === resolvedWorktree) return true;
@@ -328,6 +339,9 @@ export async function ensureWorktreeExists(opts: EnsureWorktreeOpts): Promise<{ 
 /**
  * Build a corrective error message for a blocked worktree lane violation.
  * Includes the worktree path and how to comply.
+ * G1 strict fallback: when target is a relative path (child's cwd is parent checkout),
+ * the message MUST contain "your lane requires worktree <path> — ask the orchestrator to re-dispatch with the worktree"
+ * per spec. This signals the orchestrator to re-dispatch with worktree context.
  */
 export function buildWorktreeViolationMessage(opts: {
   sessionID: string;
@@ -339,6 +353,11 @@ export function buildWorktreeViolationMessage(opts: {
   const { sessionID, tool, target, worktreePath, issueId } = opts;
   const issuePart = issueId ? ` for ${issueId}` : "";
   const targetPart = target ? ` Target: ${target}.` : "";
+  const isRelativeTarget = Boolean(target && !path.isAbsolute(target) && !target.startsWith("~/") && !target.startsWith("/"));
+  // G1 fallback phrase for relative paths — required by spec when task tool has no worktree/cwd param (investigated: NO param, so strict fallback shipped)
+  if (isRelativeTarget) {
+    return `Worktree lane violation: session ${sessionID}${issuePart} with lane=worktree attempted ${tool} outside worktree.${targetPart} your lane requires worktree ${worktreePath} — ask the orchestrator to re-dispatch with the worktree. Run inside your worktree at ${worktreePath}.`;
+  }
   // Spec example: "run inside your worktree at <path>"
   return `Worktree lane violation: session ${sessionID}${issuePart} with lane=worktree attempted ${tool} outside worktree.${targetPart} Run inside your worktree at ${worktreePath}. All mutating operations must be inside ${worktreePath}.`;
 }
