@@ -15805,6 +15805,14 @@ function defaultWallNow() {
 function defaultUptimeNow() {
   return Math.round(process.uptime() * 1000);
 }
+function hashString(s) {
+  let hash2 = 2166136261;
+  for (let i = 0;i < s.length; i++) {
+    hash2 ^= s.charCodeAt(i);
+    hash2 = Math.imul(hash2, 16777619);
+  }
+  return (hash2 >>> 0).toString(16).padStart(8, "0");
+}
 function toolSignature(tool, input) {
   const t = (tool ?? "").trim();
   let primary = "";
@@ -15870,11 +15878,12 @@ function toolSignature(tool, input) {
       primary = String(input);
     }
   }
-  let norm = primary.trim();
-  if (norm.length > 200)
-    norm = norm.slice(0, 200);
-  if (norm)
-    return `${t || "unknown"}:${norm}`;
+  const norm = primary.trim();
+  if (norm) {
+    const hash2 = hashString(norm);
+    const prefix = norm.slice(0, 48);
+    return `${t || "unknown"}:${prefix}:${hash2}`;
+  }
   return t || "unknown";
 }
 
@@ -16543,9 +16552,9 @@ function validateDelegationPacket(routing, packet, routedTouchSet) {
   }
   if ("progressPath" in value) {
     const progressPath2 = value.progressPath;
-    if (typeof progressPath2 !== "string" || progressPath2.trim().length === 0 || !/^\.tgo\/[A-Za-z0-9-]+\/progress\.md$/.test(progressPath2.trim())) {
+    if (typeof progressPath2 !== "string" || progressPath2.trim().length === 0 || !/^\.tgo\/[A-Za-z0-9][A-Za-z0-9._-]*\/progress\.md$/.test(progressPath2.trim())) {
       malformed.push("progressPath");
-      diagnostics.push("progressPath must match .tgo/<issueId>/progress.md");
+      diagnostics.push("progressPath must match .tgo/<issueId>/progress.md where <issueId> matches [A-Za-z0-9][A-Za-z0-9._-]*");
     }
   }
   if (routedTouchSet !== undefined && "Files" in value && Array.isArray(value.Files)) {
@@ -16780,7 +16789,8 @@ import { fileURLToPath as fileURLToPath4 } from "node:url";
 var PLUGIN_NPM_NAME = "trans-genderian-orchestra";
 var REGISTRY_URL = `https://registry.npmjs.org/${PLUGIN_NPM_NAME}/latest`;
 function compareVersions(a, b) {
-  const norm = (v) => v.trim().replace(/^v/, "");
+  const stripBuild = (v) => v.split("+", 1)[0] ?? v;
+  const norm = (v) => stripBuild(v.trim().replace(/^v/, ""));
   const parse6 = (v) => {
     const [core2, pre] = norm(v).split("-", 2);
     const parts = core2.split(".").map((p) => {
