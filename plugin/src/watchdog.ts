@@ -86,7 +86,7 @@ function defaultUptimeNow(): number {
   return Math.round(process.uptime() * 1000);
 }
 
-function hashString(s: string): string {
+export function hashString(s: string): string {
   // FNV-1a 32-bit — no deps, fast, hash full signature for distinctness
   let hash = 2166136261;
   for (let i = 0; i < s.length; i++) {

@@ -1,7 +1,7 @@
 import * as crypto from "node:crypto";
 import { safeWarn } from "./config";
 import { readProgress } from "./progress";
-import { estimateSessionTokens, loadSessionMap, shouldReuse } from "./session-reuse";
+import { estimateSessionTokens, loadSessionMap, shouldReuse, readDefSnapshot } from "./session-reuse";
 
 export const BOARD_SENTINEL_START = "<!-- tgo:board -->";
 export const BOARD_SENTINEL_END = "<!-- /tgo:board -->";
@@ -150,7 +150,14 @@ export async function buildBoardTextWithHints(
   if (data.inProgress.length > 0) {
     const inProgressLines: string[] = [];
     for (const issue of data.inProgress) {
-      inProgressLines.push(line(issue));
+      let rendered = line(issue);
+      if (repoRoot) {
+        try {
+          const snap = await readDefSnapshot(repoRoot, issue.id);
+          if (snap) rendered += ` [pinned v${snap.promptHash.slice(0, 8)}]`;
+        } catch {}
+      }
+      inProgressLines.push(rendered);
       if (reusableSet?.has(issue.id) && sessionIdsByIssue?.has(issue.id)) {
         const sid = sessionIdsByIssue.get(issue.id)!;
         inProgressLines.push(`reusable session ${sid} — pass task_id: "${sid}" on the next task call to continue it.`);

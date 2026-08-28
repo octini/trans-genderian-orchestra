@@ -12,7 +12,7 @@ import { preapproveExternalDirectory, resolveWorktreeFamily } from "./permission
 import { DEPENDENCIES, installMissing, runShellCommand } from "./deps";
 import { applyPreset, readPresetNudge, resolveActivePreset } from "./presets";
 import { validateDelegationBoundary, validateDelegationPacket, verifyClaimObserved as verifyDelegationClaimObserved } from "./delegation";
-import { captureDelegationSession, probeSessionReuseCapability, persistAbortHandback } from "./session-reuse";
+import { captureDelegationSession, probeSessionReuseCapability, persistAbortHandback, ensureDefSnapshot, loadSessionMap } from "./session-reuse";
 import { authorizeLifecycleSession, evaluateClosure, verifyClaimObserved } from "./lifecycle";
 import { loadBeadsTui, renderBeadsTui } from "./tui";
 import { checkVersionDrift, fetchLatestVersion, PLUGIN_NPM_NAME, readLocalVersion } from "./version";
@@ -476,6 +476,51 @@ export const TgoPlugin: Plugin = async (
           throw new Error("Beads lifecycle packets are allowed only from an identified primary session.");
         }
       }
+      // Host-code delegation snapshot at dispatch — immutable, atomic tmp+rename, write-once (conductor-oss pattern)
+      if (delegation?.valid && input.tool === "task") {
+        try {
+          const rawArgs = output?.args as Record<string, unknown> | undefined;
+          const packet = rawArgs?.delegationPacket && typeof rawArgs.delegationPacket === "object"
+            ? (rawArgs.delegationPacket as Record<string, unknown>)
+            : undefined;
+          if (packet && typeof packet.issueId === "string" && packet.issueId.trim().length > 0) {
+            const issueId = (packet.issueId as string).trim();
+            const repoRoot = directory ?? worktree ?? (project as unknown as { worktree?: string })?.worktree ?? ".";
+            const useLatest = packet.useLatestDefinitions === true;
+            if (useLatest) {
+              try {
+                const map = await loadSessionMap(repoRoot);
+                const prior = map[issueId];
+                if (prior?.sessionId) {
+                  try { await client.session.abort({ path: { id: prior.sessionId } }); } catch {}
+                }
+              } catch {}
+            }
+            let promptText: string;
+            if (typeof packet.Objective === "string" && (packet.Objective as string).trim().length > 0) promptText = packet.Objective as string;
+            else promptText = JSON.stringify(packet);
+            let seatFrontmatter = "";
+            if (typeof packet.seatFrontmatter === "string") seatFrontmatter = packet.seatFrontmatter as string;
+            else {
+              try {
+                const subagent = (rawArgs as Record<string, unknown>)?.subagent_type;
+                if (typeof subagent === "string" && subagent.trim().length > 0) {
+                  const seatDir = resolveAgentsDir({ agentDir: config.agentDir });
+                  try {
+                    const fs = await import("node:fs/promises");
+                    seatFrontmatter = await fs.readFile(path.join(seatDir, `${subagent}.md`), "utf-8").catch(() => "");
+                  } catch {}
+                }
+              } catch {}
+            }
+            const preset = typeof packet.preset === "string" ? (packet.preset as string) : config.preset;
+            const model = typeof packet.model === "string" ? (packet.model as string) : "unknown";
+            await ensureDefSnapshot({ repoRoot, issueId, promptText, seatFrontmatter, model, preset, useLatestDefinitions: useLatest });
+          }
+        } catch (e) {
+          safeWarn(appLog, `def-snapshot capture failed: ${String(e)}`);
+        }
+      }
       // A tool is about to execute (bash, edit, etc.). While a foreground tool
       // runs the idle clock is paused so long-running commands don't false-trip
       // the cap. Background-intent calls (args.background === true — dev
@@ -497,7 +542,29 @@ export const TgoPlugin: Plugin = async (
       watchdog.noteToolEnd(input.sessionID, background, isProgress);
       watchdog.noteActivity(input.sessionID);
       if (reuseCapability.supported) {
-        await captureDelegationSession({ tool: input.tool, input, output, repoRoot: directory ?? worktree ?? (project as unknown as { worktree?: string })?.worktree ?? ".", enabled: config.sessionReuse?.enabled !== false, log: appLog });
+        let promptText: string | undefined;
+        let seatFrontmatter: string | undefined;
+        let model: string | undefined;
+        let preset: string | undefined;
+        let useLatestDefinitions: boolean | undefined;
+        try {
+          const rawInput = input.args as Record<string, unknown> | undefined;
+          const taskArgs = rawInput && typeof (rawInput as Record<string, unknown>).delegationPacket === "object"
+            ? rawInput as Record<string, unknown>
+            : (rawInput && typeof (rawInput as Record<string, unknown>).args === "object" ? (rawInput as Record<string, unknown>).args as Record<string, unknown> : undefined);
+          const packet = taskArgs?.delegationPacket && typeof taskArgs.delegationPacket === "object"
+            ? (taskArgs.delegationPacket as Record<string, unknown>)
+            : (input.args && typeof (input.args as Record<string, unknown>).delegationPacket === "object" ? (input.args as Record<string, unknown>).delegationPacket as Record<string, unknown> : undefined);
+          if (packet) {
+            if (typeof packet.Objective === "string" && (packet.Objective as string).trim().length > 0) promptText = packet.Objective as string;
+            else promptText = JSON.stringify(packet);
+            if (typeof packet.seatFrontmatter === "string") seatFrontmatter = packet.seatFrontmatter as string;
+            if (typeof packet.model === "string") model = packet.model as string;
+            if (typeof packet.preset === "string") preset = packet.preset as string;
+            if (typeof packet.useLatestDefinitions === "boolean") useLatestDefinitions = packet.useLatestDefinitions as boolean;
+          }
+        } catch {}
+        await captureDelegationSession({ tool: input.tool, input, output, repoRoot: directory ?? worktree ?? (project as unknown as { worktree?: string })?.worktree ?? ".", enabled: config.sessionReuse?.enabled !== false, log: appLog, promptText, seatFrontmatter, model, preset, useLatestDefinitions });
       }
       if (input.tool === "task" && typeof output?.output === "string") {
         const report = parseTaskReport(output.output);
