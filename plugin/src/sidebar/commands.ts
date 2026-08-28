@@ -3,6 +3,7 @@ import type { TuiPluginApi } from "@opencode-ai/plugin/tui"
 import type { BdClient } from "./bd"
 import type { PanelItem } from "./scope"
 import type { Store } from "./tui"
+import { checkCloseGate, blockedCloseMessage } from "../exitgate/close-gate"
 
 const COMMANDS = [
   "beads.focus",
@@ -129,7 +130,24 @@ export function registerCommands(api: TuiPluginApi, bd: BdClient, store: Store):
           pickFrom(
             "Close bead",
             (item) => item.state !== "closed",
-            (item) => void apply(item.bead.id, ["close", item.bead.id], `closed ${item.bead.id}`),
+            (item) =>
+              void (async () => {
+                // F1 enforcement at the real close consumer: consult deterministic exit gate before bd close
+                // Worktree from TUI state (tui.tsx creates bd with api.state.path.worktree)
+                const worktree = (api as unknown as { state?: { path?: { worktree?: string } } })?.state?.path?.worktree ?? "";
+                const specText = typeof item.bead.description === "string" ? item.bead.description : "";
+                try {
+                  const { allowed, gate } = await checkCloseGate(worktree || ".", item.bead.id, specText);
+                  if (!allowed) {
+                    api.ui.toast({ variant: "error", title: "beads", message: blockedCloseMessage(gate) });
+                    return;
+                  }
+                } catch (e) {
+                  api.ui.toast({ variant: "error", title: "beads", message: `close blocked: gate evaluation error: ${String(e)}` });
+                  return;
+                }
+                void apply(item.bead.id, ["close", item.bead.id], `closed ${item.bead.id}`);
+              })(),
           )
         },
       },

@@ -3,6 +3,7 @@ import { execFile } from "node:child_process"
 import { type Dirent, existsSync, readdirSync, readFileSync, statSync } from "node:fs"
 import { join } from "node:path"
 import { promisify } from "node:util"
+import { checkCloseGate, blockedCloseMessage } from "../exitgate/close-gate"
 
 const run = promisify(execFile)
 
@@ -217,9 +218,32 @@ export function createBdClient(worktree: string) {
    * silently do nothing. `id` is checked against `isValidBeadID` before `args`
    * ever reaches `bd` — callers all target one bead, and this is the one place
    * that write path narrows to reject an id bd would otherwise parse as a flag.
+   *
+   * F1 enforcement: before executing `bd close`, consult the deterministic exit
+   * gate (delta-spec + trajectory). If gate.blocked → refuse close with typed
+   * GATE_BLOCKED_CRITICAL + compensation hint, do not exec bd.
    */
   async function mutate(id: string, args: string[]): Promise<{ ok: true } | { ok: false; message: string }> {
     if (!isValidBeadID(id)) return { ok: false, message: `invalid bead id: ${id}` }
+    // Enforce gate on the real close consumer (F1) — before bd close
+    const isClose = args[0] === "close" || args.includes("close");
+    if (isClose) {
+      try {
+        // Fetch spec text for gate (bd description) — best effort, empty string is valid (delta-spec will warn)
+        let specText = "";
+        try {
+          const beads = await query<Bead[]>(["list", "--id", id, "--all"]);
+          const bead = beads?.[0];
+          if (bead && typeof bead.description === "string") specText = bead.description;
+        } catch {}
+        const { allowed, gate } = await checkCloseGate(worktree, id, specText);
+        if (!allowed) {
+          return { ok: false, message: blockedCloseMessage(gate) };
+        }
+      } catch (e) {
+        return { ok: false, message: `close blocked: gate evaluation error: ${String(e)}` };
+      }
+    }
     try {
       await exec(args)
       cache.clear()
