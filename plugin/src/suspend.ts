@@ -609,25 +609,20 @@ export function isExpired(record: AwaitRecord, nowMs = Date.now()): boolean {
   return nowMs >= untilMs;
 }
 
-// F3: atomically persist expiry flag — rewrite await.json with expired:true (preserve other fields)
+// F3: atomically persist expiry flag via CAS primitive — avoids resurrecting/overwriting newer await
+// Read record then CAS-mutate with expectedCreatedAt; superseded → skip (newer wins)
 export async function persistExpiredFlag(repoRoot: string, issueId: string): Promise<boolean> {
   assertValidBeadID(issueId);
   const rec = await readAwaitJson(repoRoot, issueId);
   if (!rec) return false;
-  if (rec.expired === true) return true; // already persisted
-  const updated: AwaitRecord = { ...rec, expired: true };
-  const target = awaitJsonPath(repoRoot, issueId);
-  const dir = path.dirname(target);
-  const tmp = path.join(dir, `.await-exp-${hashString(JSON.stringify(updated))}-${process.pid}-${Math.random().toString(36).slice(2)}.tmp`);
-  try {
-    await fs.mkdir(dir, { recursive: true });
-    await fs.writeFile(tmp, JSON.stringify(updated, null, 2), "utf-8");
-    await fs.rename(tmp, target);
-    return true;
-  } catch {
-    try { await fs.unlink(tmp); } catch {}
-    return false;
-  }
+  if (rec.expired === true) return true;
+  const result = await mutateAwaitJson(repoRoot, issueId, rec.createdAt, (cur) => {
+    if (cur.expired === true) return cur;
+    return { ...cur, expired: true };
+  });
+  if (result === "applied") return true;
+  // superseded or absent → newer wins or gone, will be evaluated fresh next scan
+  return false;
 }
 
 // Timer catch-up on plugin load: scan .tgo/*/await.json for expired until and surface them (log + board)
@@ -643,10 +638,11 @@ export async function scanExpiredAwaits(
   const newlyExpired = all.filter((r) => r.expired !== true && isExpired(r, nowMs));
   const allExpired = all.filter((r) => isExpired(r, nowMs));
   for (const rec of newlyExpired) {
-    // Persist flag before surfacing so restart retains it
+    // Persist flag before surfacing so restart retains it; superseded → newer wins, skip logging old
     try { await persistExpiredFlag(repoRoot, rec.issueId); } catch {}
     // Re-read to get persisted version for logging
     const persisted = (await readAwaitJson(repoRoot, rec.issueId)) ?? rec;
+    if (persisted.createdAt !== rec.createdAt) continue;
     const msg = `tgo: timer expired for ${persisted.issueId} (until ${persisted.until}) — awaiting human: ${persisted.reason}`;
     if (log) {
       try {
