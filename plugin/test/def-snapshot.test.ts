@@ -106,6 +106,17 @@ describe("hash vector pinned", () => {
     // hash covers Files array content, not just presence
     const sameFilesDifferentOrder = hashFivePartPacket({ ...base, Files: ["b.ts", "a.ts"] });
     expect(sameFilesDifferentOrder).not.toBe(baseHash);
+    // delimiter collision: section containing literal "\n---\n" must produce distinct hash
+    const delimiterInObjective = hashFivePartPacket({ ...base, Objective: "O\n---\nI" });
+    const splitAcross = hashFivePartPacket({ Objective: "O", Files: ["a.ts"], Interfaces: "I", Constraints: "C", Verification: "V\n---\n" });
+    // both delimiter-containing variants must differ from base and from each other — proof length-prefixing works
+    expect(delimiterInObjective).not.toBe(baseHash);
+    expect(splitAcross).not.toBe(baseHash);
+    expect(delimiterInObjective).not.toBe(splitAcross);
+    // boundary collision: "ab"+"c" vs "a"+"bc" would collide with naive join — length-prefix prevents it
+    const boundaryA = hashFivePartPacket({ Objective: "ab", Files: ["a.ts"], Interfaces: "c", Constraints: "C", Verification: "V" });
+    const boundaryB = hashFivePartPacket({ Objective: "a", Files: ["a.ts"], Interfaces: "bc", Constraints: "C", Verification: "V" });
+    expect(boundaryA).not.toBe(boundaryB);
   });
 });
 

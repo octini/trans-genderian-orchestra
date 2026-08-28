@@ -38,7 +38,7 @@ export function defSnapshotPath(repoRoot: string, issueId: string): string {
 }
 
 // Hash the complete five-part delegation definition — mutating any section changes the hash.
-// Canonical form: Objective, Files (JSON), Interfaces, Constraints, Verification joined with stable delimiter.
+// Canonical form: length-prefixed sections ("${len}:${section}" joined) prevents delimiter collision.
 export function hashFivePartPacket(packet: {
   Objective?: unknown;
   Files?: unknown;
@@ -51,7 +51,7 @@ export function hashFivePartPacket(packet: {
   const interfaces = typeof packet.Interfaces === "string" ? packet.Interfaces : JSON.stringify(packet.Interfaces ?? "");
   const constraints = typeof packet.Constraints === "string" ? packet.Constraints : JSON.stringify(packet.Constraints ?? "");
   const verification = typeof packet.Verification === "string" ? packet.Verification : JSON.stringify(packet.Verification ?? "");
-  const canonical = [obj, files, interfaces, constraints, verification].join("\n---\n");
+  const canonical = [obj, files, interfaces, constraints, verification].map((s) => `${s.length}:${s}`).join("");
   return hashString(canonical);
 }
 
