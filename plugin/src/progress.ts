@@ -306,3 +306,13 @@ export function parseProgress(content: string): ProgressParts {
 
   return result;
 }
+
+// Suspend gate helpers — additive, no rewrite of existing progress logic
+export function isSuspendBlocker(blocker: string): boolean {
+  return blocker.startsWith("⏸ awaiting human:");
+}
+
+export function formatSuspendBlockerFromReason(reason: string, requiredFields: string[]): string {
+  const fieldsStr = requiredFields.length > 0 ? requiredFields.join(", ") : "response";
+  return `⏸ awaiting human: ${reason} — reply with: ${fieldsStr}`;
+}
