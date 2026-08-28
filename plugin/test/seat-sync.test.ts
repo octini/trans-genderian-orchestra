@@ -1,57 +1,60 @@
 import { describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, mkdirSync, statSync } from "node:fs";
-import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { reconcileSeats } from "../src/seat-sync";
+import { foldHouseStyle, loadHouseStyle, renderSeats } from "../src/build";
 
 function tmpDir(prefix = "tgo-seat-sync-"): string {
   return mkdtempSync(path.join(os.tmpdir(), prefix));
 }
 
-function writeSeat(dir: string, name: string, steps: number, extra = ""): string {
-  const content = `---\ndescription: test seat\nsteps: ${steps}\n---\nbody ${name} ${extra}\n`;
-  mkdirSync(dir, { recursive: true });
-  const p = path.join(dir, `${name}.md`);
-  writeFileSync(p, content, "utf-8");
-  return content;
+function templateWithSteps(steps: number, bodyExtra = ""): string {
+  return `---\ndescription: test seat\nsteps: ${steps}\n---\n{{TGO_HOUSE_STYLE}}\nbody ${bodyExtra} {{TGO_REGISTER}}\n`;
 }
 
 describe("seat-sync", () => {
-  test("differing frontmatter → rewritten, .bak contains old content, summary reports the seat", async () => {
+  test("differing frontmatter → rewritten, .bak contains old content, summary reports exact steps change", async () => {
     const assets = tmpDir("assets-");
     const installed = tmpDir("installed-");
     try {
-      const assetContent = writeSeat(assets, "dylan", 100);
-      const oldContent = writeSeat(installed, "dylan", 20);
-      const summary = await reconcileSeats(assets, installed, () => {});
-      const installedContent = readFileSync(path.join(installed, "dylan.md"), "utf-8");
-      expect(installedContent).toBe(assetContent);
+      const houseStyle = await loadHouseStyle();
+      // assets template has steps 100 (new)
+      writeFileSync(path.join(assets, "dylan.md"), templateWithSteps(100), "utf-8");
+      // installed has rendered old content with steps 20
+      const oldTemplate = templateWithSteps(20);
+      const oldRendered = foldHouseStyle(oldTemplate, houseStyle, "concise");
+      mkdirSync(installed, { recursive: true });
+      writeFileSync(path.join(installed, "dylan.md"), oldRendered, "utf-8");
+
+      const expectedRendered = foldHouseStyle(templateWithSteps(100), houseStyle, "concise");
+      const summary = await reconcileSeats(assets, installed, () => {}, "concise");
+
+      expect(readFileSync(path.join(installed, "dylan.md"), "utf-8")).toBe(expectedRendered);
       const bakPath = path.join(installed, "dylan.md.bak");
       expect(existsSync(bakPath)).toBe(true);
-      expect(readFileSync(bakPath, "utf-8")).toBe(oldContent);
-      expect(summary.join(" ")).toContain("dylan");
-      // should report steps change 20→100
-      expect(summary.join(" ")).toContain("20");
-      expect(summary.join(" ")).toContain("100");
+      expect(readFileSync(bakPath, "utf-8")).toBe(oldRendered);
+      expect(summary).toEqual(["dylan (steps 20→100)"]);
     } finally {
       rmSync(assets, { recursive: true, force: true });
       rmSync(installed, { recursive: true, force: true });
     }
   });
 
-  test("identical → file untouched (content + no .bak created)", async () => {
+  test("identical rendered → no write, no .bak churn", async () => {
     const assets = tmpDir("assets-");
     const installed = tmpDir("installed-");
     try {
-      const content = writeSeat(assets, "dylan", 100, "same");
-      writeFileSync(path.join(installed, "dylan.md"), content, "utf-8");
+      const houseStyle = await loadHouseStyle();
+      const tmpl = templateWithSteps(100, "same");
+      writeFileSync(path.join(assets, "dylan.md"), tmpl, "utf-8");
+      const rendered = foldHouseStyle(tmpl, houseStyle, "concise");
+      writeFileSync(path.join(installed, "dylan.md"), rendered, "utf-8");
       const statBefore = statSync(path.join(installed, "dylan.md")).mtimeMs;
-      // small delay to ensure mtime would change if rewritten
       await new Promise((r) => setTimeout(r, 10));
-      const summary = await reconcileSeats(assets, installed, () => {});
+      const summary = await reconcileSeats(assets, installed, () => {}, "concise");
       expect(summary.length).toBe(0);
-      expect(readFileSync(path.join(installed, "dylan.md"), "utf-8")).toBe(content);
+      expect(readFileSync(path.join(installed, "dylan.md"), "utf-8")).toBe(rendered);
       expect(existsSync(path.join(installed, "dylan.md.bak"))).toBe(false);
       const statAfter = statSync(path.join(installed, "dylan.md")).mtimeMs;
       expect(statAfter).toBe(statBefore);
@@ -61,20 +64,43 @@ describe("seat-sync", () => {
     }
   });
 
-  test("missing installed file → created", async () => {
+  test("missing installed file → created via render pipeline", async () => {
     const assets = tmpDir("assets-");
     const installed = tmpDir("installed-");
     try {
-      const assetContent = writeSeat(assets, "dylan", 100);
-      // installed dir exists but file missing
-      const summary = await reconcileSeats(assets, installed, () => {});
+      const houseStyle = await loadHouseStyle();
+      const tmpl = templateWithSteps(100);
+      writeFileSync(path.join(assets, "dylan.md"), tmpl, "utf-8");
+      const summary = await reconcileSeats(assets, installed, () => {}, "concise");
+      const expected = foldHouseStyle(tmpl, houseStyle, "concise");
       expect(existsSync(path.join(installed, "dylan.md"))).toBe(true);
-      expect(readFileSync(path.join(installed, "dylan.md"), "utf-8")).toBe(assetContent);
+      expect(readFileSync(path.join(installed, "dylan.md"), "utf-8")).toBe(expected);
       expect(existsSync(path.join(installed, "dylan.md.bak"))).toBe(false);
-      expect(summary.join(" ")).toContain("dylan");
+      expect(summary).toEqual(["dylan (steps →100)"]);
     } finally {
       rmSync(assets, { recursive: true, force: true });
       rmSync(installed, { recursive: true, force: true });
+    }
+  });
+
+  test("missing target dir → recursive mkdir and create", async () => {
+    const assets = tmpDir("assets-");
+    const base = tmpDir("base-");
+    try {
+      const houseStyle = await loadHouseStyle();
+      const tmpl = templateWithSteps(60);
+      writeFileSync(path.join(assets, "nas.md"), tmpl, "utf-8");
+      const missingDir = path.join(base, "nested", "agent");
+      // ensure it doesn't exist
+      expect(existsSync(missingDir)).toBe(false);
+      const summary = await reconcileSeats(assets, missingDir, () => {}, "concise");
+      const expected = foldHouseStyle(tmpl, houseStyle, "concise");
+      expect(existsSync(path.join(missingDir, "nas.md"))).toBe(true);
+      expect(readFileSync(path.join(missingDir, "nas.md"), "utf-8")).toBe(expected);
+      expect(summary).toEqual(["nas (steps →60)"]);
+    } finally {
+      rmSync(assets, { recursive: true, force: true });
+      rmSync(base, { recursive: true, force: true });
     }
   });
 
@@ -82,25 +108,22 @@ describe("seat-sync", () => {
     const assets = tmpDir("assets-");
     const tmp = tmpDir("tmp-");
     try {
-      writeSeat(assets, "dylan", 100);
-      // make installed path a file, not a directory, so mkdir/read will fail to treat it as dir
+      writeFileSync(path.join(assets, "dylan.md"), templateWithSteps(100), "utf-8");
       const fileAsDir = path.join(tmp, "file-as-dir");
       writeFileSync(fileAsDir, "not a dir", "utf-8");
       const throwingLog = () => {
         throw new Error("logger boom");
       };
-      // should not throw despite unreadable dir and throwing logger
       let threw = false;
       try {
-        const summary = await reconcileSeats(assets, fileAsDir, throwingLog as unknown as (level: string, msg: string) => void);
+        const summary = await reconcileSeats(assets, fileAsDir, throwingLog as unknown as (level: string, msg: string) => void, "concise");
         expect(Array.isArray(summary)).toBe(true);
       } catch {
         threw = true;
       }
       expect(threw).toBe(false);
 
-      // also test with normal logger and unreadable dir
-      const summary2 = await reconcileSeats(assets, fileAsDir, () => {});
+      const summary2 = await reconcileSeats(assets, fileAsDir, () => {}, "concise");
       expect(Array.isArray(summary2)).toBe(true);
     } finally {
       rmSync(assets, { recursive: true, force: true });

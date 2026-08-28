@@ -28,6 +28,17 @@ export function safeWarn(
   } catch {}
 }
 
+export function resolveAgentsDir(opts: {
+  agentDir?: string;
+  configDir?: string;
+  agentsSubdir?: string;
+}): string {
+  if (opts.agentDir) return opts.agentDir;
+  const configDir = opts.configDir ?? path.join(os.homedir(), ".config", "opencode");
+  const subdir = opts.agentsSubdir ?? "agent";
+  return path.join(configDir, subdir);
+}
+
 export const SEATS = [
   "bernstein",
   "horowitz",

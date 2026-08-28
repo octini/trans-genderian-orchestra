@@ -2,7 +2,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as os from "node:os";
 import { fileURLToPath } from "node:url";
-import { loadTgoConfig, validateAgentDir } from "./config";
+import { loadTgoConfig, resolveAgentsDir, validateAgentDir } from "./config";
 import {
   buildSeatsTo,
   CONTEXT7_MCP_SERVER,
@@ -87,7 +87,7 @@ export function resolveInstallTarget(overrides?: {
   agentsSubdir?: string;
 }): InstallTarget {
   const configDir = overrides?.configDir ?? DEFAULTS.configDir;
-  const agentsDir = path.join(configDir, overrides?.agentsSubdir ?? DEFAULTS.agentsSubdir);
+  const agentsDir = resolveAgentsDir({ configDir, agentsSubdir: overrides?.agentsSubdir });
   return { configDir, agentsDir };
 }
 

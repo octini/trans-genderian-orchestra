@@ -1,5 +1,5 @@
 import { tool, type Plugin, type PluginInput } from "@opencode-ai/plugin";
-import { loadTgoConfig, validateAgentDir, BD_ENV, safeWarn, type TgoConfig } from "./config";
+import { loadTgoConfig, resolveAgentsDir, validateAgentDir, BD_ENV, safeWarn, type TgoConfig } from "./config";
 import { BoardController, type BoardMessage } from "./board";
 import { ConcisionController } from "./concision";
 import { StyleReinforcementController } from "./style-reinforcement";
@@ -103,14 +103,13 @@ export const TgoPlugin: Plugin = async (
     });
   }
 
-  const seatDir =
-    config.agentDir ?? path.join(os.homedir(), ".config", "opencode", "agent");
+  const seatDir = resolveAgentsDir({ agentDir: config.agentDir });
   // seat frontmatter reconciliation: self-update swaps code slot but never revisits installed agents — repair drift at load (always on)
   void (async () => {
     try {
       const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
       const assetsAgentsDir = path.join(packageRoot, "assets", "agents");
-      const summary = await reconcileSeats(assetsAgentsDir, seatDir, appLog);
+      const summary = await reconcileSeats(assetsAgentsDir, seatDir, appLog, config.register);
       if (summary.length > 0) {
         let version = "unknown";
         try {

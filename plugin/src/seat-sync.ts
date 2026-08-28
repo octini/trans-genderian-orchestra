@@ -1,6 +1,7 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { safeWarn } from "./config";
+import { renderSeats, type Register } from "./build";
 
 function parseSteps(content: string): string | null {
   const m = content.match(/^\s*steps:\s*(\d+)/m);
@@ -10,30 +11,34 @@ function parseSteps(content: string): string | null {
 export async function reconcileSeats(
   assetsAgentsDir: string,
   installedAgentsDir: string,
-  log?: (level: "warn" | "info" | "error", message: string, extra?: Record<string, unknown>) => void
+  log?: (level: "warn" | "info" | "error", message: string, extra?: Record<string, unknown>) => void,
+  register: Register = "concise"
 ): Promise<string[]> {
   const summary: string[] = [];
-  let files: string[];
+  let renderedSeats: Array<{ fileName: string; content: string }>;
   try {
-    files = await fs.readdir(assetsAgentsDir);
+    renderedSeats = await renderSeats(assetsAgentsDir, register);
   } catch (err) {
-    safeWarn(log, "tgo: seat sync readdir failed", { assetsAgentsDir, error: String(err) });
+    safeWarn(log, "tgo: seat sync render failed", { assetsAgentsDir, error: String(err) });
     return summary;
   }
 
-  for (const file of files) {
-    if (!file.endsWith(".md")) continue;
-    const seatName = path.basename(file, ".md");
-    const assetPath = path.join(assetsAgentsDir, file);
-    const installedPath = path.join(installedAgentsDir, file);
-
-    let assetContent: string;
+  if (renderedSeats.length === 0) {
+    // renderSeats handles readdir failure internally with console.warn; treat empty as nothing to reconcile
+    // but also check if assets dir was unreadable: ensure we don't silently succeed — still return empty
     try {
-      assetContent = await fs.readFile(assetPath, "utf-8");
+      await fs.readdir(assetsAgentsDir);
     } catch (err) {
-      safeWarn(log, "tgo: seat sync read asset failed", { file, error: String(err) });
-      continue;
+      safeWarn(log, "tgo: seat sync readdir failed", { assetsAgentsDir, error: String(err) });
     }
+    if (renderedSeats.length === 0) return summary;
+  }
+
+  for (const seat of renderedSeats) {
+    const file = seat.fileName;
+    const expectedContent = seat.content;
+    const seatName = path.basename(file, ".md");
+    const installedPath = path.join(installedAgentsDir, file);
 
     let installedContent: string | undefined;
     let installedExists = false;
@@ -51,11 +56,10 @@ export async function reconcileSeats(
       }
     }
 
-    if (installedExists && installedContent === assetContent) {
+    if (installedExists && installedContent === expectedContent) {
       continue;
     }
 
-    // need to write: ensure installed dir exists
     try {
       await fs.mkdir(installedAgentsDir, { recursive: true });
     } catch (err) {
@@ -63,25 +67,29 @@ export async function reconcileSeats(
       continue;
     }
 
-    // backup previous content if it existed
     if (installedExists && installedContent !== undefined) {
       try {
         await fs.writeFile(`${installedPath}.bak`, installedContent, "utf-8");
       } catch (err) {
         safeWarn(log, "tgo: seat sync backup failed", { file, error: String(err) });
-        // continue to still try to write the new content? If backup fails we still attempt write, but don't add to summary if write fails
+        continue;
       }
     }
 
+    const tmp = path.join(installedAgentsDir, `.${file}.${process.pid}.${Date.now()}.tmp`);
     try {
-      await fs.writeFile(installedPath, assetContent, "utf-8");
+      await fs.writeFile(tmp, expectedContent, "utf-8");
+      await fs.rename(tmp, installedPath);
     } catch (err) {
       safeWarn(log, "tgo: seat sync write failed", { file, error: String(err) });
+      try {
+        await fs.rm(tmp, { force: true });
+      } catch {}
       continue;
     }
 
     const oldSteps = installedContent ? parseSteps(installedContent) : null;
-    const newSteps = parseSteps(assetContent);
+    const newSteps = parseSteps(expectedContent);
     let change: string;
     if (!installedExists) {
       if (newSteps) change = `steps →${newSteps}`;
@@ -94,7 +102,6 @@ export async function reconcileSeats(
       change = "updated";
     }
 
-    // format as spec example "dylan (steps 20→100)" — use parentheses
     summary.push(`${seatName} (${change})`);
   }
 
