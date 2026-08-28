@@ -126,12 +126,7 @@ export async function runExitGate(input: GateInput): Promise<GateResult> {
     // Keep minimal: only findings from parser.
   }
 
-  // Triage axis is always enabled via above findings; toggle controls whether we treat triage as blocking?
-  // But spec says toggles declare blacklist patterns and gate toggles — so deltaSpec/triage/trajectory toggles.
-  // If triage disabled, we would not block on triage? Simplify: if triage toggle false, downgrade CRITICAL to WARNING.
-  // For now, if toggles.triage is false, we skip delta-spec findings? Already handled.
-
-  // Trajectory scorer (toggle-aware)
+  // Trajectory scorer (toggle-aware) — F5: after writer sync, read full file and check terminal status line
   let trajectorySkipped = false;
   if (profile.toggles.trajectory) {
     const traj = await scoreTrajectory(input.repoRoot, input.issueId, profile);
@@ -139,15 +134,11 @@ export async function runExitGate(input: GateInput): Promise<GateResult> {
     for (const f of traj.findings) findings.push(f);
   }
 
-  // Additional correctness check: if report is not completionSafe but taxonomy is complete, that's a pre-existing contradiction
-  // The gate surfaces it but the main closure gate already blocks; we add a triage finding for completeness if needed.
-  // However we should not duplicate report contradictions as gate findings unnecessarily — keep gate focused on delta+trajectory+blacklist.
-  // If blacklist findings exist, they are already added via trajectory.
-
-  // Apply triage toggle: if triage disabled, convert CRITICAL to WARNING (lenient)
+  // F3: toggles.triage controls the triage axis — false SKIPS the axis entirely (no findings from it), never downgrades CRITICAL.
+  // Findings whose source is "triage" or whose axis is triage-related are omitted; other axes remain fully evaluated.
   let effectiveFindings = findings;
   if (!profile.toggles.triage) {
-    effectiveFindings = findings.map((f) => (f.severity === "CRITICAL" ? { ...f, severity: "WARNING" as const } : f));
+    effectiveFindings = findings.filter((f) => f.source !== "triage");
   }
 
   const triage = triageFindings(effectiveFindings);
@@ -240,9 +231,10 @@ export function runExitGateSync(opts: {
     }
   }
 
+  // F3: triage toggle skips axis entirely, never downgrades CRITICAL
   let effective = findings;
   if (!profile.toggles.triage) {
-    effective = findings.map((f) => (f.severity === "CRITICAL" ? { ...f, severity: "WARNING" as const } : f));
+    effective = findings.filter((f) => f.source !== "triage");
   }
 
   const triage = triageFindings(effective);
