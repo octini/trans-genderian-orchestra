@@ -1,4 +1,7 @@
 import { test, expect, describe } from "bun:test";
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import {
   appendBoardMessage,
   BOARD_SENTINEL_END,
@@ -325,5 +328,56 @@ describe("BoardController", () => {
     const messages = [msg("user", "hi")];
     await ctrl.transform(messages);
     expect(messages.some((m) => isBoardMessage(m))).toBe(true);
+  });
+
+  test("memoizes session.messages within TTL — two renders cause one fetch", async () => {
+    const repoRoot = mkdtempSync(path.join(os.tmpdir(), "tgo-board-memo-"));
+    try {
+      const sid = "ses_ABC123456";
+      mkdirSync(path.join(repoRoot, ".tgo"), { recursive: true });
+      writeFileSync(path.join(repoRoot, ".tgo", "sessions.json"), JSON.stringify({ "tgo-memo": { sessionId: sid, updatedAt: new Date().toISOString() } }));
+      const inProg = JSON.stringify([{ id: "tgo-memo", title: "Memo test", priority: 1 }]);
+      const run: BdRunner = async (cmd: string) => {
+        if (cmd.includes("in_progress")) return inProg;
+        if (cmd.includes("bd ready")) return "[]";
+        if (cmd.includes("bd blocked")) return "[]";
+        if (cmd.includes("bd memories")) return "{}";
+        return "";
+      };
+      let msgCalls = 0;
+      const client = {
+        session: {
+          messages: async (_opts: { path: { id: string } }) => {
+            msgCalls++;
+            return [{ parts: [{ type: "text", text: "hello world" }] }];
+          },
+        },
+      };
+      const ctrl = new BoardController({ run, refreshMs: 10_000, sessionReuse: { repoRoot, client: client as any, maxContextTokens: 100000, supported: true, enabled: true } });
+      const r1 = await ctrl.renderFor("board-sess-1");
+      const r2 = await ctrl.renderFor("board-sess-2");
+      expect(r1).toContain("tgo-memo");
+      expect(r2).toContain("tgo-memo");
+      expect(msgCalls).toBe(1);
+      // cache respects TTL: after expiry, refetch
+      const ctrlShort = new BoardController({ run, refreshMs: 5, sessionReuse: { repoRoot, client: client as any, maxContextTokens: 100000, supported: true, enabled: true } });
+      msgCalls = 0;
+      await ctrlShort.renderFor("a");
+      await new Promise((r) => setTimeout(r, 10));
+      await ctrlShort.renderFor("b");
+      expect(msgCalls).toBe(2);
+    } finally {
+      rmSync(repoRoot, { recursive: true, force: true });
+    }
+  });
+
+  test("board loadAgents failure emits tgo: warn via injected logger", async () => {
+    const logs: Array<{ level: string; message: string }> = [];
+    const log = (level: "warn" | "info" | "error", message: string) => logs.push({ level, message });
+    const failingClient = { app: { agents: async () => { throw new Error("agents down"); } } } as any;
+    const ctrl = new BoardController({ run: fakeRunner(), log });
+    const ok = await ctrl.shouldInject(failingClient, "bernstein");
+    expect(ok).toBe(true);
+    expect(logs.some((l) => l.message.includes("tgo: board loadAgents failed"))).toBe(true);
   });
 });

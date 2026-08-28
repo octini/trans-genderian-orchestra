@@ -14415,9 +14415,16 @@ async function loadTgoConfig(options) {
   });
   return parsed;
 }
-async function validateAgentDir(agentDir) {
+async function validateAgentDir(agentDir, log) {
   let checked = 0;
-  const files = await fs.readdir(agentDir).catch(() => []);
+  const files = await fs.readdir(agentDir).catch((err) => {
+    const msg = "tgo: validateAgentDir readdir failed";
+    if (log)
+      log("warn", msg, { agentDir, error: String(err) });
+    else
+      console.warn(`${msg}: ${String(err)}`, { agentDir });
+    return [];
+  });
   for (const file2 of files) {
     if (!file2.endsWith(".md"))
       continue;
@@ -14529,7 +14536,8 @@ async function updateProgress(repoRoot, issueId, merge2) {
       let next;
       try {
         next = merge2(current);
-      } catch {
+      } catch (err) {
+        console.warn(`tgo: updateProgress merge failed: ${String(err)}`, { repoRoot, issueId });
         return false;
       }
       if (!next.extra)
@@ -15116,11 +15124,23 @@ class BoardController {
   injectedSessions = new Set;
   agentCache;
   sessionReuse;
+  log;
+  sessionMessagesCache = new Map;
   constructor(opts) {
     this.run = opts.run;
     this.shim = opts.shim ?? createShim();
     this.refreshMs = opts.refreshMs ?? DEFAULT_BOARD_REFRESH_MS;
     this.sessionReuse = opts.sessionReuse;
+    this.log = opts.log;
+  }
+  async fetchSessionMessagesCached(sid) {
+    const now = Date.now();
+    const cached2 = this.sessionMessagesCache.get(sid);
+    if (cached2 && now - cached2.at < this.refreshMs)
+      return cached2.raw;
+    const raw = await this.sessionReuse.client.session.messages({ path: { id: sid } });
+    this.sessionMessagesCache.set(sid, { raw, at: now });
+    return raw;
   }
   get shimState() {
     return this.shim;
@@ -15130,7 +15150,12 @@ class BoardController {
     if (this.agentCache && now - this.agentCache.at < 30000)
       return this.agentCache.byName;
     const byName = new Map;
-    const res = await client.app.agents().catch(() => {
+    const res = await client.app.agents().catch((err) => {
+      const msg = "tgo: board loadAgents failed";
+      if (this.log)
+        this.log("warn", msg, { error: String(err) });
+      else
+        console.warn(`${msg}: ${String(err)}`);
       return;
     });
     for (const agent of res?.data ?? []) {
@@ -15152,7 +15177,12 @@ class BoardController {
     if (this.injectedSessions.has(input.sessionID))
       return;
     this.injectedSessions.add(input.sessionID);
-    const session = await client.session.get({ path: { id: input.sessionID } }).catch(() => {
+    const session = await client.session.get({ path: { id: input.sessionID } }).catch((err) => {
+      const msg = "tgo: board gate session.get failed";
+      if (this.log)
+        this.log("warn", msg, { sessionID: input.sessionID, error: String(err) });
+      else
+        console.warn(`${msg}: ${String(err)}`, { sessionID: input.sessionID });
       return;
     });
     const isPrimary = Boolean(session?.data && Object.prototype.hasOwnProperty.call(session.data, "parentID") && session.data.parentID === null);
@@ -15212,8 +15242,13 @@ class BoardController {
         const sid = entry.sessionId;
         let raw;
         try {
-          raw = await this.sessionReuse.client.session.messages({ path: { id: sid } });
-        } catch {
+          raw = await this.fetchSessionMessagesCached(sid);
+        } catch (err) {
+          const msg = "tgo: board session.messages failed";
+          if (this.log)
+            this.log("warn", msg, { sessionId: sid, error: String(err) });
+          else
+            console.warn(`${msg}: ${String(err)}`, { sessionId: sid });
           continue;
         }
         const messages = Array.isArray(raw) ? raw : Array.isArray(raw?.data) ? raw.data : [];
@@ -15308,9 +15343,11 @@ class ConcisionController {
   register;
   primaryCache = new Map;
   instruction;
+  log;
   constructor(opts) {
     this.enabled = opts.enabled ?? DEFAULT_CONCISION_ENABLED;
     this.register = opts.register ?? "concise";
+    this.log = opts.log;
   }
   async buildInstruction() {
     this.instruction ??= await buildConcisionInstruction(this.register);
@@ -15320,7 +15357,12 @@ class ConcisionController {
     const cached2 = this.primaryCache.get(sessionID);
     if (cached2 !== undefined)
       return cached2;
-    const res = await client.session.get({ path: { id: sessionID } }).catch(() => {
+    const res = await client.session.get({ path: { id: sessionID } }).catch((err) => {
+      const msg = "tgo: concision isPrimary session.get failed";
+      if (this.log)
+        this.log("warn", msg, { sessionID, error: String(err) });
+      else
+        console.warn(`${msg}: ${String(err)}`, { sessionID });
       return;
     });
     const data = res?.data;
@@ -15552,10 +15594,12 @@ class StyleReinforcementController {
   enabled;
   productionEnabled;
   primaryCache = new Map;
+  log;
   constructor(opts) {
     this.enabled = opts.enabled ?? true;
     this.productionEnabled = opts.productionEnabled ?? false;
     this.register = opts.register ?? "concise";
+    this.log = opts.log;
   }
   state(sessionID) {
     let state = this.sessions.get(sessionID);
@@ -15583,7 +15627,12 @@ class StyleReinforcementController {
     const cached2 = this.primaryCache.get(sessionID);
     if (cached2 !== undefined)
       return cached2;
-    const result = await client.session.get({ path: { id: sessionID } }).catch(() => {
+    const result = await client.session.get({ path: { id: sessionID } }).catch((err) => {
+      const msg = "tgo: style-reinforcement isPrimary session.get failed";
+      if (this.log)
+        this.log("warn", msg, { sessionID, error: String(err) });
+      else
+        console.warn(`${msg}: ${String(err)}`, { sessionID });
       return;
     });
     const data = result?.data;
@@ -16138,6 +16187,8 @@ class SetupController {
   hasBd;
   installBd;
   attempted = new Set;
+  failureCounts = new Map;
+  static MAX_SETUP_FAILURES = 3;
   constructor(opts) {
     this.run = opts.run;
     this.hasBd = opts.hasBd;
@@ -16174,26 +16225,51 @@ class SetupController {
       return { action: "failed", error: "no directory" };
     if (this.attempted.has(directory))
       return { action: "already-set-up" };
-    this.attempted.add(directory);
-    if (!await this.needsSetup(directory)) {
+    const failCount = this.failureCounts.get(directory) ?? 0;
+    if (failCount >= SetupController.MAX_SETUP_FAILURES) {
       this.attempted.add(directory);
       return { action: "already-set-up" };
     }
-    if (!await this.hasBd()) {
-      if (this.installBd) {
-        try {
-          await this.installBd();
-        } catch (error51) {
-          return { action: "failed", error: `bd install failed: ${String(error51)}` };
+    let needs;
+    try {
+      needs = await this.needsSetup(directory);
+    } catch (error51) {
+      this.failureCounts.set(directory, failCount + 1);
+      return { action: "failed", error: String(error51) };
+    }
+    if (!needs) {
+      this.attempted.add(directory);
+      this.failureCounts.delete(directory);
+      return { action: "already-set-up" };
+    }
+    try {
+      if (!await this.hasBd()) {
+        if (this.installBd) {
+          try {
+            await this.installBd();
+          } catch (error51) {
+            this.failureCounts.set(directory, failCount + 1);
+            return { action: "failed", error: `bd install failed: ${String(error51)}` };
+          }
+        }
+        if (!await this.hasBd()) {
+          this.attempted.add(directory);
+          this.failureCounts.delete(directory);
+          return { action: "no-bd" };
         }
       }
-      if (!await this.hasBd()) {
-        this.attempted.add(directory);
-        return { action: "no-bd" };
-      }
+    } catch (error51) {
+      this.failureCounts.set(directory, failCount + 1);
+      return { action: "failed", error: String(error51) };
     }
     const steps = [];
-    const missing = await this.missingSteps(directory);
+    let missing;
+    try {
+      missing = await this.missingSteps(directory);
+    } catch (error51) {
+      this.failureCounts.set(directory, failCount + 1);
+      return { action: "failed", error: String(error51) };
+    }
     try {
       for (const step of missing) {
         if (step === "bd init" || step === "bd setup opencode") {
@@ -16209,9 +16285,11 @@ class SetupController {
         steps.push(step);
       }
     } catch (error51) {
+      this.failureCounts.set(directory, failCount + 1);
       return { action: "failed", error: String(error51) };
     }
     this.attempted.add(directory);
+    this.failureCounts.delete(directory);
     return { action: "completed", steps };
   }
 }
@@ -16325,8 +16403,15 @@ function resolveActivePreset(config2, memories) {
     return nudged;
   return config2.preset;
 }
-async function readPresetNudge(run) {
-  const raw = await run(BD_MEMORIES_COMMAND).catch(() => "");
+async function readPresetNudge(run, log) {
+  const raw = await run(BD_MEMORIES_COMMAND).catch((err) => {
+    const msg = "tgo: readPresetNudge bd memories failed";
+    if (log)
+      log("warn", msg, { error: String(err) });
+    else
+      console.warn(`${msg}: ${String(err)}`);
+    return "";
+  });
   if (!raw)
     return {};
   try {
@@ -17157,7 +17242,9 @@ var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => 
       if (drift?.drift) {
         appLog("warn", `TGO update available: installed ${drift.local} < npm ${drift.latest} — run: opencode plugin trans-genderian-orchestra --force -g and restart`, { local: drift.local, latest: drift.latest });
       }
-    }).catch(() => {});
+    }).catch((err) => {
+      appLog("warn", "tgo: version drift check failed", { error: String(err) });
+    });
   }
   if (config2.selfUpdate?.enabled !== false) {
     (async () => {
@@ -17186,12 +17273,16 @@ var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => 
           },
           log: (level, msg) => appLog(level, msg)
         });
-      } catch {}
-    })().catch(() => {});
+      } catch (err) {
+        appLog("warn", "tgo: self-update failed", { error: String(err) });
+      }
+    })().catch((err) => {
+      appLog("warn", "tgo: self-update failed", { error: String(err) });
+    });
   }
   const seatDir = config2.agentDir ?? path10.join(os3.homedir(), ".config", "opencode", "agent");
   try {
-    const checked = await validateAgentDir(seatDir);
+    const checked = await validateAgentDir(seatDir, appLog);
     if (checked > 0) {
       appLog("info", `validated ${checked} seat prompt(s) under budget (${seatDir})`);
     }
@@ -17215,17 +17306,20 @@ var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => 
       maxContextTokens: config2.sessionReuse?.maxContextTokens ?? 1e5,
       supported: reuseCapability.supported,
       enabled: config2.sessionReuse?.enabled !== false
-    }
+    },
+    log: appLog
   });
   const reconciler = new SessionReconciler({ shim: board.shimState });
   const concision = new ConcisionController({
     enabled: config2.concision?.enabled,
-    register: config2.register
+    register: config2.register,
+    log: appLog
   });
   const styleReinforcement = new StyleReinforcementController({
     enabled: config2.concision?.enabled,
     productionEnabled: config2.concision?.reinforcement,
-    register: config2.register
+    register: config2.register,
+    log: appLog
   });
   const fit = new TaskFitController;
   const watchdog = new WatchdogController(config2.watchdog, {
@@ -17394,7 +17488,7 @@ var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => 
       }
     },
     config: async (input) => {
-      const active = resolveActivePreset(config2, await readPresetNudge(runBd));
+      const active = resolveActivePreset(config2, await readPresetNudge(runBd, appLog));
       const applied = applyPreset({ agent: input.agent }, active, config2.presets);
       appLog("info", `preset "${active}" applied to ${applied.length ? applied.join(", ") : "no seats"}`);
       const worktreeRoot = resolveWorktreeFamily(project?.worktree, worktree, directory);

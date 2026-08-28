@@ -61,7 +61,9 @@ export const TgoPlugin: Plugin = async (
           );
         }
       })
-      .catch(() => {});
+      .catch((err) => {
+        appLog("warn", "tgo: version drift check failed", { error: String(err) });
+      });
   }
 
   if (config.selfUpdate?.enabled !== false) {
@@ -91,8 +93,12 @@ export const TgoPlugin: Plugin = async (
           },
           log: (level, msg) => appLog(level, msg),
         });
-      } catch {}
-    })().catch(() => {});
+      } catch (err) {
+        appLog("warn", "tgo: self-update failed", { error: String(err) });
+      }
+    })().catch((err) => {
+      appLog("warn", "tgo: self-update failed", { error: String(err) });
+    });
   }
 
   const seatDir =
@@ -102,7 +108,7 @@ export const TgoPlugin: Plugin = async (
   // an oversized hand-edited seat must not take TGO down. install/validate
   // paths still enforce the budget strictly.
   try {
-    const checked = await validateAgentDir(seatDir);
+    const checked = await validateAgentDir(seatDir, appLog);
     if (checked > 0) {
       appLog("info", `validated ${checked} seat prompt(s) under budget (${seatDir})`);
     }
@@ -129,6 +135,7 @@ export const TgoPlugin: Plugin = async (
       supported: reuseCapability.supported,
       enabled: config.sessionReuse?.enabled !== false,
     },
+    log: appLog,
   });
 
   const reconciler = new SessionReconciler({ shim: board.shimState });
@@ -136,11 +143,13 @@ export const TgoPlugin: Plugin = async (
   const concision = new ConcisionController({
     enabled: config.concision?.enabled,
     register: config.register,
+    log: appLog,
   });
   const styleReinforcement = new StyleReinforcementController({
     enabled: config.concision?.enabled,
     productionEnabled: config.concision?.reinforcement,
     register: config.register,
+    log: appLog,
   });
 
   const fit = new TaskFitController();
@@ -329,7 +338,7 @@ export const TgoPlugin: Plugin = async (
     },
 
     config: async (input) => {
-      const active = resolveActivePreset(config, await readPresetNudge(runBd));
+      const active = resolveActivePreset(config, await readPresetNudge(runBd, appLog));
       const applied = applyPreset(
         { agent: input.agent as Record<string, Record<string, unknown>> },
         active,

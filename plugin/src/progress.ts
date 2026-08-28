@@ -135,7 +135,8 @@ export async function updateProgress(
       let next: ProgressParts;
       try {
         next = merge(current);
-      } catch {
+      } catch (err) {
+        console.warn(`tgo: updateProgress merge failed: ${String(err)}`, { repoRoot, issueId });
         return false;
       }
 

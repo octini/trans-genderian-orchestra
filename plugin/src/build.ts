@@ -47,7 +47,10 @@ export async function renderSeats(
   register: Register = "concise"
 ): Promise<RenderedSeat[]> {
   const houseStyle = await loadHouseStyle();
-  const files = await fs.readdir(sourceDir).catch(() => []);
+  const files = await fs.readdir(sourceDir).catch((err) => {
+    console.warn(`tgo: renderSeats readdir failed: ${String(err)}`, { sourceDir });
+    return [] as string[];
+  });
   const seats: RenderedSeat[] = [];
   for (const file of files) {
     if (!file.endsWith(".md")) continue;

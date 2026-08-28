@@ -43,10 +43,12 @@ export class ConcisionController {
   private readonly register: Register;
   private readonly primaryCache = new Map<string, boolean>();
   private instruction: string | undefined;
+  private readonly log?: (level: "warn" | "info" | "error", message: string, extra?: Record<string, unknown>) => void;
 
-  constructor(opts: { enabled?: boolean; register?: Register }) {
+  constructor(opts: { enabled?: boolean; register?: Register; log?: (level: "warn" | "info" | "error", message: string, extra?: Record<string, unknown>) => void }) {
     this.enabled = opts.enabled ?? DEFAULT_CONCISION_ENABLED;
     this.register = opts.register ?? "concise";
+    this.log = opts.log;
   }
 
   async buildInstruction(): Promise<string> {
@@ -60,7 +62,12 @@ export class ConcisionController {
   ): Promise<boolean> {
     const cached = this.primaryCache.get(sessionID);
     if (cached !== undefined) return cached;
-    const res = await client.session.get({ path: { id: sessionID } }).catch(() => undefined);
+    const res = await client.session.get({ path: { id: sessionID } }).catch((err) => {
+      const msg = "tgo: concision isPrimary session.get failed";
+      if (this.log) this.log("warn", msg, { sessionID, error: String(err) });
+      else console.warn(`${msg}: ${String(err)}`, { sessionID });
+      return undefined;
+    });
     const data = res?.data;
     const primary = Boolean(
       data && Object.prototype.hasOwnProperty.call(data, "parentID") && data.parentID === null

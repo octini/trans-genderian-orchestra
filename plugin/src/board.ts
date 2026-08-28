@@ -312,17 +312,30 @@ export class BoardController {
   private readonly injectedSessions = new Set<string>();
   private agentCache: { byName: Map<string, "primary" | "subagent" | "all">; at: number } | undefined;
   private readonly sessionReuse?: SessionReuseDeps;
+  private readonly log?: (level: "warn" | "info" | "error", message: string, extra?: Record<string, unknown>) => void;
+  private readonly sessionMessagesCache = new Map<string, { raw: any; at: number }>();
 
   constructor(opts: {
     run: BdRunner;
     shim?: BoardShim;
     refreshMs?: number;
     sessionReuse?: SessionReuseDeps;
+    log?: (level: "warn" | "info" | "error", message: string, extra?: Record<string, unknown>) => void;
   }) {
     this.run = opts.run;
     this.shim = opts.shim ?? createShim();
     this.refreshMs = opts.refreshMs ?? DEFAULT_BOARD_REFRESH_MS;
     this.sessionReuse = opts.sessionReuse;
+    this.log = opts.log;
+  }
+
+  private async fetchSessionMessagesCached(sid: string): Promise<any> {
+    const now = Date.now();
+    const cached = this.sessionMessagesCache.get(sid);
+    if (cached && now - cached.at < this.refreshMs) return cached.raw;
+    const raw = await this.sessionReuse!.client.session.messages({ path: { id: sid } });
+    this.sessionMessagesCache.set(sid, { raw, at: now });
+    return raw;
   }
 
   get shimState(): BoardShim {
@@ -335,7 +348,12 @@ export class BoardController {
     const now = Date.now();
     if (this.agentCache && now - this.agentCache.at < 30_000) return this.agentCache.byName;
     const byName = new Map<string, "primary" | "subagent" | "all">();
-    const res = await client.app.agents().catch(() => undefined);
+    const res = await client.app.agents().catch((err) => {
+      const msg = "tgo: board loadAgents failed";
+      if (this.log) this.log("warn", msg, { error: String(err) });
+      else console.warn(`${msg}: ${String(err)}`);
+      return undefined;
+    });
     for (const agent of res?.data ?? []) {
       byName.set(agent.name, agent.mode);
     }
@@ -363,7 +381,12 @@ export class BoardController {
   ): Promise<void> {
     if (this.injectedSessions.has(input.sessionID)) return;
     this.injectedSessions.add(input.sessionID);
-    const session = await client.session.get({ path: { id: input.sessionID } }).catch(() => undefined);
+    const session = await client.session.get({ path: { id: input.sessionID } }).catch((err) => {
+      const msg = "tgo: board gate session.get failed";
+      if (this.log) this.log("warn", msg, { sessionID: input.sessionID, error: String(err) });
+      else console.warn(`${msg}: ${String(err)}`, { sessionID: input.sessionID });
+      return undefined;
+    });
     const isPrimary = Boolean(
       session?.data &&
         Object.prototype.hasOwnProperty.call(session.data, "parentID") &&
@@ -443,8 +466,11 @@ export class BoardController {
         const sid = entry.sessionId as string;
         let raw: any;
         try {
-          raw = await this.sessionReuse!.client.session.messages({ path: { id: sid } });
-        } catch {
+          raw = await this.fetchSessionMessagesCached(sid);
+        } catch (err) {
+          const msg = "tgo: board session.messages failed";
+          if (this.log) this.log("warn", msg, { sessionId: sid, error: String(err) });
+          else console.warn(`${msg}: ${String(err)}`, { sessionId: sid });
           continue;
         }
         const messages: Array<{ parts: Array<{ type: string; text?: string }> }> = Array.isArray(raw)

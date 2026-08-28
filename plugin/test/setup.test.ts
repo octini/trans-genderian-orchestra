@@ -333,4 +333,43 @@ describe("plugin gate: parentID undefined treated as primary + chat.message fall
     expect(chatShouldRun("child")).toBe(false);
     rmSync(dir, { recursive: true, force: true });
   });
+
+  test("transient failure does not mark attempted — retry succeeds", async () => {
+    const dir = tmpDir();
+    let attempts = 0;
+    const c = controller({
+      run: async () => {
+        attempts++;
+        if (attempts === 1) throw new Error("transient fs error");
+        return "";
+      },
+    });
+    const first = await c.maybeSetup(dir);
+    expect(first.action).toBe("failed");
+    expect(first.error).toContain("transient fs error");
+    const second = await c.maybeSetup(dir);
+    expect(second.action).toBe("completed");
+    // first attempt 1 throw, second attempt runs bd init + bd setup opencode = 2 more calls
+    expect(attempts).toBe(3);
+    const third = await c.maybeSetup(dir);
+    expect(third.action).toBe("already-set-up");
+    expect(attempts).toBe(3);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("caps retries at 3 transient failures then marks attempted", async () => {
+    const dir = tmpDir();
+    const c = controller({
+      run: async () => {
+        throw new Error("persistent transient");
+      },
+    });
+    for (let i = 0; i < 3; i++) {
+      const r = await c.maybeSetup(dir);
+      expect(r.action).toBe("failed");
+    }
+    const fourth = await c.maybeSetup(dir);
+    expect(fourth.action).toBe("already-set-up");
+    rmSync(dir, { recursive: true, force: true });
+  });
 });

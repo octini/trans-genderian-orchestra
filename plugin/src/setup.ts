@@ -25,6 +25,8 @@ export class SetupController {
   private readonly hasBd: SetupControllerOptions["hasBd"];
   private readonly installBd: SetupControllerOptions["installBd"];
   private readonly attempted = new Set<string>();
+  private readonly failureCounts = new Map<string, number>();
+  private static readonly MAX_SETUP_FAILURES = 3;
 
   constructor(opts: SetupControllerOptions) {
     this.run = opts.run;
@@ -65,29 +67,54 @@ export class SetupController {
   async maybeSetup(directory: string): Promise<SetupResult> {
     if (!directory) return { action: "failed", error: "no directory" };
     if (this.attempted.has(directory)) return { action: "already-set-up" };
-    this.attempted.add(directory);
-
-    if (!(await this.needsSetup(directory))) {
+    const failCount = this.failureCounts.get(directory) ?? 0;
+    if (failCount >= SetupController.MAX_SETUP_FAILURES) {
       this.attempted.add(directory);
       return { action: "already-set-up" };
     }
 
-    if (!(await this.hasBd())) {
-      if (this.installBd) {
-        try {
-          await this.installBd();
-        } catch (error) {
-          return { action: "failed", error: `bd install failed: ${String(error)}` };
+    let needs: boolean;
+    try {
+      needs = await this.needsSetup(directory);
+    } catch (error) {
+      this.failureCounts.set(directory, failCount + 1);
+      return { action: "failed", error: String(error) };
+    }
+    if (!needs) {
+      this.attempted.add(directory);
+      this.failureCounts.delete(directory);
+      return { action: "already-set-up" };
+    }
+
+    try {
+      if (!(await this.hasBd())) {
+        if (this.installBd) {
+          try {
+            await this.installBd();
+          } catch (error) {
+            this.failureCounts.set(directory, failCount + 1);
+            return { action: "failed", error: `bd install failed: ${String(error)}` };
+          }
+        }
+        if (!(await this.hasBd())) {
+          this.attempted.add(directory);
+          this.failureCounts.delete(directory);
+          return { action: "no-bd" };
         }
       }
-      if (!(await this.hasBd())) {
-        this.attempted.add(directory);
-        return { action: "no-bd" };
-      }
+    } catch (error) {
+      this.failureCounts.set(directory, failCount + 1);
+      return { action: "failed", error: String(error) };
     }
 
     const steps: string[] = [];
-    const missing = await this.missingSteps(directory);
+    let missing: string[];
+    try {
+      missing = await this.missingSteps(directory);
+    } catch (error) {
+      this.failureCounts.set(directory, failCount + 1);
+      return { action: "failed", error: String(error) };
+    }
     try {
       for (const step of missing) {
         if (step === "bd init" || step === "bd setup opencode") {
@@ -102,9 +129,11 @@ export class SetupController {
         steps.push(step);
       }
     } catch (error) {
+      this.failureCounts.set(directory, failCount + 1);
       return { action: "failed", error: String(error) };
     }
     this.attempted.add(directory);
+    this.failureCounts.delete(directory);
     return { action: "completed", steps };
   }
 }

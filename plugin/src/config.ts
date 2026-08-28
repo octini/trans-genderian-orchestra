@@ -155,9 +155,17 @@ export async function loadTgoConfig(
   return parsed;
 }
 
-export async function validateAgentDir(agentDir: string): Promise<number> {
+export async function validateAgentDir(
+  agentDir: string,
+  log?: (level: "warn" | "info" | "error", message: string, extra?: Record<string, unknown>) => void
+): Promise<number> {
   let checked = 0;
-  const files = await fs.readdir(agentDir).catch(() => []);
+  const files = await fs.readdir(agentDir).catch((err) => {
+    const msg = "tgo: validateAgentDir readdir failed";
+    if (log) log("warn", msg, { agentDir, error: String(err) });
+    else console.warn(`${msg}: ${String(err)}`, { agentDir });
+    return [] as string[];
+  });
   for (const file of files) {
     if (!file.endsWith(".md")) continue;
     const content = await fs.readFile(path.join(agentDir, file), "utf-8");

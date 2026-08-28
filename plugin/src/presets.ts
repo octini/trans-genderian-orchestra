@@ -25,9 +25,15 @@ export function resolveActivePreset(
 }
 
 export async function readPresetNudge(
-  run: (command: string) => Promise<string>
+  run: (command: string) => Promise<string>,
+  log?: (level: "warn" | "info" | "error", message: string, extra?: Record<string, unknown>) => void
 ): Promise<Record<string, unknown>> {
-  const raw = await run(BD_MEMORIES_COMMAND).catch(() => "");
+  const raw = await run(BD_MEMORIES_COMMAND).catch((err) => {
+    const msg = "tgo: readPresetNudge bd memories failed";
+    if (log) log("warn", msg, { error: String(err) });
+    else console.warn(`${msg}: ${String(err)}`);
+    return "";
+  });
   if (!raw) return {};
   try {
     const parsed: unknown = JSON.parse(raw);

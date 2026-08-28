@@ -35,6 +35,16 @@ describe("readPresetNudge", () => {
   test("returns {} on unparseable output", async () => {
     expect(await readPresetNudge(async () => "not json")).toEqual({});
   });
+
+  test("emits tgo: warn via injected logger on bd memories failure", async () => {
+    const logs: Array<{ level: string; message: string; extra?: unknown }> = [];
+    const log = (level: "warn" | "info" | "error", message: string, extra?: Record<string, unknown>) => logs.push({ level, message, extra });
+    const result = await readPresetNudge(async () => {
+      throw new Error("bd down");
+    }, log);
+    expect(result).toEqual({});
+    expect(logs.some((l) => l.level === "warn" && l.message.includes("tgo: readPresetNudge"))).toBe(true);
+  });
 });
 
 describe("resolveActivePreset", () => {
