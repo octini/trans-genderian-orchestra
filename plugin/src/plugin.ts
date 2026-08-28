@@ -20,6 +20,8 @@ import { checkVersionDrift, fetchLatestVersion, PLUGIN_NPM_NAME, readLocalVersio
 import { parseCompletionSignal, terminationDecision, type CompletionSignal } from "./termination";
 import { selfUpdate } from "./self-update";
 import { reconcileSeats } from "./seat-sync";
+import { appendRunEvent, hashArgs, pruneRuns, scanRunsForProblems } from "./runs";
+import { computeMetrics, writeMetrics, readMetrics } from "./metrics";
 // No runtime function re-exports here: opencode's legacy plugin loader calls
 // EVERY exported function as a plugin factory (input, options), so an entry
 // re-export like evaluateClosure gets invoked as one and throws inside the
@@ -212,9 +214,42 @@ export const TgoPlugin: Plugin = async (
     },
   });
 
+  // tgo-2ry: wire watchdog → board gauge and run recovery scan on load (additive)
+  try {
+    board.setWatchdogGetter(() => watchdog.tracked as any);
+  } catch {}
+  void (async () => {
+    const repoRoot = directory ?? worktree ?? (project as unknown as { worktree?: string })?.worktree ?? ".";
+    try {
+      await pruneRuns(repoRoot, {
+        maxAgeMs: (config as any).runs?.maxAgeMs,
+        maxBytes: (config as any).runs?.maxBytes,
+        maxFiles: (config as any).runs?.maxFiles,
+        heartbeatThresholdMs: (config as any).runs?.heartbeatThresholdMs,
+        log: appLog,
+      });
+    } catch {}
+    try {
+      const flags = await scanRunsForProblems(repoRoot, {
+        heartbeatThresholdMs: (config as any).runs?.heartbeatThresholdMs,
+        log: appLog,
+      });
+      if (flags.length > 0) {
+        const { problemsFromRecovery } = await import("./metrics");
+        const problems = problemsFromRecovery(flags as any);
+        try { board.setProblems(problems as any); } catch {}
+        appLog("warn", `tgo: recovery scan flagged ${flags.length} runs`, { flags: flags as any });
+      }
+    } catch (e) {
+      safeWarn(appLog, `recovery scan failed: ${String(e)}`);
+    }
+  })();
+
   const delegatedSessionIds = new Set<string>();
   const completionSignals = new Map<string, { signal: CompletionSignal; text: string; exitGateRequired: boolean }>();
   const terminationParentIds = new Map<string, string | undefined>();
+  // tgo-2ry: run snapshot start times for durationMs
+  const runToolStarts = new Map<string, number>();
 
   const setup = new SetupController({
     run: async (command, cwd) => {
@@ -579,6 +614,52 @@ export const TgoPlugin: Plugin = async (
         typeof output.args === "object" &&
         (output.args as Record<string, unknown>).background === true;
       watchdog.noteToolStart(input.sessionID, background, input.tool, output?.args);
+      // tgo-2ry: append-only run snapshot — step event (writer)
+      void (async () => {
+        try {
+          const repoRoot = directory ?? worktree ?? (project as unknown as { worktree?: string })?.worktree ?? ".";
+          let runId: string | undefined;
+          try {
+            const rawArgs = output?.args as Record<string, unknown> | undefined;
+            const packet = rawArgs?.delegationPacket as Record<string, unknown> | undefined;
+            if (packet && typeof packet.issueId === "string" && isValidBeadID((packet.issueId as string).trim())) {
+              runId = (packet.issueId as string).trim();
+            }
+          } catch {}
+          if (!runId) {
+            try {
+              const map = await loadSessionMap(repoRoot);
+              for (const [iid, entry] of Object.entries(map)) {
+                if (entry.sessionId === input.sessionID) { runId = iid; break; }
+              }
+            } catch {}
+          }
+          if (!runId || !isValidBeadID(runId)) return;
+          const seat = board.shimState.agents.get(input.sessionID) ?? "dylan";
+          const argsHash = hashArgs(output?.args);
+          const ts = Date.now();
+          runToolStarts.set(`${runId}:${input.tool}:${ts}`, ts);
+          // also keep a simple key for after hook lookup: last start for this run+tool
+          runToolStarts.set(`${runId}:${input.tool}:last`, ts);
+          await appendRunEvent(repoRoot, runId, {
+            ts,
+            type: "step",
+            seat,
+            tool: input.tool,
+            argsHash,
+            note: `start ${input.tool}`,
+          });
+          // heartbeat piggyback — also log a heartbeat event so dead-heartbeat detection has data
+          try {
+            await appendRunEvent(repoRoot, runId, {
+              ts,
+              type: "heartbeat",
+              seat,
+              note: "heartbeat",
+            });
+          } catch {}
+        } catch {}
+      })();
     },
 
     "tool.execute.after": async (input, output) => {
@@ -589,6 +670,47 @@ export const TgoPlugin: Plugin = async (
       const isProgress = input.tool === "edit";
       watchdog.noteToolEnd(input.sessionID, background, isProgress);
       watchdog.noteActivity(input.sessionID);
+      // tgo-2ry: run snapshot — completion event with duration/ok
+      void (async () => {
+        try {
+          const repoRoot = directory ?? worktree ?? (project as unknown as { worktree?: string })?.worktree ?? ".";
+          let runId: string | undefined;
+          try {
+            const argsRec = input.args as Record<string, unknown> | undefined;
+            const packet = argsRec?.delegationPacket as Record<string, unknown> | undefined;
+            if (packet && typeof packet.issueId === "string" && isValidBeadID((packet.issueId as string).trim())) {
+              runId = (packet.issueId as string).trim();
+            }
+          } catch {}
+          if (!runId) {
+            try {
+              const map = await loadSessionMap(repoRoot);
+              for (const [iid, entry] of Object.entries(map)) {
+                if (entry.sessionId === input.sessionID) { runId = iid; break; }
+              }
+            } catch {}
+          }
+          if (!runId || !isValidBeadID(runId)) return;
+          const seat = board.shimState.agents.get(input.sessionID) ?? "dylan";
+          const lastKey = `${runId}:${input.tool}:last`;
+          const startTs = runToolStarts.get(lastKey);
+          const nowTs = Date.now();
+          const durationMs = startTs ? nowTs - startTs : undefined;
+          if (startTs) runToolStarts.delete(lastKey);
+          const ok = !(output as any)?.error && (output as any)?.output !== undefined ? true : undefined;
+          const argsHash = hashArgs(input.args);
+          await appendRunEvent(repoRoot, runId, {
+            ts: nowTs,
+            type: "status",
+            seat,
+            tool: input.tool,
+            argsHash,
+            ok: ok ?? true,
+            durationMs,
+            note: `end ${input.tool}`,
+          });
+        } catch {}
+      })();
       if (reuseCapability.supported) {
         // After-hook is read-only for snapshots — write-once at start only (P1). Never touches def-snapshot.
         await captureDelegationSession({ tool: input.tool, input, output, repoRoot: directory ?? worktree ?? (project as unknown as { worktree?: string })?.worktree ?? ".", enabled: config.sessionReuse?.enabled !== false, log: appLog });

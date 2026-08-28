@@ -468,3 +468,33 @@ export class WatchdogController {
     this.sessions.delete(tracked.sessionID);
   }
 }
+
+// ── tgo-2ry: dead-heartbeat detection for run snapshots (additive, no rewrite) ──
+export const DEFAULT_RUN_HEARTBEAT_THRESHOLD_MS = 5 * 60 * 1000;
+
+export function isDeadHeartbeat(opts: { lastHeartbeatMs?: number; now: number; thresholdMs?: number; hasTerminalStatus: boolean }): boolean {
+  if (opts.hasTerminalStatus) return false;
+  if (opts.lastHeartbeatMs === undefined) return false;
+  const threshold = opts.thresholdMs ?? DEFAULT_RUN_HEARTBEAT_THRESHOLD_MS;
+  return opts.now - opts.lastHeartbeatMs > threshold;
+}
+
+export async function detectDeadHeartbeatRuns(
+  repoRoot: string,
+  opts: { thresholdMs?: number; now?: number; log?: (level: "warn" | "info" | "error", message: string, extra?: Record<string, unknown>) => void } = {},
+): Promise<Array<{ runId: string; lastHeartbeat?: number }>> {
+  const { scanRunsForProblems } = await import("./runs");
+  const flags = await scanRunsForProblems(repoRoot, {
+    heartbeatThresholdMs: opts.thresholdMs ?? DEFAULT_RUN_HEARTBEAT_THRESHOLD_MS,
+    now: opts.now,
+    log: opts.log,
+  });
+  return flags.filter((f) => f.reason === "dead-heartbeat").map((f) => ({ runId: f.runId, lastHeartbeat: f.lastHeartbeat }));
+}
+
+export type WatchdogProblemState = "stuck" | "aborted" | "idle";
+export function watchdogReasonToProblemState(reason: "wall-clock" | "idle" | "stuck-loop"): WatchdogProblemState {
+  if (reason === "stuck-loop") return "stuck";
+  if (reason === "idle") return "idle";
+  return "aborted";
+}

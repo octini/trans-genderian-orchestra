@@ -101,6 +101,17 @@ const selfUpdateConfig = z.object({
   enabled: z.boolean().default(true),
 });
 
+const runsConfig = z.object({
+  maxAgeMs: z.number().int().positive().default(7 * 24 * 60 * 60 * 1000),
+  maxBytes: z.number().int().positive().default(50 * 1024 * 1024),
+  maxFiles: z.number().int().positive().default(200),
+  heartbeatThresholdMs: z.number().int().positive().default(5 * 60 * 1000),
+});
+
+const metricsConfig = z.object({
+  enabled: z.boolean().default(true),
+});
+
 export const tgoConfigSchema = z.object({
   preset: z.enum(PRESET_NAMES).default("balanced"),
   presets: z
@@ -127,6 +138,13 @@ export const tgoConfigSchema = z.object({
   sessionReuse: sessionReuseConfig.optional().default(() => ({ enabled: true, maxContextTokens: 100000 })),
   termination: terminationConfig.optional().default(() => ({ enabled: true })),
   selfUpdate: selfUpdateConfig.optional().default(() => ({ enabled: true })),
+  runs: runsConfig.optional().default(() => ({
+    maxAgeMs: 7 * 24 * 60 * 60 * 1000,
+    maxBytes: 50 * 1024 * 1024,
+    maxFiles: 200,
+    heartbeatThresholdMs: 5 * 60 * 1000,
+  })),
+  metrics: metricsConfig.optional().default(() => ({ enabled: true })),
 });
 
 export type TgoConfig = z.infer<typeof tgoConfigSchema>;
