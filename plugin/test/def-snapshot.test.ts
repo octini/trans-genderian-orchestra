@@ -33,7 +33,7 @@ import { hashString as watchdogHashString } from "../src/watchdog";
 import { buildBoardTextWithHints, BoardController } from "../src/board";
 import { validateDelegationPacket } from "../src/delegation";
 import type { RoutingClassification } from "../src/fit";
-import { hashFivePartPacket, isValidBeadID, assertValidBeadID, __setDefSnapshotWriteDelayForTest, __clearDefSnapshotWriteDelayForTest } from "../src/def-snapshot";
+import { hashFivePartPacket, normalizeFivePartSections, canonicalizeFivePart, isValidBeadID, assertValidBeadID, __setDefSnapshotWriteDelayForTest, __clearDefSnapshotWriteDelayForTest } from "../src/def-snapshot";
 import { captureDelegationSession } from "../src/session-reuse";
 
 function tmpDir(): string {
@@ -113,15 +113,21 @@ describe("hash vector pinned", () => {
     expect(delimiterInObjective).not.toBe(baseHash);
     expect(splitAcross).not.toBe(baseHash);
     expect(delimiterInObjective).not.toBe(splitAcross);
-    // boundary collision: EXACT vectors that collide under old "\n---\n" join but distinct under length-prefix
-    const sectionsX = ["a", "b\n---\nc", "", "", ""];
-    const sectionsY = ["a\n---\nb", "c", "", "", ""];
-    const oldJoin = (arr: string[]) => arr.join("\n---\n");
-    const newCanonical = (arr: string[]) => arr.map((s) => `${s.length}:${s}`).join("");
-    expect(oldJoin(sectionsX)).toBe(oldJoin(sectionsY));
-    expect(newCanonical(sectionsX)).not.toBe(newCanonical(sectionsY));
-    const hashX = hashFivePartPacket({ Objective: sectionsX[0], Files: sectionsX[1], Interfaces: sectionsX[2], Constraints: sectionsX[3], Verification: sectionsX[4] });
-    const hashY = hashFivePartPacket({ Objective: sectionsY[0], Files: sectionsY[1], Interfaces: sectionsY[2], Constraints: sectionsY[3], Verification: sectionsY[4] });
+    // boundary collision: EXACT vectors that collide under old "\n---\n" join but distinct under length-prefix — on production-normalized inputs
+    const rawX = { Objective: "a", Files: "b\n---\nc", Interfaces: "", Constraints: "", Verification: "" };
+    const rawY = { Objective: "a\n---\nb", Files: "c", Interfaces: "", Constraints: "", Verification: "" };
+    const normX = normalizeFivePartSections(rawX);
+    const normY = normalizeFivePartSections(rawY);
+    expect(normX).toEqual(["a", "b\n---\nc", "", "", ""]);
+    expect(normY).toEqual(["a\n---\nb", "c", "", "", ""]);
+    const oldJoiner = (parts: string[]) => parts.join("\n---\n");
+    // (a) real collision under old scheme on production-normalized inputs
+    expect(canonicalizeFivePart(normX, oldJoiner)).toBe(canonicalizeFivePart(normY, oldJoiner));
+    // (b) distinct under length-prefix (default)
+    expect(canonicalizeFivePart(normX)).not.toBe(canonicalizeFivePart(normY));
+    // (c) end-to-end hashes distinct
+    const hashX = hashFivePartPacket(rawX);
+    const hashY = hashFivePartPacket(rawY);
     expect(hashX).not.toBe(hashY);
   });
 });

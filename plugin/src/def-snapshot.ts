@@ -45,6 +45,36 @@ export function defSnapshotPath(repoRoot: string, issueId: string): string {
 
 // Hash the complete five-part delegation definition — mutating any section changes the hash.
 // Canonical form: length-prefixed sections ("${len}:${section}" joined) prevents delimiter collision.
+export function normalizeFivePartSections(packet: {
+  Objective?: unknown;
+  Files?: unknown;
+  Interfaces?: unknown;
+  Constraints?: unknown;
+  Verification?: unknown;
+}): string[] {
+  const obj = typeof packet.Objective === "string" ? packet.Objective : JSON.stringify(packet.Objective ?? "");
+  const files = Array.isArray(packet.Files)
+    ? JSON.stringify(packet.Files)
+    : typeof packet.Files === "string"
+      ? packet.Files
+      : JSON.stringify(packet.Files ?? "");
+  const interfaces = typeof packet.Interfaces === "string" ? packet.Interfaces : JSON.stringify(packet.Interfaces ?? "");
+  const constraints = typeof packet.Constraints === "string" ? packet.Constraints : JSON.stringify(packet.Constraints ?? "");
+  const verification = typeof packet.Verification === "string" ? packet.Verification : JSON.stringify(packet.Verification ?? "");
+  return [obj, files, interfaces, constraints, verification];
+}
+
+export function lengthPrefixJoin(parts: string[]): string {
+  return parts.map((s) => `${s.length}:${s}`).join("");
+}
+
+export function canonicalizeFivePart(
+  sections: string[],
+  joiner: (parts: string[]) => string = lengthPrefixJoin,
+): string {
+  return joiner(sections);
+}
+
 export function hashFivePartPacket(packet: {
   Objective?: unknown;
   Files?: unknown;
@@ -52,12 +82,8 @@ export function hashFivePartPacket(packet: {
   Constraints?: unknown;
   Verification?: unknown;
 }): string {
-  const obj = typeof packet.Objective === "string" ? packet.Objective : JSON.stringify(packet.Objective ?? "");
-  const files = Array.isArray(packet.Files) ? JSON.stringify(packet.Files) : JSON.stringify(packet.Files ?? "");
-  const interfaces = typeof packet.Interfaces === "string" ? packet.Interfaces : JSON.stringify(packet.Interfaces ?? "");
-  const constraints = typeof packet.Constraints === "string" ? packet.Constraints : JSON.stringify(packet.Constraints ?? "");
-  const verification = typeof packet.Verification === "string" ? packet.Verification : JSON.stringify(packet.Verification ?? "");
-  const canonical = [obj, files, interfaces, constraints, verification].map((s) => `${s.length}:${s}`).join("");
+  const sections = normalizeFivePartSections(packet);
+  const canonical = canonicalizeFivePart(sections);
   return hashString(canonical);
 }
 
