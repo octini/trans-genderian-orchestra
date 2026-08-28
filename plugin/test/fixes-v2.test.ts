@@ -12,29 +12,68 @@ function tmpDir() { return mkdtempSync(path.join(os.tmpdir(), "tgo-fix-")); }
 
 describe("F1 sessionToRunId per-dispatch + child seeding", () => {
   test("two sequential delegations from one parent get distinct runIds", async () => {
-    // Simulate plugin's sessionToRunId logic: parent session dispatches two tasks sequentially
-    const parentSid = "sess-parent-1";
-    const runId1 = "tgo-f1-first.1";
-    const runId2 = "tgo-f1-second.1";
-    const childSid1 = "sess-child-1";
-    const childSid2 = "sess-child-2";
-    // Simulate in-memory map as plugin does
-    const sessionToRunId = new Map<string, string>();
-    // First dispatch
-    sessionToRunId.set(parentSid, runId1);
-    // Child created from first dispatch — seeded at session.created
-    sessionToRunId.set(childSid1, sessionToRunId.get(parentSid)!);
-    expect(sessionToRunId.get(childSid1)).toBe(runId1);
-    // Second dispatch from same parent overwrites parent mapping (per-dispatch)
-    sessionToRunId.set(parentSid, runId2);
-    expect(sessionToRunId.get(parentSid)).toBe(runId2);
-    // Child from second dispatch gets new runId, not first
-    sessionToRunId.set(childSid2, sessionToRunId.get(parentSid)!);
-    expect(sessionToRunId.get(childSid2)).toBe(runId2);
-    expect(sessionToRunId.get(childSid2)).not.toBe(runId1);
-    // Child tool events resolve immediately via map
-    expect(sessionToRunId.get(childSid1)).toBe(runId1);
-    expect(sessionToRunId.get(childSid2)).toBe(runId2);
+    const dir = tmpDir();
+    try {
+      const parentSid = "sess-parent-1";
+      const runId1 = "tgo-f1-first.1";
+      const runId2 = "tgo-f1-second.1";
+      const childSid1 = "sess-child-1";
+      const childSid2 = "sess-child-2";
+      const sessionToRunId = new Map<string, string>();
+      const { isValidBeadID } = await import("../src/def-snapshot");
+
+      // Helper mirrors the FIXED hook: FIRST extract packet issueId and overwrite mapping,
+      // THEN fall back to existing session→runId only when packet carries no issueId.
+      function resolveRunId(sessionId: string, packetIssueId: string | undefined): string | undefined {
+        let incoming: string | undefined;
+        if (packetIssueId && typeof packetIssueId === "string" && isValidBeadID(packetIssueId.trim())) {
+          incoming = packetIssueId.trim();
+        }
+        if (incoming) {
+          sessionToRunId.set(sessionId, incoming);
+          return incoming;
+        }
+        if (sessionToRunId.has(sessionId)) return sessionToRunId.get(sessionId)!;
+        return undefined;
+      }
+
+      // First dispatch from parent with delegationPacket issueId runId1
+      const resolved1 = resolveRunId(parentSid, runId1);
+      expect(resolved1).toBe(runId1);
+      expect(sessionToRunId.get(parentSid)).toBe(runId1);
+      await appendRunEvent(dir, resolved1!, { ts: Date.now(), type: "step", seat: "dylan", tool: "task", argsHash: hashArgs({}), ok: true, issueId: resolved1!, note: "start task" });
+      // Child from first dispatch seeded at session.created
+      sessionToRunId.set(childSid1, sessionToRunId.get(parentSid)!);
+      expect(sessionToRunId.get(childSid1)).toBe(runId1);
+
+      // Second sequential dispatch from SAME parent with new packet runId2 must NOT reuse runId1
+      // Bug before fix: sessionToRunId.has(parentSid) checked first would return runId1 and ignore packet.
+      const resolved2 = resolveRunId(parentSid, runId2);
+      expect(resolved2).toBe(runId2);
+      expect(resolved2).not.toBe(runId1);
+      expect(sessionToRunId.get(parentSid)).toBe(runId2);
+      // Dispatch #2's events must land in run #2's log, not run #1's
+      await appendRunEvent(dir, resolved2!, { ts: Date.now(), type: "step", seat: "dylan", tool: "task", argsHash: hashArgs({}), ok: true, issueId: resolved2!, note: "start task" });
+      const events1 = await (await import("../src/runs")).readRunEvents(dir, runId1);
+      const events2 = await (await import("../src/runs")).readRunEvents(dir, runId2);
+      expect(events1.length).toBe(1);
+      expect(events2.length).toBe(1);
+      expect(events1[0]!.issueId).toBe(runId1);
+      expect(events2[0]!.issueId).toBe(runId2);
+
+      // Child from second dispatch gets new runId
+      sessionToRunId.set(childSid2, sessionToRunId.get(parentSid)!);
+      expect(sessionToRunId.get(childSid2)).toBe(runId2);
+      expect(sessionToRunId.get(childSid2)).not.toBe(runId1);
+
+      // Non-delegation tool call (no packet) from parent must fall back to existing mapping (runId2)
+      const fallback = resolveRunId(parentSid, undefined);
+      expect(fallback).toBe(runId2);
+
+      // Child tool events continue to resolve via their own mapping
+      expect(sessionToRunId.get(childSid1)).toBe(runId1);
+      expect(sessionToRunId.get(childSid2)).toBe(runId2);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });
 

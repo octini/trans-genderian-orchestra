@@ -698,32 +698,36 @@ export const TgoPlugin: Plugin = async (
         try {
           const repoRoot = directory ?? worktree ?? (project as unknown as { worktree?: string })?.worktree ?? ".";
           let runId: string | undefined;
-          // F3: check in-memory session→runId first (child events)
-          if (sessionToRunId.has(input.sessionID)) runId = sessionToRunId.get(input.sessionID)!;
-          if (!runId) {
-            try {
-              const rawArgs = output?.args as Record<string, unknown> | undefined;
-              const packet = rawArgs?.delegationPacket as Record<string, unknown> | undefined;
-              if (packet && typeof packet.issueId === "string" && isValidBeadID((packet.issueId as string).trim())) {
-                runId = (packet.issueId as string).trim();
-              }
-            } catch {}
-          }
-          if (!runId) {
-            try {
-              const map = await loadSessionMap(repoRoot);
-              for (const [iid, entry] of Object.entries(map)) {
-                if (entry.sessionId === input.sessionID) { runId = iid; break; }
-              }
-            } catch {}
+          let incomingRunId: string | undefined;
+          try {
+            const rawArgs = output?.args as Record<string, unknown> | undefined;
+            const packet = rawArgs?.delegationPacket as Record<string, unknown> | undefined;
+            if (packet && typeof packet.issueId === "string" && isValidBeadID((packet.issueId as string).trim())) {
+              incomingRunId = (packet.issueId as string).trim();
+            }
+          } catch {}
+          if (incomingRunId) {
+            runId = incomingRunId;
+            sessionToRunId.set(input.sessionID, runId);
+          } else {
+            // Fall back to existing mapping ONLY when packet carries no issueId (non-delegation tool calls)
+            if (sessionToRunId.has(input.sessionID)) runId = sessionToRunId.get(input.sessionID)!;
+            if (!runId) {
+              try {
+                const map = await loadSessionMap(repoRoot);
+                for (const [iid, entry] of Object.entries(map)) {
+                  if (entry.sessionId === input.sessionID) { runId = iid; break; }
+                }
+              } catch {}
+            }
+            if (!runId || !isValidBeadID(runId)) return;
+            if (input.tool === "task") {
+              sessionToRunId.set(input.sessionID, runId);
+            } else if (!sessionToRunId.has(input.sessionID)) {
+              sessionToRunId.set(input.sessionID, runId);
+            }
           }
           if (!runId || !isValidBeadID(runId)) return;
-          // F1 per-dispatch: parent mapping overwritten on each task dispatch (never sticky)
-          if (input.tool === "task") {
-            sessionToRunId.set(input.sessionID, runId);
-          } else if (!sessionToRunId.has(input.sessionID)) {
-            sessionToRunId.set(input.sessionID, runId);
-          }
           const seat = board.shimState.agents.get(input.sessionID) ?? "dylan";
           const argsHash = hashArgs(output?.args);
           const ts = Date.now();
