@@ -64,6 +64,57 @@ export class ManifestScopeConflictError extends Error {
 }
 
 // ---------------------------------------------------------------------------
+// Scope normalization
+// ---------------------------------------------------------------------------
+
+/**
+ * Normalize a scope path to canonical form for comparison.
+ *
+ * Steps: trim → strip leading ./ → path.posix.normalize → collapse duplicate slashes → lowercase.
+ *
+ * Case policy: lowercase all paths for deterministic, case-insensitive comparison.
+ * This prevents evasion via case variants (e.g., "Src/Foo.ts" vs "src/foo.ts" or
+ * "./SRC/foo.ts" vs "src/foo.ts") and ensures consistent handling across
+ * case-insensitive filesystems (macOS HFS+, Windows NTFS). All scope comparisons
+ * (validation, conflict detection, messageFilter, onComplete) use this canonical form.
+ * The canonical paths are stored in the manifest at validation time.
+ */
+export function normalizeScopePath(p: string): string {
+  let s = String(p ?? "").trim();
+  // Strip leading ./ repeatedly (e.g., "./src/a.ts", "././src/a.ts", ".//src/a.ts")
+  s = s.replace(/^\.\/+/g, "");
+  // Also handle bare "." or "./"
+  if (s === "." || s === "./" || s === "") return "";
+  // posix normalize to resolve ., .., and collapse slashes
+  s = path.posix.normalize(s);
+  // Collapse duplicate slashes explicitly (normalize already does, but be defensive)
+  s = s.replace(/\/+/g, "/");
+  // Strip leading ./ that normalize may have reintroduced
+  s = s.replace(/^\.\/+/g, "");
+  // Handle "." result from normalize("") etc.
+  if (s === "." ) return "";
+  // Lowercase for case-insensitive comparison
+  s = s.toLowerCase();
+  return s;
+}
+
+// Helper: merge duplicate wave numbers into one record for conflict checking.
+// Preserves original wave order, combines beads arrays.
+function mergeWaves(waves: ManifestWave[]): ManifestWave[] {
+  const byWave = new Map<number, ManifestWave>();
+  for (const w of waves) {
+    const existing = byWave.get(w.wave);
+    if (!existing) {
+      byWave.set(w.wave, { wave: w.wave, beads: [...w.beads] });
+    } else {
+      // Merge beads — keep existing beads and append new ones
+      existing.beads.push(...w.beads);
+    }
+  }
+  return [...byWave.values()];
+}
+
+// ---------------------------------------------------------------------------
 // Validation
 // ---------------------------------------------------------------------------
 
@@ -80,6 +131,8 @@ export function validateManifest(manifest: unknown): { valid: boolean; errors: s
   }
   const waves: ManifestWave[] = [];
   const seenIssueIds = new Set<string>();
+  // Track wave numbers seen to detect conflicting duplicate records
+  const seenWaveNumbers = new Map<number, { firstIdx: number; beadsById: Map<string, ManifestBead> }>();
   for (let wi = 0; wi < m.waves.length; wi++) {
     const w = m.waves[wi] as unknown;
     if (!w || typeof w !== "object" || Array.isArray(w)) {
@@ -127,12 +180,14 @@ export function validateManifest(manifest: unknown): { valid: boolean; errors: s
             errors.push(`waves[${wi}].beads[${bi}].scope[${si}] must be non-empty string`);
           }
         }
-        // dedupe check within same bead? optional
+        // dedupe check within same bead — use normalized paths
         const scopeSet = new Set<string>();
         for (const s of scope as string[]) {
-          if (typeof s === "string" && scopeSet.has(s.trim())) {
-            errors.push(`waves[${wi}].beads[${bi}].scope duplicate ${JSON.stringify(s)}`);
-          } else if (typeof s === "string") scopeSet.add(s.trim());
+          if (typeof s !== "string") continue;
+          const normalized = normalizeScopePath(s);
+          if (scopeSet.has(normalized)) {
+            errors.push(`waves[${wi}].beads[${bi}].scope duplicate ${JSON.stringify(s)} (normalized to ${JSON.stringify(normalized)})`);
+          } else scopeSet.add(normalized);
         }
       }
       const parallelSet = rec.parallelSet;
@@ -163,13 +218,39 @@ export function validateManifest(manifest: unknown): { valid: boolean; errors: s
         parallelSet.trim().length > 0 &&
         Array.isArray(deps)
       ) {
-        beads.push({
+        // Normalize scope to canonical paths at validation time (store canonical)
+        const normalizedScope = (scope as string[]).map((s) => normalizeScopePath(typeof s === "string" ? s.trim() : String(s))).filter((s) => s.length > 0);
+        // If normalization yields empty (e.g., "."), treat as error already captured above, but ensure non-empty
+        const bead: ManifestBead = {
           issueId: issueId.trim(),
           story: story.trim(),
-          scope: (scope as string[]).map((s) => (typeof s === "string" ? s.trim() : String(s))),
+          scope: normalizedScope,
           parallelSet: parallelSet.trim(),
           deps: (deps as string[]).map((d) => (typeof d === "string" ? d.trim() : String(d))),
-        });
+        };
+        // Check for conflicting beads in duplicate wave numbers (same wave number, same issueId but different content)
+        if (typeof waveNum === "number" && Number.isInteger(waveNum) && waveNum >= 0) {
+          let waveInfo = seenWaveNumbers.get(waveNum);
+          if (!waveInfo) {
+            waveInfo = { firstIdx: wi, beadsById: new Map() };
+            seenWaveNumbers.set(waveNum, waveInfo);
+          } else {
+            const existing = waveInfo.beadsById.get(bead.issueId);
+            if (existing) {
+              // Same issueId appears in duplicate wave records with same wave number but different bead data → conflicting
+              const existingNormalizedScope = [...existing.scope].sort().join(",");
+              const newNormalizedScope = [...bead.scope].sort().join(",");
+              if (existing.story !== bead.story || existingNormalizedScope !== newNormalizedScope || existing.parallelSet !== bead.parallelSet || existing.deps.join(",") !== bead.deps.join(",")) {
+                errors.push(`duplicate wave ${waveNum} has conflicting bead ${bead.issueId} (waves[${waveInfo.firstIdx}] vs waves[${wi}])`);
+              }
+            }
+          }
+          // Record bead for future conflict checks within same wave number
+          if (!waveInfo.beadsById.has(bead.issueId)) {
+            waveInfo.beadsById.set(bead.issueId, bead);
+          }
+        }
+        beads.push(bead);
       }
     }
     if (typeof waveNum === "number" && Number.isInteger(waveNum) && waveNum >= 0) {
@@ -177,20 +258,25 @@ export function validateManifest(manifest: unknown): { valid: boolean; errors: s
     }
   }
   if (errors.length > 0) return { valid: false, errors };
+  // Merge duplicate wave records (same wave number) into one for deterministic output and conflict checking
+  const mergedWaves = mergeWaves(waves);
   // sort waves by wave number for deterministic output
-  waves.sort((a, b) => a.wave - b.wave);
-  return { valid: true, errors: [], manifest: { waves } };
+  mergedWaves.sort((a, b) => a.wave - b.wave);
+  return { valid: true, errors: [], manifest: { waves: mergedWaves } };
 }
 
 // ---------------------------------------------------------------------------
 // Scope-conflict check — pairwise intersection within SAME parallelSet per wave
 // Cross-wave overlaps are legal (sequenced by deps).
 // O(waves * beads_in_parallelSet^2 * scopeSize) — small sets, run once at plan time.
+// Uses normalized paths and merges duplicate wave numbers.
 // ---------------------------------------------------------------------------
 
 export function checkScopeConflicts(manifest: Manifest): { hasConflict: boolean; conflicts: ScopeConflict[] } {
   const conflicts: ScopeConflict[] = [];
-  for (const wave of manifest.waves) {
+  // Merge duplicate wave numbers for conflict checking (handles evasion via split records)
+  const waves = mergeWaves(manifest.waves);
+  for (const wave of waves) {
     // group by parallelSet
     const bySet = new Map<string, ManifestBead[]>();
     for (const bead of wave.beads) {
@@ -205,8 +291,9 @@ export function checkScopeConflicts(manifest: Manifest): { hasConflict: boolean;
         for (let j = i + 1; j < beads.length; j++) {
           const a = beads[i]!;
           const b = beads[j]!;
-          const setA = new Set(a.scope);
-          const overlapping = b.scope.filter((f) => setA.has(f));
+          const setA = new Set(a.scope.map(normalizeScopePath));
+          const normalizedB = b.scope.map(normalizeScopePath);
+          const overlapping = normalizedB.filter((f) => setA.has(f));
           if (overlapping.length > 0) {
             conflicts.push({
               wave: wave.wave,

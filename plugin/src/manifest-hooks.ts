@@ -6,7 +6,7 @@
  * - Additive, clearly-named functions for crowded hook path.
  */
 
-import { readManifest, getManifestRowSyncFromManifest, type ManifestBead } from "./manifest";
+import { readManifest, getManifestRowSyncFromManifest, normalizeScopePath, type ManifestBead } from "./manifest";
 import { isValidBeadID } from "./def-snapshot";
 import { parseTaskReport, type ParsedReport } from "./report";
 
@@ -111,8 +111,8 @@ function extractTouchedFilesFromReport(report: ParsedReport): string[] {
       }
     }
   }
-  // dedupe
-  return [...new Set(tokens)];
+  // dedupe and normalize via canonical paths (G1)
+  return [...new Set(tokens.map(normalizeScopePath).filter(Boolean))];
 }
 
 function toBailReport(original: ParsedReport, mismatchFiles: string[]): ParsedReport {
@@ -166,8 +166,8 @@ export async function manifestOnComplete(opts: {
   const found = getManifestRowSyncFromManifest(manifest, issueId);
   if (!found) return { bail: false, report };
   const { bead } = found;
-  const scopeSet = new Set(bead.scope);
-  const touched = touchedFiles !== undefined ? [...new Set(touchedFiles.map((s) => s.trim()).filter(Boolean))] : extractTouchedFilesFromReport(report);
+  const scopeSet = new Set(bead.scope.map(normalizeScopePath));
+  const touched = touchedFiles !== undefined ? [...new Set(touchedFiles.map(normalizeScopePath).filter(Boolean))] : extractTouchedFilesFromReport(report);
   if (touched.length === 0) return { bail: false, report, row: bead };
   const mismatch = touched.filter((f) => !scopeSet.has(f));
   if (mismatch.length === 0) return { bail: false, report, row: bead };
@@ -187,8 +187,8 @@ export function manifestOnCompleteSync(opts: {
   const found = getManifestRowSyncFromManifest(manifest, issueId);
   if (!found) return { bail: false, report };
   const { bead } = found;
-  const scopeSet = new Set(bead.scope);
-  const touched = touchedFiles !== undefined ? [...new Set(touchedFiles.map((s) => s.trim()).filter(Boolean))] : extractTouchedFilesFromReport(report);
+  const scopeSet = new Set(bead.scope.map(normalizeScopePath));
+  const touched = touchedFiles !== undefined ? [...new Set(touchedFiles.map(normalizeScopePath).filter(Boolean))] : extractTouchedFilesFromReport(report);
   if (touched.length === 0) return { bail: false, report, row: bead };
   const mismatch = touched.filter((f) => !scopeSet.has(f));
   if (mismatch.length === 0) return { bail: false, report, row: bead };
@@ -228,12 +228,12 @@ export async function manifestMessageFilter(opts: {
   const found = getManifestRowSyncFromManifest(manifest, issueId);
   if (!found) return { filtered: false, packet };
   const { bead } = found;
-  const scopeSet = new Set(bead.scope);
+  const scopeSet = new Set(bead.scope.map(normalizeScopePath));
   const files = packet.Files;
   if (!Array.isArray(files) || files.length === 0) return { filtered: false, packet };
   const original = files.filter((f) => typeof f === "string") as string[];
-  const kept = original.filter((f) => scopeSet.has(f as string));
-  const stripped = original.filter((f) => !scopeSet.has(f as string));
+  const kept = original.filter((f) => scopeSet.has(normalizeScopePath(f as string)));
+  const stripped = original.filter((f) => !scopeSet.has(normalizeScopePath(f as string)));
   if (stripped.length === 0) return { filtered: false, packet };
   const next = { ...packet, Files: kept };
   return { filtered: true, packet: next, stripped };
@@ -248,12 +248,12 @@ export function manifestMessageFilterSync(opts: {
   if (!manifest || !isValidBeadID(issueId)) return { filtered: false, packet };
   const found = getManifestRowSyncFromManifest(manifest, issueId);
   if (!found) return { filtered: false, packet };
-  const scopeSet = new Set(found.bead.scope);
+  const scopeSet = new Set(found.bead.scope.map(normalizeScopePath));
   const files = packet.Files;
   if (!Array.isArray(files)) return { filtered: false, packet };
   const original = files.filter((f) => typeof f === "string") as string[];
-  const kept = original.filter((f) => scopeSet.has(f));
-  const stripped = original.filter((f) => !scopeSet.has(f));
+  const kept = original.filter((f) => scopeSet.has(normalizeScopePath(f)));
+  const stripped = original.filter((f) => !scopeSet.has(normalizeScopePath(f)));
   if (stripped.length === 0) return { filtered: false, packet };
   return { filtered: true, packet: { ...packet, Files: kept }, stripped };
 }
