@@ -17097,6 +17097,61 @@ function deriveRecoveryFromTaxonomy(report) {
       return report.recovery ?? "retry";
   }
 }
+function gateBlockedWithError(issueId, error51) {
+  return {
+    passed: false,
+    blocked: true,
+    reasonCode: "GATE_BLOCKED_CRITICAL",
+    reason: `gate evaluation error: ${error51}`,
+    findings: [{ axis: "correctness", severity: "CRITICAL", message: `gate evaluation error: ${error51}`, source: "gate", code: "GATE_EVAL_ERROR" }],
+    compensation: { title: `Compensate ${issueId} gate error`, body: `Gate evaluation failed for ${issueId}: ${error51}
+Create with: bd create --deps discovered-from:${issueId}`, discoveredFrom: issueId, severity: "CRITICAL" },
+    skipped: false
+  };
+}
+function evaluateGatedClosure(route, lifecycle, report, gate) {
+  const base = evaluateClosure(route, lifecycle, report);
+  return applyGateToClosure(base, gate);
+}
+function shouldRunGate(report) {
+  if (!report)
+    return false;
+  if (report.watchdogAborted)
+    return false;
+  if (report.taxonomy.status === "bail")
+    return false;
+  if (report.taxonomy.status !== "complete")
+    return false;
+  return true;
+}
+function applyGateToClosure(closure, gate) {
+  if (!gate || gate.skipped || !gate.blocked) {
+    if (!gate)
+      return { ...closure };
+    return {
+      ...closure,
+      gateBlocked: gate.blocked ?? false,
+      gateReasonCode: gate.reasonCode,
+      gateReason: gate.reason,
+      gateFindings: gate.findings ?? undefined,
+      gateCompensation: gate.compensation
+    };
+  }
+  const blockedDiagnostics = gate.reason ? [`Exit gate blocked: ${gate.reason}`] : ["Exit gate blocked: CRITICAL findings"];
+  const compDiagnostics = gate.compensation ? [`Compensation recommended: ${gate.compensation.title} (discovered-from:${gate.compensation.discoveredFrom}) — bd create with discovered-from link`] : [];
+  return {
+    canClose: false,
+    closureBlocked: true,
+    recovery: closure.recovery ?? "escalate",
+    missing: [...closure.missing, `gate:${gate.reasonCode}`],
+    diagnostics: [...closure.diagnostics, ...blockedDiagnostics, ...compDiagnostics],
+    gateBlocked: true,
+    gateReasonCode: gate.reasonCode,
+    gateReason: gate.reason,
+    gateFindings: gate.findings ?? undefined,
+    gateCompensation: gate.compensation
+  };
+}
 function evaluateClosure(route, lifecycle, report) {
   if (route === "tiny") {
     const safe = report?.completionSafe === true;
@@ -17147,6 +17202,657 @@ function evaluateClosure(route, lifecycle, report) {
     recovery: missing.length === 0 && report?.completionSafe === true ? undefined : recovery,
     missing,
     diagnostics
+  };
+}
+
+// src/exitgate/profile.ts
+import * as fs8 from "node:fs/promises";
+import * as path9 from "node:path";
+var DEFAULT_BLACKLIST = [
+  "rm\\s+-rf\\s+/(\\s|$)",
+  "rm\\s+-rf\\s+\\*",
+  "rm\\s+-rf\\s+~",
+  ":\\(\\)\\s*\\{",
+  "mkfs",
+  "dd\\s+if=",
+  ">\\s*/dev/sd[a-z]",
+  "chmod\\s+777\\s+/(\\s|$)",
+  "shutdown",
+  "reboot",
+  "init\\s+0"
+];
+var DEFAULT_GATE_PROFILE = {
+  enabled: true,
+  toggles: {
+    deltaSpec: true,
+    triage: true,
+    trajectory: true
+  },
+  blacklist: [...DEFAULT_BLACKLIST],
+  trajectory: {
+    maxSteps: 250,
+    expectedSequence: []
+  }
+};
+function isObject2(v) {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+function toGateProfile(raw) {
+  if (!isObject2(raw))
+    return;
+  const enabled = typeof raw.enabled === "boolean" ? raw.enabled : DEFAULT_GATE_PROFILE.enabled;
+  const togglesRaw = isObject2(raw.toggles) ? raw.toggles : {};
+  const toggles = {
+    deltaSpec: typeof togglesRaw.deltaSpec === "boolean" ? togglesRaw.deltaSpec : DEFAULT_GATE_PROFILE.toggles.deltaSpec,
+    triage: typeof togglesRaw.triage === "boolean" ? togglesRaw.triage : DEFAULT_GATE_PROFILE.toggles.triage,
+    trajectory: typeof togglesRaw.trajectory === "boolean" ? togglesRaw.trajectory : DEFAULT_GATE_PROFILE.toggles.trajectory
+  };
+  let blacklist;
+  if (Array.isArray(raw.blacklist)) {
+    const filtered = raw.blacklist.filter((s) => typeof s === "string" && s.trim().length > 0);
+    const valid = [];
+    for (const p of filtered) {
+      if (p.length > 200)
+        continue;
+      try {
+        new RegExp(p, "i");
+        valid.push(p);
+      } catch {}
+    }
+    blacklist = valid.length > 0 ? valid : [...DEFAULT_GATE_PROFILE.blacklist];
+    if (Array.isArray(raw.blacklist) && raw.blacklist.length === 0)
+      blacklist = [];
+  } else {
+    blacklist = [...DEFAULT_GATE_PROFILE.blacklist];
+  }
+  const trajRaw = isObject2(raw.trajectory) ? raw.trajectory : {};
+  const maxSteps = typeof trajRaw.maxSteps === "number" && Number.isFinite(trajRaw.maxSteps) && trajRaw.maxSteps > 0 ? Math.floor(trajRaw.maxSteps) : DEFAULT_GATE_PROFILE.trajectory.maxSteps;
+  const expectedSequence = Array.isArray(trajRaw.expectedSequence) ? trajRaw.expectedSequence.filter((s) => typeof s === "string" && s.trim().length > 0) : DEFAULT_GATE_PROFILE.trajectory.expectedSequence;
+  return {
+    enabled,
+    toggles,
+    blacklist,
+    trajectory: {
+      maxSteps,
+      expectedSequence
+    }
+  };
+}
+function gateProfilePath(repoRoot) {
+  return path9.join(repoRoot, ".tgo", "gate.json");
+}
+async function loadGateProfile(repoRoot) {
+  const target = gateProfilePath(repoRoot);
+  try {
+    const raw = await fs8.readFile(target, "utf-8");
+    const parsed = JSON.parse(raw);
+    const profile = toGateProfile(parsed);
+    if (profile)
+      return profile;
+    return { ...DEFAULT_GATE_PROFILE, blacklist: [...DEFAULT_GATE_PROFILE.blacklist] };
+  } catch {
+    return { ...DEFAULT_GATE_PROFILE, blacklist: [...DEFAULT_GATE_PROFILE.blacklist] };
+  }
+}
+function compileBlacklist(blacklist) {
+  const out = [];
+  for (const p of blacklist) {
+    if (p.length > 200)
+      continue;
+    try {
+      out.push(new RegExp(p, "i"));
+    } catch {}
+  }
+  return out;
+}
+
+// src/exitgate/delta-spec.ts
+var AMBIGUOUS_MARKERS = [
+  { re: /\betc\.?(\s|$|,)/i, reason: "contains etc" },
+  { re: /\bappropriate\b/i, reason: "vague term: appropriate" },
+  { re: /\bmaybe\b/i, reason: "vague term: maybe" },
+  { re: /\bshould\b/i, reason: "weak modal: should (use SHALL/MUST)" },
+  { re: /\bTBD\b/i, reason: "placeholder: TBD" },
+  { re: /\bTODO\b/i, reason: "placeholder: TODO" },
+  { re: /\bas needed\b/i, reason: "vague term: as needed" },
+  { re: /\bif needed\b/i, reason: "vague term: if needed" },
+  { re: /\bgenerally\b/i, reason: "vague qualifier: generally" },
+  { re: /\busually\b/i, reason: "vague qualifier: usually" },
+  { re: /\bsome\b.*\b(things|stuff|cases)?/i, reason: "vague quantifier: some" }
+];
+function isAmbiguous(text) {
+  for (const m of AMBIGUOUS_MARKERS) {
+    if (m.re.test(text))
+      return { ambiguous: true, reason: m.reason };
+  }
+  return { ambiguous: false };
+}
+function parseDeltaSpec(specText) {
+  const raw = typeof specText === "string" ? specText : String(specText ?? "");
+  const lines = raw.split(/\r?\n/);
+  const requirements = [];
+  const scenarios = [];
+  const findings = [];
+  let reqCounter = 0;
+  for (let i = 0;i < lines.length; i++) {
+    const line2 = lines[i] ?? "";
+    const upper = line2.toUpperCase();
+    const shallIdx = upper.indexOf("SHALL");
+    const mustIdx = upper.indexOf("MUST");
+    const hasShall = /\bSHALL\b/i.test(line2);
+    const hasMust = /\bMUST\b/i.test(line2);
+    if (hasShall || hasMust) {
+      reqCounter++;
+      let kind = "SHALL";
+      if (hasShall && hasMust) {
+        const sPos = line2.search(/\bSHALL\b/i);
+        const mPos = line2.search(/\bMUST\b/i);
+        kind = sPos <= mPos ? "SHALL" : "MUST";
+      } else if (hasMust) {
+        kind = "MUST";
+      }
+      const amb = isAmbiguous(line2);
+      const text = line2.trim();
+      requirements.push({
+        id: `REQ-${reqCounter}`,
+        text,
+        kind,
+        line: i + 1,
+        ambiguous: amb.ambiguous,
+        ambiguousReason: amb.reason
+      });
+      if (amb.ambiguous) {
+        findings.push({
+          axis: "completeness",
+          severity: "WARNING",
+          message: `Ambiguous requirement ${`REQ-${reqCounter}`} (line ${i + 1}): ${amb.reason} — "${text.slice(0, 120)}"`,
+          source: "delta-spec"
+        });
+      }
+      if (text.length < 20) {
+        findings.push({
+          axis: "coherence",
+          severity: "SUGGESTION",
+          message: `Requirement ${`REQ-${reqCounter}`} is unusually short — may be underspecified (line ${i + 1})`,
+          source: "delta-spec"
+        });
+      }
+    }
+  }
+  let scenCounter = 0;
+  for (let i = 0;i < lines.length; i++) {
+    const line2 = lines[i] ?? "";
+    const m = line2.match(/^\s*Scenario\s*[:\-]\s*(.+)\s*$/i);
+    if (m) {
+      scenCounter++;
+      const title = (m[1] ?? "").trim();
+      const bodyLines = [];
+      for (let j = i + 1;j < lines.length; j++) {
+        const nxt = lines[j] ?? "";
+        if (/^\s*Scenario\s*[:\-]/i.test(nxt))
+          break;
+        if (/^\s*#{1,6}\s+/.test(nxt) && bodyLines.length > 3)
+          break;
+        bodyLines.push(nxt);
+        if (bodyLines.length > 20)
+          break;
+      }
+      const body = bodyLines.join(`
+`).trim();
+      scenarios.push({
+        id: `SCN-${scenCounter}`,
+        title,
+        line: i + 1,
+        body
+      });
+      const hasGWT = /\b(Given|When|Then|And)\b/i.test(body);
+      if (!hasGWT && body.length > 0) {
+        findings.push({
+          axis: "completeness",
+          severity: "SUGGESTION",
+          message: `Scenario ${`SCN-${scenCounter}`} "${title}" lacks Given/When/Then structure`,
+          source: "delta-spec"
+        });
+      }
+      if (body.length === 0) {
+        findings.push({
+          axis: "completeness",
+          severity: "WARNING",
+          message: `Scenario ${`SCN-${scenCounter}`} "${title}" has empty body`,
+          source: "delta-spec"
+        });
+      }
+    }
+  }
+  if (requirements.length === 0) {
+    findings.push({
+      axis: "completeness",
+      severity: "WARNING",
+      message: "No SHALL/MUST requirement lines found in spec — delta-spec is empty",
+      source: "delta-spec"
+    });
+  }
+  if (scenarios.length > 0 && requirements.length === 0) {
+    findings.push({
+      axis: "coherence",
+      severity: "SUGGESTION",
+      message: "Spec contains Scenario blocks but no SHALL/MUST requirements — traceability gap",
+      source: "delta-spec"
+    });
+  }
+  return {
+    requirements,
+    scenarios,
+    findings,
+    raw
+  };
+}
+
+// src/exitgate/trajectory.ts
+import * as fs9 from "node:fs/promises";
+import * as path10 from "node:path";
+function isRecord(v) {
+  return typeof v === "object" && v !== null;
+}
+function parseEntry(line2, lineNo) {
+  const trimmed = line2.trim();
+  if (trimmed.length === 0)
+    return;
+  try {
+    const obj = JSON.parse(trimmed);
+    if (!isRecord(obj))
+      return;
+    const tsRaw = obj.ts;
+    if (typeof tsRaw !== "number" || !Number.isFinite(tsRaw))
+      return;
+    const ts = tsRaw;
+    const type = obj.type;
+    if (type !== "step" && type !== "heartbeat" && type !== "status")
+      return;
+    const seat = obj.seat;
+    if (typeof seat !== "string" || seat.trim().length === 0)
+      return;
+    const tool = obj.tool;
+    if (typeof tool !== "string" || tool.trim().length === 0)
+      return;
+    if (type === "heartbeat" && tool !== "heartbeat") {
+      return;
+    }
+    const argsHash = obj.argsHash;
+    if (typeof argsHash !== "string" || argsHash.trim().length === 0)
+      return;
+    const okRaw = obj.ok;
+    if (typeof okRaw !== "boolean")
+      return;
+    const ok = okRaw;
+    const durationMsRaw = obj.durationMs;
+    let durationMs;
+    if (durationMsRaw === undefined)
+      durationMs = 0;
+    else if (typeof durationMsRaw === "number" && Number.isFinite(durationMsRaw))
+      durationMs = durationMsRaw;
+    else
+      durationMs = 0;
+    const noteRaw = obj.note;
+    let note;
+    if (noteRaw === undefined)
+      note = "";
+    else if (typeof noteRaw === "string")
+      note = noteRaw;
+    else
+      note = "";
+    const issueIdRaw = obj.issueId;
+    if (typeof issueIdRaw !== "string" || !isValidBeadID(issueIdRaw))
+      return;
+    const issueId = issueIdRaw;
+    let cmd;
+    if ("cmd" in obj && obj.cmd !== undefined && obj.cmd !== null) {
+      if (typeof obj.cmd === "string")
+        cmd = obj.cmd;
+      else
+        cmd = undefined;
+    }
+    return {
+      ts,
+      type,
+      seat,
+      tool,
+      argsHash,
+      ok,
+      durationMs,
+      note,
+      issueId,
+      ...cmd !== undefined ? { cmd } : {}
+    };
+  } catch {
+    return;
+  }
+}
+function runLogPath(repoRoot, runId) {
+  assertValidBeadID(runId);
+  return path10.join(repoRoot, ".tgo", "runs", `${runId}.jsonl`);
+}
+async function scoreTrajectory(repoRoot, runId, profile = DEFAULT_GATE_PROFILE) {
+  const findings = [];
+  const target = runLogPath(repoRoot, runId);
+  let raw;
+  try {
+    raw = await fs9.readFile(target, "utf-8");
+  } catch (e) {
+    const code = e?.code;
+    if (code === "ENOENT") {
+      return {
+        entries: [],
+        findings: [
+          {
+            axis: "completeness",
+            severity: "WARNING",
+            message: `Trajectory skipped: no run log at .tgo/runs/${runId}.jsonl (writer lands in sibling ticket)`,
+            source: "trajectory",
+            code: "TRAJECTORY_SKIP_NO_LOG"
+          }
+        ],
+        skipped: true,
+        skipReason: "no-log"
+      };
+    }
+    return {
+      entries: [],
+      findings: [
+        {
+          axis: "coherence",
+          severity: "WARNING",
+          message: `Trajectory skipped: unable to read run log (${String(e)})`,
+          source: "trajectory",
+          code: "TRAJECTORY_SKIP_READ_ERROR"
+        }
+      ],
+      skipped: true,
+      skipReason: "read-error"
+    };
+  }
+  const lines = raw.split(/\r?\n/);
+  const entries = [];
+  for (let i = 0;i < lines.length; i++) {
+    const line2 = lines[i];
+    if (line2 === undefined || line2.trim().length === 0)
+      continue;
+    const entry = parseEntry(line2, i + 1);
+    if (entry)
+      entries.push(entry);
+  }
+  if (entries.length === 0) {
+    findings.push({
+      axis: "completeness",
+      severity: "WARNING",
+      message: "Trajectory: run log exists but contains no valid step entries — skipping trajectory checks",
+      source: "trajectory",
+      code: "TRAJECTORY_EMPTY"
+    });
+    return { entries, findings, skipped: true, skipReason: "empty" };
+  }
+  const hasTerminalStatus = entries.some((e) => e.type === "status");
+  if (!hasTerminalStatus) {
+    findings.push({
+      axis: "completeness",
+      severity: "WARNING",
+      message: 'Trajectory incomplete: no terminal status line (type:"status") — log may be truncated or writer still in-flight',
+      source: "trajectory",
+      code: "TRAJECTORY_INCOMPLETE"
+    });
+  }
+  const effectiveBlacklist = profile.blacklist.length > 0 ? profile.blacklist : DEFAULT_GATE_PROFILE.blacklist;
+  const blacklistRes = compileBlacklist(effectiveBlacklist);
+  for (let idx = 0;idx < entries.length; idx++) {
+    const entry = entries[idx];
+    const rawHaystack = `${entry.tool} ${entry.cmd ?? ""} ${entry.note}`;
+    const haystack = rawHaystack.length > 500 ? rawHaystack.slice(0, 500) : rawHaystack;
+    for (const re of blacklistRes) {
+      if (re.test(haystack)) {
+        findings.push({
+          axis: "correctness",
+          severity: "CRITICAL",
+          message: `Blacklist hard-fail: step ${idx + 1} tool=${entry.tool} matched blacklist /${re.source}/ — note="${entry.note.slice(0, 120)}"`,
+          source: "trajectory",
+          code: "BLACKLIST_HARD_FAIL"
+        });
+        break;
+      }
+    }
+  }
+  const expected = profile.trajectory.expectedSequence ?? [];
+  if (expected.length > 0) {
+    const tools = entries.filter((e) => e.type === "step").map((e) => e.tool.toLowerCase());
+    let pos = 0;
+    for (const hint of expected) {
+      const lowerHint = hint.toLowerCase();
+      let found = -1;
+      for (let i = pos;i < tools.length; i++) {
+        if (tools[i]?.includes(lowerHint) || lowerHint.includes(tools[i] ?? "")) {
+          found = i;
+          break;
+        }
+      }
+      if (found === -1) {
+        findings.push({
+          axis: "coherence",
+          severity: "WARNING",
+          message: `Expected tool sequence hint "${hint}" not found in trajectory (tools: ${tools.slice(0, 12).join(", ")})`,
+          source: "trajectory",
+          code: "EXPECTED_SEQUENCE_MISSING"
+        });
+        break;
+      } else {
+        pos = found + 1;
+      }
+    }
+  }
+  const maxSteps = profile.trajectory.maxSteps ?? DEFAULT_GATE_PROFILE.trajectory.maxSteps ?? 250;
+  const stepCount = entries.filter((e) => e.type === "step").length;
+  if (stepCount > maxSteps) {
+    findings.push({
+      axis: "coherence",
+      severity: "WARNING",
+      message: `Trajectory efficiency: ${stepCount} steps exceeds maxSteps ${maxSteps}`,
+      source: "trajectory",
+      code: "EFFICIENCY_MAX_STEPS"
+    });
+  }
+  let maxConsecutive = 1;
+  let curConsecutive = 1;
+  for (let i = 1;i < entries.length; i++) {
+    if (entries[i].tool === entries[i - 1].tool) {
+      curConsecutive++;
+      maxConsecutive = Math.max(maxConsecutive, curConsecutive);
+    } else {
+      curConsecutive = 1;
+    }
+  }
+  if (maxConsecutive >= 6) {
+    findings.push({
+      axis: "coherence",
+      severity: "WARNING",
+      message: `Trajectory efficiency: ${maxConsecutive} consecutive identical tool calls detected (possible loop)`,
+      source: "trajectory",
+      code: "EFFICIENCY_LOOP_CONSECUTIVE"
+    });
+  }
+  const failed = entries.filter((e) => e.ok === false).length;
+  if (failed > 0 && failed / entries.length > 0.5 && entries.length >= 5) {
+    findings.push({
+      axis: "correctness",
+      severity: "WARNING",
+      message: `Trajectory: ${failed}/${entries.length} steps failed (${Math.round(failed / entries.length * 100)}%)`,
+      source: "trajectory",
+      code: "TRAJECTORY_HIGH_FAILURE_RATE"
+    });
+  }
+  const totalDuration = entries.reduce((sum, e) => sum + (Number.isFinite(e.durationMs) ? e.durationMs : 0), 0);
+  if (totalDuration > 30 * 60 * 1000) {
+    findings.push({
+      axis: "coherence",
+      severity: "SUGGESTION",
+      message: `Trajectory: total tool duration ${Math.round(totalDuration / 1000)}s exceeds 30m`,
+      source: "trajectory",
+      code: "TRAJECTORY_LONG_DURATION"
+    });
+  }
+  return {
+    entries,
+    findings,
+    skipped: false
+  };
+}
+
+// src/exitgate/triage.ts
+var AXES = ["completeness", "correctness", "coherence"];
+var severityRank = {
+  PASS: 0,
+  SUGGESTION: 1,
+  WARNING: 2,
+  CRITICAL: 3
+};
+function maxSeverity(findings) {
+  let max = "PASS";
+  let maxRank = 0;
+  for (const f of findings) {
+    const r = severityRank[f.severity] ?? 0;
+    if (r > maxRank) {
+      maxRank = r;
+      max = f.severity;
+    }
+  }
+  return max;
+}
+function triageFindings(findings) {
+  const perAxis = {
+    completeness: { axis: "completeness", severity: "PASS", count: 0, findings: [], hasCritical: false },
+    correctness: { axis: "correctness", severity: "PASS", count: 0, findings: [], hasCritical: false },
+    coherence: { axis: "coherence", severity: "PASS", count: 0, findings: [], hasCritical: false }
+  };
+  for (const f of findings) {
+    const axis = AXES.includes(f.axis) ? f.axis : "correctness";
+    const bucket = perAxis[axis];
+    bucket.findings.push(f);
+  }
+  for (const axis of AXES) {
+    const bucket = perAxis[axis];
+    bucket.count = bucket.findings.length;
+    bucket.severity = maxSeverity(bucket.findings);
+    bucket.hasCritical = bucket.findings.some((f) => f.severity === "CRITICAL");
+  }
+  const allMax = maxSeverity(findings);
+  const blocked = findings.some((f) => f.severity === "CRITICAL");
+  let reason;
+  if (blocked) {
+    const critical = findings.filter((f) => f.severity === "CRITICAL");
+    const axes = [...new Set(critical.map((f) => f.axis))].join(", ");
+    reason = `gate blocked: ${critical.length} CRITICAL finding(s) on ${axes}`;
+  }
+  return {
+    findings: [...findings],
+    perAxis,
+    blocked,
+    highestSeverity: allMax,
+    reason
+  };
+}
+
+// src/exitgate/gate.ts
+function shouldSkipForTaxonomy(report) {
+  const status = report.taxonomy.status;
+  if (status === "bail") {
+    return { skip: true, reason: "bail/abandon — human rejection skips gate" };
+  }
+  if (report.watchdogAborted) {
+    return { skip: true, reason: "watchdog abort — reroute, not close" };
+  }
+  if (status !== "complete") {
+    return { skip: true, reason: `${status} — not complete, gate not applicable` };
+  }
+  return { skip: false };
+}
+async function runExitGate(input) {
+  const profile = input.profile ?? await loadGateProfile(input.repoRoot);
+  if (!profile.enabled) {
+    const emptyTriage = triageFindings([]);
+    return {
+      passed: true,
+      blocked: false,
+      reasonCode: "GATE_SKIPPED_DISABLED",
+      reason: "gate disabled via profile.enabled=false",
+      triage: emptyTriage,
+      findings: [],
+      profile,
+      skipped: true,
+      skipReason: "disabled"
+    };
+  }
+  const taxSkip = shouldSkipForTaxonomy(input.report);
+  if (taxSkip.skip) {
+    const emptyTriage = triageFindings([]);
+    return {
+      passed: true,
+      blocked: false,
+      reasonCode: "GATE_SKIPPED_BAIL",
+      reason: `gate skipped: ${taxSkip.reason}`,
+      triage: emptyTriage,
+      findings: [],
+      profile,
+      skipped: true,
+      skipReason: taxSkip.reason
+    };
+  }
+  const findings = [];
+  if (profile.toggles.deltaSpec) {
+    const delta = parseDeltaSpec(input.specText);
+    for (const f of delta.findings)
+      findings.push(f);
+  }
+  let trajectorySkipped = false;
+  if (profile.toggles.trajectory) {
+    const traj = await scoreTrajectory(input.repoRoot, input.issueId, profile);
+    trajectorySkipped = traj.skipped;
+    for (const f of traj.findings)
+      findings.push(f);
+  }
+  let effectiveFindings = findings;
+  if (!profile.toggles.triage) {
+    effectiveFindings = findings.filter((f) => f.source !== "triage");
+  }
+  const triage = triageFindings(effectiveFindings);
+  if (triage.blocked) {
+    return {
+      passed: false,
+      blocked: true,
+      reasonCode: "GATE_BLOCKED_CRITICAL",
+      reason: triage.reason,
+      triage,
+      findings: effectiveFindings,
+      trajectorySkipped,
+      profile,
+      skipped: false,
+      compensation: {
+        title: `Compensate ${input.issueId} gate failure`,
+        body: `Gate blocked ${input.issueId} with ${triage.findings.filter((f) => f.severity === "CRITICAL").length} CRITICAL finding(s):
+${triage.findings.filter((f) => f.severity === "CRITICAL").map((f) => `- [${f.axis}/${f.severity}] ${f.message}`).join(`
+`)}
+
+Create with: bd create --deps discovered-from:${input.issueId}`,
+        discoveredFrom: input.issueId,
+        severity: "CRITICAL"
+      }
+    };
+  }
+  return {
+    passed: true,
+    blocked: false,
+    reasonCode: "GATE_PASSED",
+    triage,
+    findings: effectiveFindings,
+    trajectorySkipped,
+    profile,
+    skipped: false
   };
 }
 
@@ -17282,8 +17988,8 @@ No ready, open, pending, in_progress, or blocked work.`;
 }
 
 // src/version.ts
-import * as fs8 from "node:fs/promises";
-import * as path9 from "node:path";
+import * as fs10 from "node:fs/promises";
+import * as path11 from "node:path";
 import { fileURLToPath as fileURLToPath4 } from "node:url";
 var PLUGIN_NPM_NAME = "trans-genderian-orchestra";
 var REGISTRY_URL = `https://registry.npmjs.org/${PLUGIN_NPM_NAME}/latest`;
@@ -17318,9 +18024,9 @@ function compareVersions(a, b) {
   return pa.pre < pb.pre ? -1 : pa.pre > pb.pre ? 1 : 0;
 }
 async function readLocalVersion(packageRoot3) {
-  const root = packageRoot3 ?? path9.resolve(path9.dirname(fileURLToPath4(import.meta.url)), "..");
+  const root = packageRoot3 ?? path11.resolve(path11.dirname(fileURLToPath4(import.meta.url)), "..");
   try {
-    const raw = await fs8.readFile(path9.join(root, "package.json"), "utf-8");
+    const raw = await fs10.readFile(path11.join(root, "package.json"), "utf-8");
     const json2 = JSON.parse(raw);
     return typeof json2.version === "string" && json2.version.length > 0 ? json2.version : null;
   } catch {
@@ -17400,20 +18106,20 @@ var and = (...cs) => (i) => cs.every((c) => c(i));
 var terminationDecision = and((i) => i.signal.complete, (i) => !i.exitGateRequired || i.signal.exitGate === true, (i) => i.toolCallsAfterCompletion >= 1);
 
 // src/self-update.ts
-import * as fs9 from "node:fs/promises";
+import * as fs11 from "node:fs/promises";
 import * as fsSync from "node:fs";
-import * as path10 from "node:path";
+import * as path12 from "node:path";
 import * as os2 from "node:os";
 var LOCK_STALE_MS = 120000;
 var LOCK_FILE = ".tgo-selfupdate.lock";
 function resolveCacheRoot(homeDir) {
-  const base = process.env.OPENCODE_TEST_HOME ?? process.env.XDG_CACHE_HOME ?? path10.join(homeDir ?? os2.homedir(), ".cache");
-  return path10.join(base, "opencode");
+  const base = process.env.OPENCODE_TEST_HOME ?? process.env.XDG_CACHE_HOME ?? path12.join(homeDir ?? os2.homedir(), ".cache");
+  return path12.join(base, "opencode");
 }
 function slotDirs(cacheRoot, pkgName) {
   const candidates = [
-    path10.join(cacheRoot, "packages", `${pkgName}@latest`),
-    path10.join(cacheRoot, "packages", pkgName)
+    path12.join(cacheRoot, "packages", `${pkgName}@latest`),
+    path12.join(cacheRoot, "packages", pkgName)
   ];
   return candidates.filter((dir) => {
     try {
@@ -17522,14 +18228,14 @@ function buildInstallArgs(dir, pkgName) {
 }
 async function recoverOrphans(dir) {
   try {
-    const dirExists = await fs9.stat(dir).then(() => true).catch(() => false);
+    const dirExists = await fs11.stat(dir).then(() => true).catch(() => false);
     const backup = `${dir}.tgo-backup`;
     const staging = `${dir}.tgo-staging`;
     if (!dirExists) {
-      const backupExists = await fs9.stat(backup).then(() => true).catch(() => false);
+      const backupExists = await fs11.stat(backup).then(() => true).catch(() => false);
       if (backupExists) {
         try {
-          await fs9.rename(backup, dir);
+          await fs11.rename(backup, dir);
         } catch {}
       }
       return;
@@ -17540,27 +18246,27 @@ async function recoverOrphans(dir) {
 }
 async function rmRf(p) {
   try {
-    await fs9.rm(p, { recursive: true, force: true });
+    await fs11.rm(p, { recursive: true, force: true });
   } catch {}
 }
 async function copyDir(src, dest) {
-  const cp2 = fs9.cp;
+  const cp2 = fs11.cp;
   if (typeof cp2 === "function") {
-    await cp2.call(fs9, src, dest, { recursive: true, force: true });
+    await cp2.call(fs11, src, dest, { recursive: true, force: true });
     return;
   }
-  await fs9.mkdir(dest, { recursive: true });
-  const entries = await fs9.readdir(src, { withFileTypes: true });
+  await fs11.mkdir(dest, { recursive: true });
+  const entries = await fs11.readdir(src, { withFileTypes: true });
   for (const e of entries) {
-    const s = path10.join(src, e.name);
-    const d = path10.join(dest, e.name);
+    const s = path12.join(src, e.name);
+    const d = path12.join(dest, e.name);
     if (e.isDirectory()) {
       await copyDir(s, d);
     } else if (e.isSymbolicLink()) {
-      const target = await fs9.readlink(s);
-      await fs9.symlink(target, d);
+      const target = await fs11.readlink(s);
+      await fs11.symlink(target, d);
     } else {
-      await fs9.copyFile(s, d);
+      await fs11.copyFile(s, d);
     }
   }
 }
@@ -17587,20 +18293,20 @@ async function selfUpdate(deps) {
       try {
         await recoverOrphans(dir);
       } catch {}
-      const lockPath = path10.join(dir, LOCK_FILE);
+      const lockPath = path12.join(dir, LOCK_FILE);
       const staging = `${dir}.tgo-staging`;
       const backup = `${dir}.tgo-backup`;
       let ownerToken = null;
       let acquired = false;
       try {
         try {
-          await fs9.mkdir(dir, { recursive: true });
+          await fs11.mkdir(dir, { recursive: true });
         } catch {}
         const token = `${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}`;
         const tryAcquire = async () => {
           let handle;
           try {
-            handle = await fs9.open(lockPath, "wx");
+            handle = await fs11.open(lockPath, "wx");
             try {
               await handle.writeFile(token, "utf-8");
             } catch {}
@@ -17623,11 +18329,11 @@ async function selfUpdate(deps) {
         let ok = await tryAcquire();
         if (!ok) {
           try {
-            const stat3 = await fs9.stat(lockPath);
+            const stat3 = await fs11.stat(lockPath);
             const age = nowMs - stat3.mtimeMs;
             if (age > LOCK_STALE_MS) {
               try {
-                await fs9.unlink(lockPath);
+                await fs11.unlink(lockPath);
               } catch {}
               ok = await tryAcquire();
               if (!ok)
@@ -17662,8 +18368,8 @@ async function selfUpdate(deps) {
           }
           let newVersion = "";
           try {
-            const pkgJsonPath = path10.join(staging, "node_modules", deps.pkgName, "package.json");
-            const raw = await fs9.readFile(pkgJsonPath, "utf-8");
+            const pkgJsonPath = path12.join(staging, "node_modules", deps.pkgName, "package.json");
+            const raw = await fs11.readFile(pkgJsonPath, "utf-8");
             const json2 = JSON.parse(raw);
             newVersion = typeof json2.version === "string" ? json2.version : "";
           } catch (e) {
@@ -17678,16 +18384,16 @@ async function selfUpdate(deps) {
           newVersionForLog = newVersion;
           try {
             await rmRf(backup);
-            await fs9.rename(dir, backup);
-            await fs9.rename(staging, dir);
+            await fs11.rename(dir, backup);
+            await fs11.rename(staging, dir);
             await rmRf(backup);
           } catch (e) {
             try {
-              const backupExists = await fs9.stat(backup).then(() => true).catch(() => false);
-              const dirExists = await fs9.stat(dir).then(() => true).catch(() => false);
+              const backupExists = await fs11.stat(backup).then(() => true).catch(() => false);
+              const dirExists = await fs11.stat(dir).then(() => true).catch(() => false);
               if (backupExists && !dirExists) {
                 try {
-                  await fs9.rename(backup, dir);
+                  await fs11.rename(backup, dir);
                 } catch {}
               }
               await rmRf(staging);
@@ -17700,11 +18406,11 @@ async function selfUpdate(deps) {
         } catch (e) {
           innerError = e;
           try {
-            const backupExists = await fs9.stat(backup).then(() => true).catch(() => false);
-            const dirExists = await fs9.stat(dir).then(() => true).catch(() => false);
+            const backupExists = await fs11.stat(backup).then(() => true).catch(() => false);
+            const dirExists = await fs11.stat(dir).then(() => true).catch(() => false);
             if (backupExists && !dirExists) {
               try {
-                await fs9.rename(backup, dir);
+                await fs11.rename(backup, dir);
               } catch {}
             }
             await rmRf(staging);
@@ -17721,9 +18427,9 @@ async function selfUpdate(deps) {
       } finally {
         try {
           if (ownerToken) {
-            const cur = await fs9.readFile(lockPath, "utf-8").catch(() => "");
+            const cur = await fs11.readFile(lockPath, "utf-8").catch(() => "");
             if (cur === ownerToken) {
-              await fs9.unlink(lockPath).catch(() => {});
+              await fs11.unlink(lockPath).catch(() => {});
             }
           }
         } catch {}
@@ -17735,8 +18441,8 @@ async function selfUpdate(deps) {
 }
 
 // src/seat-sync.ts
-import * as fs10 from "node:fs/promises";
-import * as path11 from "node:path";
+import * as fs12 from "node:fs/promises";
+import * as path13 from "node:path";
 function parseSteps(content) {
   const m = content.match(/^\s*steps:\s*(\d+)/m);
   return m ? m[1] : null;
@@ -17752,7 +18458,7 @@ async function reconcileSeats(assetsAgentsDir, installedAgentsDir, log, register
   }
   if (renderedSeats.length === 0) {
     try {
-      await fs10.readdir(assetsAgentsDir);
+      await fs12.readdir(assetsAgentsDir);
     } catch (err) {
       safeWarn(log, "tgo: seat sync readdir failed", { assetsAgentsDir, error: String(err) });
     }
@@ -17762,12 +18468,12 @@ async function reconcileSeats(assetsAgentsDir, installedAgentsDir, log, register
   for (const seat of renderedSeats) {
     const file2 = seat.fileName;
     const expectedContent = seat.content;
-    const seatName = path11.basename(file2, ".md");
-    const installedPath = path11.join(installedAgentsDir, file2);
+    const seatName = path13.basename(file2, ".md");
+    const installedPath = path13.join(installedAgentsDir, file2);
     let installedContent;
     let installedExists = false;
     try {
-      installedContent = await fs10.readFile(installedPath, "utf-8");
+      installedContent = await fs12.readFile(installedPath, "utf-8");
       installedExists = true;
     } catch (err) {
       const code = err?.code;
@@ -17783,27 +18489,27 @@ async function reconcileSeats(assetsAgentsDir, installedAgentsDir, log, register
       continue;
     }
     try {
-      await fs10.mkdir(installedAgentsDir, { recursive: true });
+      await fs12.mkdir(installedAgentsDir, { recursive: true });
     } catch (err) {
       safeWarn(log, "tgo: seat sync mkdir failed", { installedAgentsDir, error: String(err) });
       continue;
     }
     if (installedExists && installedContent !== undefined) {
       try {
-        await fs10.writeFile(`${installedPath}.bak`, installedContent, "utf-8");
+        await fs12.writeFile(`${installedPath}.bak`, installedContent, "utf-8");
       } catch (err) {
         safeWarn(log, "tgo: seat sync backup failed", { file: file2, error: String(err) });
         continue;
       }
     }
-    const tmp = path11.join(installedAgentsDir, `.${file2}.${process.pid}.${Date.now()}.tmp`);
+    const tmp = path13.join(installedAgentsDir, `.${file2}.${process.pid}.${Date.now()}.tmp`);
     try {
-      await fs10.writeFile(tmp, expectedContent, "utf-8");
-      await fs10.rename(tmp, installedPath);
+      await fs12.writeFile(tmp, expectedContent, "utf-8");
+      await fs12.rename(tmp, installedPath);
     } catch (err) {
       safeWarn(log, "tgo: seat sync write failed", { file: file2, error: String(err) });
       try {
-        await fs10.rm(tmp, { force: true });
+        await fs12.rm(tmp, { force: true });
       } catch {}
       continue;
     }
@@ -17828,7 +18534,7 @@ async function reconcileSeats(assetsAgentsDir, installedAgentsDir, log, register
 }
 
 // src/plugin.ts
-import * as path12 from "node:path";
+import * as path14 from "node:path";
 import * as os3 from "node:os";
 import { fileURLToPath as fileURLToPath5 } from "node:url";
 var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => {
@@ -17886,8 +18592,8 @@ var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => 
   const seatDir = resolveAgentsDir({ agentDir: config2.agentDir });
   (async () => {
     try {
-      const packageRoot3 = path12.resolve(path12.dirname(fileURLToPath5(import.meta.url)), "..");
-      const assetsAgentsDir = path12.join(packageRoot3, "assets", "agents");
+      const packageRoot3 = path14.resolve(path14.dirname(fileURLToPath5(import.meta.url)), "..");
+      const assetsAgentsDir = path14.join(packageRoot3, "assets", "agents");
       const summary = await reconcileSeats(assetsAgentsDir, seatDir, appLog, config2.register);
       if (summary.length > 0) {
         let version2 = "unknown";
@@ -18116,7 +18822,7 @@ var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => 
       const nextPermission = preapproveExternalDirectory(input.permission, worktreeRoot);
       if (nextPermission && Object.keys(nextPermission).length > 0) {
         input.permission = nextPermission;
-        const parent = worktreeRoot ? path12.dirname(worktreeRoot) : undefined;
+        const parent = worktreeRoot ? path14.dirname(worktreeRoot) : undefined;
         appLog("info", `pre-approved external_directory for worktree family ${parent}/*`, {
           worktreeRoot,
           projectWorktree: project?.worktree ?? null,
@@ -18255,7 +18961,7 @@ ${truncated}`, synthetic: true }] }
             let seatFileFound = false;
             try {
               const seatDir2 = resolveAgentsDir({ agentDir: config2.agentDir });
-              const p = path12.join(seatDir2, `${seatName}.md`);
+              const p = path14.join(seatDir2, `${seatName}.md`);
               try {
                 const fsMod = await import("node:fs/promises");
                 seatFrontmatter = await fsMod.readFile(p, "utf-8");
@@ -18321,6 +19027,50 @@ ${truncated}`, synthetic: true }] }
               action: "metadata-only",
               diagnostics: ["Metadata validation checks observed claim fields (issueStatusObserved, issueAssigneeObserved, claimExitCode) but does not query or mutate Beads; plugin remains metadata-only until host write path proven."]
             };
+          }
+          if (route !== "tiny" && shouldRunGate(report)) {
+            let issueIdForError;
+            try {
+              const repoRoot = directory ?? worktree ?? project?.worktree ?? ".";
+              const specFields = packet;
+              const specText = [
+                typeof specFields.Objective === "string" ? specFields.Objective : specFields.Objective !== undefined ? JSON.stringify(specFields.Objective) : "",
+                Array.isArray(specFields.Files) ? specFields.Files.join(`
+`) : typeof specFields.Files === "string" ? specFields.Files : specFields.Files !== undefined ? JSON.stringify(specFields.Files) : "",
+                typeof specFields.Interfaces === "string" ? specFields.Interfaces : specFields.Interfaces !== undefined ? JSON.stringify(specFields.Interfaces) : "",
+                typeof specFields.Constraints === "string" ? specFields.Constraints : specFields.Constraints !== undefined ? JSON.stringify(specFields.Constraints) : "",
+                typeof specFields.Verification === "string" ? specFields.Verification : specFields.Verification !== undefined ? JSON.stringify(specFields.Verification) : ""
+              ].filter((s) => s && s.trim().length > 0).join(`
+
+`);
+              const issueId = typeof lifecycle.issueId === "string" && String(lifecycle.issueId).trim().length > 0 ? String(lifecycle.issueId).trim() : typeof specFields.issueId === "string" ? String(specFields.issueId).trim() : undefined;
+              issueIdForError = issueId;
+              if (issueId) {
+                const gateResult = await runExitGate({ repoRoot, issueId, specText: specText || String(specFields.Objective ?? ""), report });
+                const merged = evaluateGatedClosure(route, lifecycle, report, {
+                  passed: gateResult.passed,
+                  blocked: gateResult.blocked,
+                  reasonCode: gateResult.reasonCode,
+                  reason: gateResult.reason,
+                  findings: gateResult.findings,
+                  compensation: gateResult.compensation,
+                  skipped: gateResult.skipped,
+                  skipReason: gateResult.skipReason
+                });
+                output.metadata.closureGate = merged;
+                output.metadata.exitGate = gateResult;
+                if (gateResult.blocked) {
+                  appLog("warn", "exit gate blocked close", { issueId, reason: gateResult.reason, reasonCode: gateResult.reasonCode, findings: gateResult.findings.length });
+                }
+              }
+            } catch (e) {
+              const errMsg = String(e);
+              appLog("error", "exit gate evaluation failed — blocking close", { issueId: issueIdForError, error: errMsg });
+              const blocked = gateBlockedWithError(String(issueIdForError ?? "unknown"), errMsg);
+              const merged = evaluateGatedClosure(route, lifecycle, report, blocked);
+              output.metadata.closureGate = merged;
+              output.metadata.exitGate = blocked;
+            }
           }
         }
         if (!report.valid) {
