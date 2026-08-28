@@ -353,25 +353,33 @@ async function epicScope(bd, epicID, ready) {
   const children = await bd.children(epicID) ?? [];
   if (children.length === 0)
     return;
-  const items = children.filter((it) => it.id !== epicID).sort(byID).map((bead) => ({ bead, state: stateOf(bead, ready) }));
+  const all = children.filter((it) => it.id !== epicID).sort(byID).map((bead) => ({ bead, state: stateOf(bead, ready) }));
+  const hiddenClosed = all.filter((it) => it.state === "closed").length;
+  const items = all.filter((it) => it.state !== "closed");
   return {
     epic,
     items,
-    done: items.filter((it) => it.state === "closed").length,
-    total: items.length,
-    fallback: false
+    done: hiddenClosed,
+    total: all.length,
+    fallback: false,
+    hiddenClosed
   };
 }
 async function workspaceScope(bd, ready) {
   const open = await bd.list(["--all"]) ?? [];
-  const items = open.filter((it) => !CONTAINER_TYPES.has(it.issue_type ?? "")).map((bead) => ({ bead, state: stateOf(bead, ready) })).sort(byUrgency);
-  if (items.length === 0)
+  const all = open.filter((it) => !CONTAINER_TYPES.has(it.issue_type ?? "")).map((bead) => ({ bead, state: stateOf(bead, ready) })).sort(byUrgency);
+  if (all.length === 0)
+    return;
+  const hiddenClosed = all.filter((it) => it.state === "closed").length;
+  const items = all.filter((it) => it.state !== "closed");
+  if (items.length === 0 && hiddenClosed === 0)
     return;
   return {
     items,
-    done: items.filter((it) => it.state === "closed").length,
-    total: items.length,
-    fallback: true
+    done: hiddenClosed,
+    total: all.length,
+    fallback: true,
+    hiddenClosed
   };
 }
 function stateOf(bead, ready) {
@@ -460,7 +468,7 @@ function createStore(bd, kv) {
     } catch (err) {
       debug(`refresh threw ${String(err)}`);
       pollDelay = Math.min(pollDelay * 2, MAX_POLL_MS);
-      commit({ epic: undefined, items: [], done: 0, total: 0, fallback: false, error: String(err) });
+      commit({ epic: undefined, items: [], done: 0, total: 0, fallback: false, error: String(err), hiddenClosed: 0 });
     } finally {
       lastSignature = bd.snapshot();
       inFlight = false;
@@ -503,6 +511,7 @@ function BeadsPanel(props) {
   const items = createMemo(() => props.data()?.items ?? []);
   const collapsible = createMemo(() => items().length > COLLAPSE_THRESHOLD);
   const visible = createMemo(() => collapsible() && !expanded() ? [] : items());
+  const hiddenClosed = createMemo(() => props.data()?.hiddenClosed ?? 0);
   const heading = createMemo(() => {
     const data = props.data();
     if (!data)
@@ -556,6 +565,13 @@ function BeadsPanel(props) {
               api: props.api,
               item,
               onSelect: props.onSelect
+            }, undefined, false, undefined, this)
+          }, undefined, false, undefined, this),
+          /* @__PURE__ */ jsxDEV(Show, {
+            when: hiddenClosed() > 0,
+            children: /* @__PURE__ */ jsxDEV("text", {
+              fg: theme().textMuted,
+              children: `${hiddenClosed()} closed hidden`
             }, undefined, false, undefined, this)
           }, undefined, false, undefined, this)
         ]

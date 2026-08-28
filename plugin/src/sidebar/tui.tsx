@@ -111,7 +111,7 @@ export function createStore(bd: BdClient, kv: Kv) {
       // the panel vanish (indistinguishable from plugin-not-loaded), while an
       // error line tells the user bd is broken and that /bd-refresh retries.
       pollDelay = Math.min(pollDelay * 2, MAX_POLL_MS)
-      commit({ epic: undefined, items: [], done: 0, total: 0, fallback: false, error: String(err) })
+      commit({ epic: undefined, items: [], done: 0, total: 0, fallback: false, error: String(err), hiddenClosed: 0 })
     } finally {
       // Snapshot *after* querying, not before: some bd reads rewrite
       // `.beads/last-touched` themselves, and sampling first would make our own
@@ -181,6 +181,7 @@ export function BeadsPanel(props: {
   const items = createMemo(() => props.data()?.items ?? [])
   const collapsible = createMemo(() => items().length > COLLAPSE_THRESHOLD)
   const visible = createMemo(() => (collapsible() && !expanded() ? [] : items()))
+  const hiddenClosed = createMemo(() => props.data()?.hiddenClosed ?? 0)
 
   const heading = createMemo(() => {
     const data = props.data()
@@ -215,6 +216,9 @@ export function BeadsPanel(props: {
               </box>
 
               <For each={visible()}>{(item) => <Row api={props.api} item={item} onSelect={props.onSelect} />}</For>
+              <Show when={hiddenClosed() > 0}>
+                <text fg={theme().textMuted}>{`${hiddenClosed()} closed hidden`}</text>
+              </Show>
             </box>
           }
         >
