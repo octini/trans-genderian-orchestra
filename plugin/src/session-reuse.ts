@@ -274,36 +274,18 @@ export async function ensureDefSnapshot(opts: {
   capturedAt?: string;
   seatFileFound?: boolean;
 }): Promise<{ snapshot: DefSnapshot; written: boolean; reused: boolean }> {
-  assertValidBeadID(opts.issueId);
-  const existing = await readDefSnapshot(opts.repoRoot, opts.issueId);
-  if (existing && !opts.useLatestDefinitions) {
-    return { snapshot: existing, written: false, reused: true };
-  }
-  if (opts.model === "unknown") throw new Error(`ensureDefSnapshot: refusing model "unknown"`);
-  const snapshot = buildDefSnapshot({
+  // Dedup: delegate to def-snapshot.ts single source of truth (no duplicated logic)
+  return defEnsure({
+    repoRoot: opts.repoRoot,
+    issueId: opts.issueId,
     promptText: opts.promptText,
     seatFrontmatter: opts.seatFrontmatter,
-    seatFileFound: opts.seatFileFound,
+    seatFileFound: opts.seatFileFound ?? true,
     model: opts.model,
     preset: opts.preset,
+    useLatestDefinitions: opts.useLatestDefinitions,
     capturedAt: opts.capturedAt,
   });
-  const written = await writeDefSnapshot(opts.repoRoot, opts.issueId, snapshot, { useLatestDefinitions: opts.useLatestDefinitions });
-  if (!written) {
-    const attempts = 10;
-    const intervalMs = 200;
-    for (let attempt = 0; attempt < attempts; attempt++) {
-      const retry = await readDefSnapshot(opts.repoRoot, opts.issueId);
-      if (retry) return { snapshot: retry, written: false, reused: true };
-      if (existing) return { snapshot: existing, written: false, reused: true };
-      if (attempt < attempts - 1) await new Promise((r) => setTimeout(r, intervalMs));
-    }
-    const finalRetry = await readDefSnapshot(opts.repoRoot, opts.issueId);
-    if (finalRetry) return { snapshot: finalRetry, written: false, reused: true };
-    if (existing) return { snapshot: existing, written: false, reused: true };
-    throw new Error(`def-snapshot convergence failed for ${opts.issueId}: final file absent after 2s poll`);
-  }
-  return { snapshot, written, reused: false };
 }
 
 export async function captureDelegationSession(deps: { tool: string; input: unknown; output: unknown; repoRoot: string; enabled: boolean; log?: (level: "warn" | "info", message: string) => void; promptText?: string; seatFrontmatter?: string; model?: string; preset?: string; useLatestDefinitions?: boolean }): Promise<void> {
