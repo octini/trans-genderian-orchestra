@@ -1,3 +1,4 @@
+import { createRequire } from "node:module";
 var __defProp = Object.defineProperty;
 var __returnValue = (v) => v;
 function __exportSetter(name, newValue) {
@@ -12,6 +13,7 @@ var __export = (target, all) => {
       set: __exportSetter.bind(all, name)
     });
 };
+var __require = /* @__PURE__ */ createRequire(import.meta.url);
 
 // src/plugin.ts
 import { tool } from "@opencode-ai/plugin";
@@ -14453,16 +14455,255 @@ async function validateAgentDir(agentDir, log) {
 import * as crypto from "node:crypto";
 
 // src/progress.ts
+import * as fs3 from "node:fs/promises";
+import * as path3 from "node:path";
+
+// src/def-snapshot.ts
 import * as fs2 from "node:fs/promises";
 import * as path2 from "node:path";
+var VALID_BEAD_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+var __defSnapshotFaultDelayMs = 0;
+var __defSnapshotFaultFired = false;
+function isValidBeadID(id) {
+  return VALID_BEAD_ID.test(id);
+}
+function assertValidBeadID(issueId) {
+  if (!isValidBeadID(issueId)) {
+    throw new Error(`invalid issueId "${issueId}" — must match ${VALID_BEAD_ID.source} (VALID_BEAD_ID)`);
+  }
+}
+function hashString(s) {
+  let hash2 = 2166136261;
+  for (let i = 0;i < s.length; i++) {
+    hash2 ^= s.charCodeAt(i);
+    hash2 = Math.imul(hash2, 16777619);
+  }
+  return (hash2 >>> 0).toString(16).padStart(8, "0");
+}
+function defSnapshotPath(repoRoot, issueId) {
+  assertValidBeadID(issueId);
+  return path2.join(repoRoot, ".tgo", issueId, "def-snapshot.json");
+}
+function normalizeFivePartSections(packet) {
+  const obj = typeof packet.Objective === "string" ? packet.Objective : JSON.stringify(packet.Objective ?? "");
+  const files = Array.isArray(packet.Files) ? JSON.stringify(packet.Files) : typeof packet.Files === "string" ? packet.Files : JSON.stringify(packet.Files ?? "");
+  const interfaces = typeof packet.Interfaces === "string" ? packet.Interfaces : JSON.stringify(packet.Interfaces ?? "");
+  const constraints = typeof packet.Constraints === "string" ? packet.Constraints : JSON.stringify(packet.Constraints ?? "");
+  const verification = typeof packet.Verification === "string" ? packet.Verification : JSON.stringify(packet.Verification ?? "");
+  return [obj, files, interfaces, constraints, verification];
+}
+function lengthPrefixJoin(parts) {
+  return parts.map((s) => `${s.length}:${s}`).join("");
+}
+function canonicalizeFivePart(sections, joiner = lengthPrefixJoin) {
+  return joiner(sections);
+}
+function hashFivePartPacket(packet) {
+  const sections = normalizeFivePartSections(packet);
+  const canonical = canonicalizeFivePart(sections);
+  return hashString(canonical);
+}
+function buildDefSnapshot(opts) {
+  if (opts.model === "unknown" || opts.model.trim().length === 0) {
+    throw new Error(`buildDefSnapshot: model must be a resolved host-authoritative model, not "unknown"`);
+  }
+  if (opts.preset.trim().length === 0) {
+    throw new Error(`buildDefSnapshot: preset must be non-empty`);
+  }
+  return {
+    promptHash: hashFivePartPacket(opts.packet),
+    seatFrontmatterHash: hashString(opts.seatFrontmatter),
+    seatFileFound: opts.seatFileFound,
+    model: opts.model,
+    preset: opts.preset,
+    capturedAt: opts.capturedAt ?? new Date().toISOString()
+  };
+}
+function buildDefSnapshotFromPrompt(opts) {
+  if (opts.model === "unknown" || opts.model.trim().length === 0) {
+    throw new Error(`buildDefSnapshotFromPrompt: model must not be "unknown"`);
+  }
+  return {
+    promptHash: hashString(opts.promptText),
+    seatFrontmatterHash: hashString(opts.seatFrontmatter),
+    seatFileFound: opts.seatFileFound ?? true,
+    model: opts.model,
+    preset: opts.preset,
+    capturedAt: opts.capturedAt ?? new Date().toISOString()
+  };
+}
+async function writeDefSnapshot(repoRoot, issueId, snapshot, opts) {
+  assertValidBeadID(issueId);
+  if (snapshot.model === "unknown") {
+    throw new Error(`writeDefSnapshot: refusing to write snapshot with model "unknown"`);
+  }
+  const target = defSnapshotPath(repoRoot, issueId);
+  const dir = path2.dirname(target);
+  try {
+    await fs2.mkdir(dir, { recursive: true });
+  } catch {}
+  if (!opts?.useLatestDefinitions) {
+    const content = JSON.stringify(snapshot, null, 2);
+    const tmp2 = path2.join(dir, `.def-snapshot-${hashString(content)}-${process.pid}-${Math.random().toString(36).slice(2)}.tmp`);
+    try {
+      await fs2.writeFile(tmp2, content, "utf-8");
+      if (__defSnapshotFaultDelayMs > 0 && !__defSnapshotFaultFired) {
+        __defSnapshotFaultFired = true;
+        await new Promise((r) => setTimeout(r, __defSnapshotFaultDelayMs));
+      }
+      await fs2.link(tmp2, target);
+      try {
+        await fs2.unlink(tmp2);
+      } catch {}
+      return true;
+    } catch (e) {
+      try {
+        await fs2.unlink(tmp2);
+      } catch {}
+      const code = e?.code;
+      if (code === "EEXIST")
+        return false;
+      if (code === "ENOENT") {
+        try {
+          await fs2.mkdir(dir, { recursive: true });
+        } catch {}
+        const retryTmp = path2.join(dir, `.def-snapshot-${hashString(content)}-${process.pid}-${Math.random().toString(36).slice(2)}.tmp`);
+        try {
+          await fs2.writeFile(retryTmp, content, "utf-8");
+          await fs2.link(retryTmp, target);
+          try {
+            await fs2.unlink(retryTmp);
+          } catch {}
+          return true;
+        } catch (e2) {
+          try {
+            await fs2.unlink(retryTmp);
+          } catch {}
+          const code2 = e2?.code;
+          if (code2 === "EEXIST")
+            return false;
+          throw e2;
+        }
+      }
+      throw e;
+    }
+  }
+  const tmp = path2.join(dir, `def-snapshot.json.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`);
+  try {
+    await fs2.writeFile(tmp, JSON.stringify(snapshot, null, 2), "utf-8");
+    await fs2.rename(tmp, target);
+    return true;
+  } catch {
+    try {
+      await fs2.rm(tmp, { force: true });
+    } catch {}
+    return false;
+  }
+}
+async function readDefSnapshot(repoRoot, issueId) {
+  assertValidBeadID(issueId);
+  const target = defSnapshotPath(repoRoot, issueId);
+  try {
+    const raw = await fs2.readFile(target, "utf-8");
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object")
+      return;
+    const promptHash = parsed.promptHash;
+    const seatFrontmatterHash = parsed.seatFrontmatterHash;
+    const model = parsed.model;
+    const preset = parsed.preset;
+    const capturedAt = parsed.capturedAt;
+    const seatFileFound = parsed.seatFileFound;
+    if (typeof promptHash !== "string" || !/^[0-9a-f]{8}$/.test(promptHash))
+      return;
+    if (typeof seatFrontmatterHash !== "string" || !/^[0-9a-f]{8}$/.test(seatFrontmatterHash))
+      return;
+    if (typeof model !== "string" || model.trim().length === 0 || model === "unknown")
+      return;
+    if (typeof preset !== "string" || preset.trim().length === 0)
+      return;
+    if (typeof capturedAt !== "string" || capturedAt.trim().length === 0)
+      return;
+    let found;
+    if (seatFileFound === undefined)
+      found = true;
+    else if (typeof seatFileFound === "boolean")
+      found = seatFileFound;
+    else
+      return;
+    return {
+      promptHash,
+      seatFrontmatterHash,
+      model,
+      preset,
+      seatFileFound: found,
+      capturedAt
+    };
+  } catch {
+    return;
+  }
+}
+async function ensureDefSnapshot(opts) {
+  assertValidBeadID(opts.issueId);
+  const existing = await readDefSnapshot(opts.repoRoot, opts.issueId);
+  if (existing && !opts.useLatestDefinitions)
+    return { snapshot: existing, written: false, reused: true };
+  let snapshot;
+  if (opts.packet !== undefined) {
+    snapshot = buildDefSnapshot({
+      packet: opts.packet,
+      seatFrontmatter: opts.seatFrontmatter,
+      seatFileFound: opts.seatFileFound,
+      model: opts.model,
+      preset: opts.preset,
+      capturedAt: opts.capturedAt
+    });
+  } else if (opts.promptText !== undefined) {
+    snapshot = buildDefSnapshotFromPrompt({
+      promptText: opts.promptText,
+      seatFrontmatter: opts.seatFrontmatter,
+      seatFileFound: opts.seatFileFound,
+      model: opts.model,
+      preset: opts.preset,
+      capturedAt: opts.capturedAt
+    });
+  } else {
+    throw new Error("ensureDefSnapshot: either packet or promptText must be provided");
+  }
+  const written = await writeDefSnapshot(opts.repoRoot, opts.issueId, snapshot, { useLatestDefinitions: opts.useLatestDefinitions });
+  if (!written) {
+    const attempts = 10;
+    const intervalMs = 200;
+    for (let attempt = 0;attempt < attempts; attempt++) {
+      const retry = await readDefSnapshot(opts.repoRoot, opts.issueId);
+      if (retry)
+        return { snapshot: retry, written: false, reused: true };
+      if (existing)
+        return { snapshot: existing, written: false, reused: true };
+      if (attempt < attempts - 1)
+        await new Promise((r) => setTimeout(r, intervalMs));
+    }
+    const finalRetry = await readDefSnapshot(opts.repoRoot, opts.issueId);
+    if (finalRetry)
+      return { snapshot: finalRetry, written: false, reused: true };
+    if (existing)
+      return { snapshot: existing, written: false, reused: true };
+    throw new Error(`def-snapshot convergence failed for ${opts.issueId}: final file absent after 2s poll`);
+  }
+  return { snapshot, written, reused: false };
+}
+
+// src/progress.ts
 var PROGRESS_LOCK_STALE_MS = 1e4;
 function progressPath(repoRoot, issueId) {
-  return path2.join(repoRoot, ".tgo", issueId, "progress.md");
+  assertValidBeadID(issueId);
+  return path3.join(repoRoot, ".tgo", issueId, "progress.md");
 }
 async function readProgress(repoRoot, issueId) {
+  assertValidBeadID(issueId);
   try {
     const target = progressPath(repoRoot, issueId);
-    const data = await fs2.readFile(target, "utf-8");
+    const data = await fs3.readFile(target, "utf-8");
     return data;
   } catch {
     return;
@@ -14470,14 +14711,14 @@ async function readProgress(repoRoot, issueId) {
 }
 async function acquireProgressLock(issueDir, lockPath) {
   try {
-    await fs2.mkdir(issueDir, { recursive: true });
+    await fs3.mkdir(issueDir, { recursive: true });
   } catch {}
   const ownerToken = `${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}`;
   let acquired = false;
   const tryAcquire = async () => {
     let handle;
     try {
-      handle = await fs2.open(lockPath, "wx");
+      handle = await fs3.open(lockPath, "wx");
       try {
         await handle.writeFile(ownerToken, "utf-8");
       } catch {}
@@ -14500,11 +14741,11 @@ async function acquireProgressLock(issueDir, lockPath) {
   let ok = await tryAcquire();
   if (!ok) {
     try {
-      const stat2 = await fs2.stat(lockPath);
+      const stat2 = await fs3.stat(lockPath);
       const age = Date.now() - stat2.mtimeMs;
       if (age > PROGRESS_LOCK_STALE_MS) {
         try {
-          await fs2.unlink(lockPath);
+          await fs3.unlink(lockPath);
         } catch {}
         ok = await tryAcquire();
         if (!ok)
@@ -14525,24 +14766,25 @@ async function acquireProgressLock(issueDir, lockPath) {
 }
 async function releaseProgressLock(lockPath, ownerToken) {
   try {
-    const cur = await fs2.readFile(lockPath, "utf-8");
+    const cur = await fs3.readFile(lockPath, "utf-8");
     if (cur === ownerToken) {
-      await fs2.unlink(lockPath);
+      await fs3.unlink(lockPath);
     }
   } catch {}
 }
 async function updateProgress(repoRoot, issueId, merge2, log) {
+  assertValidBeadID(issueId);
   try {
-    const issueDir = path2.join(repoRoot, ".tgo", issueId);
-    const lockPath = path2.join(issueDir, "progress.lock");
-    const targetPath = path2.join(issueDir, "progress.md");
+    const issueDir = path3.join(repoRoot, ".tgo", issueId);
+    const lockPath = path3.join(issueDir, "progress.lock");
+    const targetPath = path3.join(issueDir, "progress.md");
     const ownerToken = await acquireProgressLock(issueDir, lockPath);
     if (!ownerToken)
       return false;
     try {
       let current;
       try {
-        const data = await fs2.readFile(targetPath, "utf-8");
+        const data = await fs3.readFile(targetPath, "utf-8");
         current = parseProgress(data);
       } catch {
         current = { touchSet: [], decisions: [], blockers: [], extra: {} };
@@ -14567,10 +14809,10 @@ async function updateProgress(repoRoot, issueId, merge2, log) {
         next.blockers = [];
       const content = formatProgress(next);
       try {
-        await fs2.mkdir(issueDir, { recursive: true });
-        const tmp = path2.join(issueDir, `progress.md.${process.pid}.${Date.now()}.tmp`);
-        await fs2.writeFile(tmp, content, "utf-8");
-        await fs2.rename(tmp, targetPath);
+        await fs3.mkdir(issueDir, { recursive: true });
+        const tmp = path3.join(issueDir, `progress.md.${process.pid}.${Date.now()}.tmp`);
+        await fs3.writeFile(tmp, content, "utf-8");
+        await fs3.rename(tmp, targetPath);
         return true;
       } catch {
         return false;
@@ -14716,12 +14958,20 @@ function parseProgress(content) {
 }
 
 // src/session-reuse.ts
-import * as fs3 from "node:fs/promises";
-import * as path3 from "node:path";
+import * as fs4 from "node:fs/promises";
+import * as path4 from "node:path";
+var readDefSnapshot2 = readDefSnapshot;
+function shouldReuseWithSnapshot(estimate, maxContextTokens, opts) {
+  if (opts?.useLatestDefinitions === true)
+    return false;
+  if (opts?.snapshot)
+    return true;
+  return estimate < maxContextTokens;
+}
 async function loadSessionMap(repoRoot) {
-  const target = path3.join(repoRoot, ".tgo", "sessions.json");
+  const target = path4.join(repoRoot, ".tgo", "sessions.json");
   try {
-    const raw = await fs3.readFile(target, "utf-8");
+    const raw = await fs4.readFile(target, "utf-8");
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
       return {};
@@ -14734,7 +14984,15 @@ async function loadSessionMap(repoRoot) {
         continue;
       if (typeof entry.updatedAt !== "string")
         continue;
-      out[key] = entry;
+      if (entry.promptHash !== undefined && (typeof entry.promptHash !== "string" || !/^[0-9a-f]{8}$/.test(entry.promptHash)))
+        continue;
+      out[key] = {
+        sessionId: entry.sessionId,
+        delegationId: typeof entry.delegationId === "string" ? entry.delegationId : undefined,
+        exitGate: typeof entry.exitGate === "boolean" ? entry.exitGate : undefined,
+        updatedAt: entry.updatedAt,
+        promptHash: typeof entry.promptHash === "string" ? entry.promptHash : undefined
+      };
     }
     return out;
   } catch {
@@ -14742,13 +15000,13 @@ async function loadSessionMap(repoRoot) {
   }
 }
 async function saveSessionMap(repoRoot, map2) {
-  const dir = path3.join(repoRoot, ".tgo");
-  await fs3.mkdir(dir, { recursive: true });
-  const target = path3.join(dir, "sessions.json");
-  const tmp = path3.join(dir, `sessions.json.${process.pid}.${Date.now()}.tmp`);
+  const dir = path4.join(repoRoot, ".tgo");
+  await fs4.mkdir(dir, { recursive: true });
+  const target = path4.join(dir, "sessions.json");
+  const tmp = path4.join(dir, `sessions.json.${process.pid}.${Date.now()}.tmp`);
   const payload = JSON.stringify(map2, null, 2);
-  await fs3.writeFile(tmp, payload, "utf-8");
-  await fs3.rename(tmp, target);
+  await fs4.writeFile(tmp, payload, "utf-8");
+  await fs4.rename(tmp, target);
 }
 function upsertSession(map2, issueId, entry) {
   return { ...map2, [issueId]: entry };
@@ -14779,6 +15037,8 @@ async function persistAbortHandback(opts) {
   try {
     let map2 = await loadSessionMap(opts.repoRoot);
     let issueId = issueIdBySession(map2, opts.sessionID);
+    if (issueId)
+      assertValidBeadID(issueId);
     if (!issueId && opts.fetchSessionMessages) {
       let fetchedIssueId;
       try {
@@ -14829,6 +15089,7 @@ async function persistAbortHandback(opts) {
         return;
       }
       issueId = fetchedIssueId;
+      assertValidBeadID(issueId);
       try {
         const entry = { sessionId: opts.sessionID, updatedAt: new Date().toISOString() };
         const nextMap = upsertSession(map2, issueId, entry);
@@ -14840,6 +15101,7 @@ async function persistAbortHandback(opts) {
     }
     if (!issueId)
       return;
+    assertValidBeadID(issueId);
     const blocker = `watchdog abort (${opts.reason}) at ${new Date().toISOString()} — session ${opts.sessionID}; re-dispatch may reuse its task_id`;
     const ok = await updateProgress(opts.repoRoot, issueId, (parts) => ({
       ...parts,
@@ -14882,9 +15144,6 @@ function estimateSessionTokens(messages) {
   }
   return total;
 }
-function shouldReuse(estimate, maxContextTokens) {
-  return estimate < maxContextTokens;
-}
 async function captureDelegationSession(deps) {
   if (!deps.enabled)
     return;
@@ -14894,16 +15153,20 @@ async function captureDelegationSession(deps) {
     const rawInput = deps.input;
     const taskArgs = rawInput && typeof rawInput.args === "object" && rawInput.args !== null ? rawInput.args : rawInput;
     const packet = taskArgs?.delegationPacket && typeof taskArgs.delegationPacket === "object" ? taskArgs.delegationPacket : undefined;
-    const issueId = typeof packet?.issueId === "string" ? packet.issueId.trim() : "";
+    const issueIdRaw = typeof packet?.issueId === "string" ? packet.issueId.trim() : "";
     const delegationId = typeof packet?.delegationId === "string" ? packet.delegationId.trim() : undefined;
     const outputRec = deps.output;
     const outputText = typeof outputRec?.output === "string" ? outputRec.output : "";
     if (outputText.includes("Background task started")) {
       return;
     }
-    if (!issueId) {
+    if (!issueIdRaw) {
       return;
     }
+    if (!isValidBeadID(issueIdRaw)) {
+      throw new Error(`invalid issueId "${issueIdRaw}" — must match ${/^[A-Za-z0-9][A-Za-z0-9._-]*$/.source}`);
+    }
+    const issueId = issueIdRaw;
     let sessionId;
     const meta3 = deps.output?.metadata;
     if (meta3 && typeof meta3 === "object" && typeof meta3.sessionId === "string") {
@@ -14922,14 +15185,25 @@ async function captureDelegationSession(deps) {
     if (!/^ses_[A-Za-z0-9]+$/.test(sessionId)) {
       return;
     }
+    let promptHash;
+    try {
+      const snap = await readDefSnapshot2(deps.repoRoot, issueId);
+      if (snap)
+        promptHash = snap.promptHash;
+    } catch (e) {
+      if (String(e).includes("invalid issueId"))
+        throw e;
+    }
     const map2 = await loadSessionMap(deps.repoRoot);
     const exitGate = typeof packet?.exitGate === "boolean" ? packet.exitGate : undefined;
     const entry = {
       sessionId,
       delegationId,
       updatedAt: new Date().toISOString(),
-      ...exitGate !== undefined ? { exitGate } : {}
+      ...exitGate !== undefined ? { exitGate } : {},
+      ...promptHash ? { promptHash } : {}
     };
+    assertValidBeadID(issueId);
     await saveSessionMap(deps.repoRoot, upsertSession(map2, issueId, entry));
   } catch (error51) {
     safeWarn(deps.log, `session-reuse capture failed: ${String(error51)}`);
@@ -15017,7 +15291,15 @@ async function buildBoardTextWithHints(data, reusableSet, sessionIdsByIssue, max
   if (data.inProgress.length > 0) {
     const inProgressLines = [];
     for (const issue2 of data.inProgress) {
-      inProgressLines.push(line(issue2));
+      let rendered = line(issue2);
+      if (repoRoot) {
+        try {
+          const snap = await readDefSnapshot(repoRoot, issue2.id);
+          if (snap)
+            rendered += ` [pinned v${snap.promptHash.slice(0, 8)}]`;
+        } catch {}
+      }
+      inProgressLines.push(rendered);
       if (reusableSet?.has(issue2.id) && sessionIdsByIssue?.has(issue2.id)) {
         const sid = sessionIdsByIssue.get(issue2.id);
         inProgressLines.push(`reusable session ${sid} — pass task_id: "${sid}" on the next task call to continue it.`);
@@ -15289,7 +15571,13 @@ class BoardController {
         } catch {
           continue;
         }
-        if (shouldReuse(estimate, this.sessionReuse.maxContextTokens)) {
+        let snapshot;
+        try {
+          snapshot = await readDefSnapshot(this.sessionReuse.repoRoot, issue2.id);
+        } catch {
+          snapshot = null;
+        }
+        if (shouldReuseWithSnapshot(estimate, this.sessionReuse.maxContextTokens, { snapshot: snapshot ?? null })) {
           reusableSet.add(issue2.id);
           sessionIdsByIssue.set(issue2.id, sid);
         }
@@ -15319,26 +15607,26 @@ ${BOARD_SENTINEL_END}`;
 }
 
 // src/concision.ts
-import * as fs5 from "node:fs/promises";
-import * as path5 from "node:path";
+import * as fs6 from "node:fs/promises";
+import * as path6 from "node:path";
 import { fileURLToPath as fileURLToPath3 } from "node:url";
 
 // src/build.ts
-import * as fs4 from "node:fs/promises";
-import * as path4 from "node:path";
+import * as fs5 from "node:fs/promises";
+import * as path5 from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
-var packageRoot = path4.resolve(path4.dirname(fileURLToPath2(import.meta.url)), "..");
+var packageRoot = path5.resolve(path5.dirname(fileURLToPath2(import.meta.url)), "..");
 var HOUSE_STYLE_SLOT = "{{TGO_HOUSE_STYLE}}";
 var REGISTER_SLOT = "{{TGO_REGISTER}}";
 var AGENTS_MARKER_BEGIN = "<!-- TGO: thin always-on advice layer";
 var AGENTS_MARKER_END = "<!-- END TGO advice layer -->";
 async function loadHouseStyle() {
-  const file2 = path4.join(packageRoot, "assets", "house-style.md");
-  return fs4.readFile(file2, "utf-8");
+  const file2 = path5.join(packageRoot, "assets", "house-style.md");
+  return fs5.readFile(file2, "utf-8");
 }
 async function loadAgentsFragment() {
-  const file2 = path4.join(packageRoot, "assets", "AGENTS.fragment.md");
-  return fs4.readFile(file2, "utf-8");
+  const file2 = path5.join(packageRoot, "assets", "AGENTS.fragment.md");
+  return fs5.readFile(file2, "utf-8");
 }
 function foldHouseStyle(template, houseStyle, register = "concise") {
   if (!template.includes(HOUSE_STYLE_SLOT))
@@ -15347,7 +15635,7 @@ function foldHouseStyle(template, houseStyle, register = "concise") {
 }
 async function renderSeats(sourceDir, register = "concise") {
   const houseStyle = await loadHouseStyle();
-  const files = await fs4.readdir(sourceDir).catch((err) => {
+  const files = await fs5.readdir(sourceDir).catch((err) => {
     console.warn(`tgo: renderSeats readdir failed: ${String(err)}`, { sourceDir });
     return [];
   });
@@ -15355,7 +15643,7 @@ async function renderSeats(sourceDir, register = "concise") {
   for (const file2 of files) {
     if (!file2.endsWith(".md"))
       continue;
-    const template = await fs4.readFile(path4.join(sourceDir, file2), "utf-8");
+    const template = await fs5.readFile(path5.join(sourceDir, file2), "utf-8");
     const content = foldHouseStyle(template, houseStyle, register);
     assertPromptUnderBudget(content, file2);
     seats.push({ fileName: file2, content });
@@ -15364,10 +15652,10 @@ async function renderSeats(sourceDir, register = "concise") {
 }
 async function mergeAgentsFragment(configDir) {
   const fragment = await loadAgentsFragment();
-  const dest = path4.join(configDir, "AGENTS.md");
+  const dest = path5.join(configDir, "AGENTS.md");
   let existing = "";
   try {
-    existing = await fs4.readFile(dest, "utf-8");
+    existing = await fs5.readFile(dest, "utf-8");
   } catch {}
   if (existing.includes(AGENTS_MARKER_BEGIN)) {
     return { action: "unchanged" };
@@ -15378,17 +15666,17 @@ ${AGENTS_MARKER_END}
   const next = existing.trimEnd() ? `${existing.trimEnd()}
 
 ${wrapped}` : wrapped;
-  await fs4.mkdir(configDir, { recursive: true });
-  await fs4.writeFile(dest, next, "utf-8");
+  await fs5.mkdir(configDir, { recursive: true });
+  await fs5.writeFile(dest, next, "utf-8");
   return { action: existing ? "appended" : "created" };
 }
 if (false) {}
 
 // src/concision.ts
-var packageRoot2 = path5.resolve(path5.dirname(fileURLToPath3(import.meta.url)), "..");
+var packageRoot2 = path6.resolve(path6.dirname(fileURLToPath3(import.meta.url)), "..");
 async function loadConcisionInstruction() {
-  const file2 = path5.join(packageRoot2, "assets", "concision-instruction.md");
-  return fs5.readFile(file2, "utf-8");
+  const file2 = path6.join(packageRoot2, "assets", "concision-instruction.md");
+  return fs6.readFile(file2, "utf-8");
 }
 async function buildConcisionInstruction(register = "concise") {
   const template = await loadConcisionInstruction();
@@ -15863,14 +16151,6 @@ function defaultWallNow() {
 function defaultUptimeNow() {
   return Math.round(process.uptime() * 1000);
 }
-function hashString(s) {
-  let hash2 = 2166136261;
-  for (let i = 0;i < s.length; i++) {
-    hash2 ^= s.charCodeAt(i);
-    hash2 = Math.imul(hash2, 16777619);
-  }
-  return (hash2 >>> 0).toString(16).padStart(8, "0");
-}
 function toolSignature(tool, input) {
   const t = (tool ?? "").trim();
   let primary = "";
@@ -16182,11 +16462,30 @@ Delegated session ${tracked.sessionID} was aborted by the TGO watchdog (${reason
 
 // src/report.ts
 var REPORT_STATUSES = ["complete", "partial", "blocked", "escalate"];
+var TASK_STATUSES = ["complete", "bail", "failed", "tripwire"];
 var FIELD_NAMES = ["STATUS", "CHANGES", "VERIFIED", "GAPS"];
-var FIELD_RE = /(?:^|\n)\s*(?:#{1,6}\s*)?(STATUS|CHANGES|VERIFIED|GAPS)\s*:\s*/gi;
+var FIELD_RE = /(?:^|\n)\s*(?:#{1,6}\s*)?(STATUS|CHANGES|VERIFIED|GAPS|TASK_STATUS|RETRYABLE)\s*:\s*/gi;
 function hasFailure(text) {
   const withoutNegatedSuccess = text.replace(/\bno\s+(?:failures?|errors?)\b/gi, "").replace(/\bdid\s+not\s+fail(?:ed|ure|ing)?\b/gi, "");
   return /\b(?:fail(?:ed|ure)?|failing|error|not run|unverified|unknown|did not pass)\b/i.test(withoutNegatedSuccess);
+}
+function statusTextToTaskStatus(text) {
+  if (!text)
+    return;
+  const lower = text.trim().toLowerCase();
+  const asTaxonomy = TASK_STATUSES.find((c) => lower === c);
+  if (asTaxonomy)
+    return asTaxonomy;
+  const asLegacy = REPORT_STATUSES.find((c) => lower === c);
+  if (asLegacy) {
+    if (asLegacy === "complete")
+      return "complete";
+    if (asLegacy === "partial")
+      return "failed";
+    if (asLegacy === "blocked" || asLegacy === "escalate")
+      return "tripwire";
+  }
+  return;
 }
 function parseTaskReport(raw) {
   const text = typeof raw === "string" ? raw : String(raw ?? "");
@@ -16198,17 +16497,32 @@ function parseTaskReport(raw) {
     const start = (matches[i]?.index ?? 0) + (matches[i]?.[0]?.length ?? 0);
     const value = text.slice(start, matches[i + 1]?.index ?? text.length).trim();
     if (fields[name] !== undefined)
-      malformed.push(`${name} (duplicate)`);
+      malformed.push(`${String(name)} (duplicate)`);
     else if (!value)
-      malformed.push(name);
+      malformed.push(String(name));
     else
       fields[name] = value;
   }
   const missing = FIELD_NAMES.filter((name) => fields[name] === undefined);
   const statusText = fields.STATUS?.trim().toLowerCase();
   const status = REPORT_STATUSES.find((candidate) => statusText === candidate);
-  if (fields.STATUS !== undefined && !status)
+  const statusIsTaxonomy = TASK_STATUSES.find((candidate) => statusText === candidate);
+  if (fields.STATUS !== undefined && !status && !statusIsTaxonomy)
     malformed.push("STATUS");
+  const taskStatusText = fields.TASK_STATUS?.trim().toLowerCase();
+  const taskStatusFromField = taskStatusText ? TASK_STATUSES.find((c) => taskStatusText === c) : undefined;
+  if (fields.TASK_STATUS !== undefined && !taskStatusFromField)
+    malformed.push("TASK_STATUS");
+  const retryableText = fields.RETRYABLE?.trim().toLowerCase();
+  let retryableFromField;
+  if (fields.RETRYABLE !== undefined) {
+    if (["true", "yes", "1"].includes(retryableText ?? ""))
+      retryableFromField = true;
+    else if (["false", "no", "0"].includes(retryableText ?? ""))
+      retryableFromField = false;
+    else
+      malformed.push("RETRYABLE");
+  }
   const contradictions = [];
   if (status === "complete" && fields.VERIFIED && hasFailure(fields.VERIFIED)) {
     contradictions.push("STATUS complete conflicts with failed or unverified VERIFIED evidence");
@@ -16222,20 +16536,95 @@ function parseTaskReport(raw) {
   } else if (hasFailure(fields.VERIFIED ?? "")) {
     malformed.push("VERIFIED exit-gate claim");
   }
+  let taskStatus;
+  if (taskStatusFromField) {
+    taskStatus = taskStatusFromField;
+  } else if (statusIsTaxonomy) {
+    taskStatus = statusIsTaxonomy;
+  } else if (status) {
+    if (status === "complete")
+      taskStatus = "complete";
+    else if (status === "partial")
+      taskStatus = "failed";
+    else if (status === "blocked" || status === "escalate")
+      taskStatus = "tripwire";
+    else
+      taskStatus = "failed";
+  } else {
+    taskStatus = "failed";
+  }
+  if (fields.STATUS !== undefined && fields.TASK_STATUS !== undefined) {
+    const impliedFromStatus = statusTextToTaskStatus(fields.STATUS);
+    const impliedFromTask = taskStatusFromField;
+    if (impliedFromStatus && impliedFromTask && impliedFromStatus !== impliedFromTask) {
+      contradictions.push(`STATUS ${fields.STATUS} conflicts with TASK_STATUS ${fields.TASK_STATUS}`);
+    }
+  }
+  if (taskStatus === "complete" && fields.VERIFIED && hasFailure(fields.VERIFIED)) {
+    const msg = "TASK_STATUS complete conflicts with failed or unverified VERIFIED evidence";
+    if (!contradictions.includes(msg) && !contradictions.some((c) => c.includes("STATUS complete conflicts"))) {
+      contradictions.push(msg);
+    }
+  }
+  if (taskStatus === "complete" && fields.GAPS && !/^\s*(?:none|n\/a|no gaps?)[.!]?\s*$/i.test(fields.GAPS)) {
+    const msg = "TASK_STATUS complete conflicts with non-empty GAPS";
+    if (!contradictions.includes(msg) && !contradictions.some((c) => c.includes("STATUS complete conflicts with non-empty GAPS"))) {
+      contradictions.push(msg);
+    }
+  }
+  let retryable;
+  if (retryableFromField !== undefined) {
+    retryable = retryableFromField;
+  } else {
+    if (taskStatus === "failed")
+      retryable = true;
+    else if (taskStatus === "complete")
+      retryable = false;
+    else
+      retryable = false;
+  }
+  let taxonomy;
+  switch (taskStatus) {
+    case "complete":
+      taxonomy = { status: "complete", retryable };
+      break;
+    case "bail":
+      taxonomy = { status: "bail", retryable };
+      break;
+    case "failed":
+      taxonomy = { status: "failed", retryable };
+      break;
+    case "tripwire":
+      taxonomy = { status: "tripwire", retryable };
+      break;
+  }
   const watchdogAborted = /watchdog.{0,40}abort/i.test(text);
   const valid = !watchdogAborted && missing.length === 0 && malformed.length === 0 && contradictions.length === 0;
   let recovery = "retry";
   if (watchdogAborted)
     recovery = "reroute";
-  else if (status === "blocked" || status === "escalate" || contradictions.length > 0)
+  else if (contradictions.length > 0)
     recovery = "escalate";
+  else if (taxonomy.status === "bail")
+    recovery = "abandon";
+  else if (taxonomy.status === "tripwire")
+    recovery = "fix-plan";
   else if (fields.GAPS && /clarif(?:y|ication)|ambiguous|unclear|need(?:s)? user/i.test(fields.GAPS))
     recovery = "user-clarification";
+  else if (taxonomy.status === "failed")
+    recovery = taxonomy.retryable ? "retry" : "escalate";
+  else if (taxonomy.status === "complete")
+    recovery = "retry";
+  else {
+    if (status === "blocked" || status === "escalate")
+      recovery = "escalate";
+  }
   return {
     valid,
-    completionSafe: valid && status === "complete" && exitGate,
+    completionSafe: valid && taxonomy.status === "complete" && exitGate,
     exitGate,
     status,
+    taxonomy,
     fields,
     raw: text,
     missing,
@@ -16247,8 +16636,8 @@ function parseTaskReport(raw) {
 }
 
 // src/setup.ts
-import * as fs6 from "node:fs/promises";
-import * as path6 from "node:path";
+import * as fs7 from "node:fs/promises";
+import * as path7 from "node:path";
 class SetupController {
   run;
   hasBd;
@@ -16264,7 +16653,7 @@ class SetupController {
   }
   async readAgents(directory) {
     try {
-      return await fs6.readFile(path6.join(directory, "AGENTS.md"), "utf-8");
+      return await fs7.readFile(path7.join(directory, "AGENTS.md"), "utf-8");
     } catch {
       return "";
     }
@@ -16272,7 +16661,7 @@ class SetupController {
   async missingSteps(directory) {
     const steps = [];
     try {
-      await fs6.access(path6.join(directory, ".beads"));
+      await fs7.access(path7.join(directory, ".beads"));
     } catch {
       steps.push("bd init");
     }
@@ -16370,12 +16759,12 @@ class SetupController {
 }
 
 // src/permissions.ts
-import * as path7 from "node:path";
+import * as path8 from "node:path";
 function resolveWorktreeFamily(...candidates) {
   for (const candidate of candidates) {
     if (!candidate)
       continue;
-    const parent = path7.dirname(candidate);
+    const parent = path8.dirname(candidate);
     if (!parent || parent === "/" || parent === ".")
       continue;
     return candidate;
@@ -16385,7 +16774,7 @@ function resolveWorktreeFamily(...candidates) {
 function preapproveExternalDirectory(permission, worktree) {
   if (!worktree)
     return permission ?? {};
-  const parent = path7.dirname(worktree);
+  const parent = path8.dirname(worktree);
   if (!parent || parent === "/" || parent === ".")
     return permission ?? {};
   const existingExternal = permission?.external_directory ?? {};
@@ -16609,6 +16998,14 @@ function validateDelegationPacket(routing, packet, routedTouchSet) {
       if (!malformed.includes("issueStatusObserved") && !missing.includes("issueStatusObserved")) {}
     }
   }
+  if ("issueId" in value && typeof value.issueId === "string") {
+    const id = value.issueId.trim();
+    if (id.length > 0 && !isValidBeadID(id)) {
+      if (!malformed.includes("issueId"))
+        malformed.push("issueId");
+      diagnostics.push(`issueId must match VALID_BEAD_ID ${VALID_BEAD_ID.source} — got ${JSON.stringify(value.issueId)}.`);
+    }
+  }
   if ("taskId" in value) {
     const taskId = value.taskId;
     if (typeof taskId !== "string" || taskId.trim().length === 0 || !/^ses_[A-Za-z0-9]+$/.test(taskId.trim())) {
@@ -16621,6 +17018,13 @@ function validateDelegationPacket(routing, packet, routedTouchSet) {
     if (typeof progressPath2 !== "string" || progressPath2.trim().length === 0 || !/^\.tgo\/[A-Za-z0-9][A-Za-z0-9._-]*\/progress\.md$/.test(progressPath2.trim())) {
       malformed.push("progressPath");
       diagnostics.push("progressPath must match .tgo/<issueId>/progress.md where <issueId> matches [A-Za-z0-9][A-Za-z0-9._-]*");
+    }
+  }
+  if ("useLatestDefinitions" in value) {
+    const v = value.useLatestDefinitions;
+    if (typeof v !== "boolean") {
+      malformed.push("useLatestDefinitions");
+      diagnostics.push("useLatestDefinitions must be a boolean when present (default false = pinned).");
     }
   }
   if (routedTouchSet !== undefined && "Files" in value && Array.isArray(value.Files)) {
@@ -16665,13 +17069,42 @@ async function authorizeLifecycleSession(client, sessionID) {
     return false;
   }
 }
+function deriveRecoveryFromTaxonomy(report) {
+  if (!report)
+    return "retry";
+  if (report.watchdogAborted)
+    return "reroute";
+  if (report.contradictions.length > 0)
+    return "escalate";
+  switch (report.taxonomy.status) {
+    case "bail":
+      return "abandon";
+    case "tripwire":
+      return "fix-plan";
+    default:
+      break;
+  }
+  const gapsNeedsClarification = report.fields.GAPS && /clarif(?:y|ication)|ambiguous|unclear|need(?:s)? user/i.test(report.fields.GAPS);
+  if (gapsNeedsClarification) {
+    return "user-clarification";
+  }
+  switch (report.taxonomy.status) {
+    case "failed":
+      return report.taxonomy.retryable ? "retry" : "escalate";
+    case "complete":
+      return "retry";
+    default:
+      return report.recovery ?? "retry";
+  }
+}
 function evaluateClosure(route, lifecycle, report) {
   if (route === "tiny") {
     const safe = report?.completionSafe === true;
+    const recovery2 = deriveRecoveryFromTaxonomy(report);
     return {
       canClose: safe,
       closureBlocked: !safe,
-      recovery: safe ? undefined : report?.recovery ?? "retry",
+      recovery: safe ? undefined : recovery2,
       missing: safe ? [] : ["parsed completion-safe report"],
       diagnostics: safe ? [] : ["Tiny work needs a parsed completion-safe report."]
     };
@@ -16707,7 +17140,7 @@ function evaluateClosure(route, lifecycle, report) {
     diagnostics.push(`Keep issue ${typeof lifecycle.issueId === "string" ? lifecycle.issueId : "open"}; satisfy: ${missing.join(", ")}.`);
   else if (report?.completionSafe !== true)
     diagnostics.push(`Keep issue ${typeof lifecycle.issueId === "string" ? lifecycle.issueId : "open"} open; satisfy: completion-safe report.`);
-  const recovery = report?.recovery ?? "retry";
+  const recovery = deriveRecoveryFromTaxonomy(report);
   return {
     canClose: missing.length === 0 && report?.completionSafe === true,
     closureBlocked: missing.length !== 0 || report?.completionSafe !== true,
@@ -16849,8 +17282,8 @@ No ready, open, pending, in_progress, or blocked work.`;
 }
 
 // src/version.ts
-import * as fs7 from "node:fs/promises";
-import * as path8 from "node:path";
+import * as fs8 from "node:fs/promises";
+import * as path9 from "node:path";
 import { fileURLToPath as fileURLToPath4 } from "node:url";
 var PLUGIN_NPM_NAME = "trans-genderian-orchestra";
 var REGISTRY_URL = `https://registry.npmjs.org/${PLUGIN_NPM_NAME}/latest`;
@@ -16885,9 +17318,9 @@ function compareVersions(a, b) {
   return pa.pre < pb.pre ? -1 : pa.pre > pb.pre ? 1 : 0;
 }
 async function readLocalVersion(packageRoot3) {
-  const root = packageRoot3 ?? path8.resolve(path8.dirname(fileURLToPath4(import.meta.url)), "..");
+  const root = packageRoot3 ?? path9.resolve(path9.dirname(fileURLToPath4(import.meta.url)), "..");
   try {
-    const raw = await fs7.readFile(path8.join(root, "package.json"), "utf-8");
+    const raw = await fs8.readFile(path9.join(root, "package.json"), "utf-8");
     const json2 = JSON.parse(raw);
     return typeof json2.version === "string" && json2.version.length > 0 ? json2.version : null;
   } catch {
@@ -16967,20 +17400,20 @@ var and = (...cs) => (i) => cs.every((c) => c(i));
 var terminationDecision = and((i) => i.signal.complete, (i) => !i.exitGateRequired || i.signal.exitGate === true, (i) => i.toolCallsAfterCompletion >= 1);
 
 // src/self-update.ts
-import * as fs8 from "node:fs/promises";
+import * as fs9 from "node:fs/promises";
 import * as fsSync from "node:fs";
-import * as path9 from "node:path";
+import * as path10 from "node:path";
 import * as os2 from "node:os";
 var LOCK_STALE_MS = 120000;
 var LOCK_FILE = ".tgo-selfupdate.lock";
 function resolveCacheRoot(homeDir) {
-  const base = process.env.OPENCODE_TEST_HOME ?? process.env.XDG_CACHE_HOME ?? path9.join(homeDir ?? os2.homedir(), ".cache");
-  return path9.join(base, "opencode");
+  const base = process.env.OPENCODE_TEST_HOME ?? process.env.XDG_CACHE_HOME ?? path10.join(homeDir ?? os2.homedir(), ".cache");
+  return path10.join(base, "opencode");
 }
 function slotDirs(cacheRoot, pkgName) {
   const candidates = [
-    path9.join(cacheRoot, "packages", `${pkgName}@latest`),
-    path9.join(cacheRoot, "packages", pkgName)
+    path10.join(cacheRoot, "packages", `${pkgName}@latest`),
+    path10.join(cacheRoot, "packages", pkgName)
   ];
   return candidates.filter((dir) => {
     try {
@@ -17089,14 +17522,14 @@ function buildInstallArgs(dir, pkgName) {
 }
 async function recoverOrphans(dir) {
   try {
-    const dirExists = await fs8.stat(dir).then(() => true).catch(() => false);
+    const dirExists = await fs9.stat(dir).then(() => true).catch(() => false);
     const backup = `${dir}.tgo-backup`;
     const staging = `${dir}.tgo-staging`;
     if (!dirExists) {
-      const backupExists = await fs8.stat(backup).then(() => true).catch(() => false);
+      const backupExists = await fs9.stat(backup).then(() => true).catch(() => false);
       if (backupExists) {
         try {
-          await fs8.rename(backup, dir);
+          await fs9.rename(backup, dir);
         } catch {}
       }
       return;
@@ -17107,27 +17540,27 @@ async function recoverOrphans(dir) {
 }
 async function rmRf(p) {
   try {
-    await fs8.rm(p, { recursive: true, force: true });
+    await fs9.rm(p, { recursive: true, force: true });
   } catch {}
 }
 async function copyDir(src, dest) {
-  const cp2 = fs8.cp;
+  const cp2 = fs9.cp;
   if (typeof cp2 === "function") {
-    await cp2.call(fs8, src, dest, { recursive: true, force: true });
+    await cp2.call(fs9, src, dest, { recursive: true, force: true });
     return;
   }
-  await fs8.mkdir(dest, { recursive: true });
-  const entries = await fs8.readdir(src, { withFileTypes: true });
+  await fs9.mkdir(dest, { recursive: true });
+  const entries = await fs9.readdir(src, { withFileTypes: true });
   for (const e of entries) {
-    const s = path9.join(src, e.name);
-    const d = path9.join(dest, e.name);
+    const s = path10.join(src, e.name);
+    const d = path10.join(dest, e.name);
     if (e.isDirectory()) {
       await copyDir(s, d);
     } else if (e.isSymbolicLink()) {
-      const target = await fs8.readlink(s);
-      await fs8.symlink(target, d);
+      const target = await fs9.readlink(s);
+      await fs9.symlink(target, d);
     } else {
-      await fs8.copyFile(s, d);
+      await fs9.copyFile(s, d);
     }
   }
 }
@@ -17154,20 +17587,20 @@ async function selfUpdate(deps) {
       try {
         await recoverOrphans(dir);
       } catch {}
-      const lockPath = path9.join(dir, LOCK_FILE);
+      const lockPath = path10.join(dir, LOCK_FILE);
       const staging = `${dir}.tgo-staging`;
       const backup = `${dir}.tgo-backup`;
       let ownerToken = null;
       let acquired = false;
       try {
         try {
-          await fs8.mkdir(dir, { recursive: true });
+          await fs9.mkdir(dir, { recursive: true });
         } catch {}
         const token = `${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}`;
         const tryAcquire = async () => {
           let handle;
           try {
-            handle = await fs8.open(lockPath, "wx");
+            handle = await fs9.open(lockPath, "wx");
             try {
               await handle.writeFile(token, "utf-8");
             } catch {}
@@ -17190,11 +17623,11 @@ async function selfUpdate(deps) {
         let ok = await tryAcquire();
         if (!ok) {
           try {
-            const stat3 = await fs8.stat(lockPath);
+            const stat3 = await fs9.stat(lockPath);
             const age = nowMs - stat3.mtimeMs;
             if (age > LOCK_STALE_MS) {
               try {
-                await fs8.unlink(lockPath);
+                await fs9.unlink(lockPath);
               } catch {}
               ok = await tryAcquire();
               if (!ok)
@@ -17229,8 +17662,8 @@ async function selfUpdate(deps) {
           }
           let newVersion = "";
           try {
-            const pkgJsonPath = path9.join(staging, "node_modules", deps.pkgName, "package.json");
-            const raw = await fs8.readFile(pkgJsonPath, "utf-8");
+            const pkgJsonPath = path10.join(staging, "node_modules", deps.pkgName, "package.json");
+            const raw = await fs9.readFile(pkgJsonPath, "utf-8");
             const json2 = JSON.parse(raw);
             newVersion = typeof json2.version === "string" ? json2.version : "";
           } catch (e) {
@@ -17245,16 +17678,16 @@ async function selfUpdate(deps) {
           newVersionForLog = newVersion;
           try {
             await rmRf(backup);
-            await fs8.rename(dir, backup);
-            await fs8.rename(staging, dir);
+            await fs9.rename(dir, backup);
+            await fs9.rename(staging, dir);
             await rmRf(backup);
           } catch (e) {
             try {
-              const backupExists = await fs8.stat(backup).then(() => true).catch(() => false);
-              const dirExists = await fs8.stat(dir).then(() => true).catch(() => false);
+              const backupExists = await fs9.stat(backup).then(() => true).catch(() => false);
+              const dirExists = await fs9.stat(dir).then(() => true).catch(() => false);
               if (backupExists && !dirExists) {
                 try {
-                  await fs8.rename(backup, dir);
+                  await fs9.rename(backup, dir);
                 } catch {}
               }
               await rmRf(staging);
@@ -17267,11 +17700,11 @@ async function selfUpdate(deps) {
         } catch (e) {
           innerError = e;
           try {
-            const backupExists = await fs8.stat(backup).then(() => true).catch(() => false);
-            const dirExists = await fs8.stat(dir).then(() => true).catch(() => false);
+            const backupExists = await fs9.stat(backup).then(() => true).catch(() => false);
+            const dirExists = await fs9.stat(dir).then(() => true).catch(() => false);
             if (backupExists && !dirExists) {
               try {
-                await fs8.rename(backup, dir);
+                await fs9.rename(backup, dir);
               } catch {}
             }
             await rmRf(staging);
@@ -17288,9 +17721,9 @@ async function selfUpdate(deps) {
       } finally {
         try {
           if (ownerToken) {
-            const cur = await fs8.readFile(lockPath, "utf-8").catch(() => "");
+            const cur = await fs9.readFile(lockPath, "utf-8").catch(() => "");
             if (cur === ownerToken) {
-              await fs8.unlink(lockPath).catch(() => {});
+              await fs9.unlink(lockPath).catch(() => {});
             }
           }
         } catch {}
@@ -17302,8 +17735,8 @@ async function selfUpdate(deps) {
 }
 
 // src/seat-sync.ts
-import * as fs9 from "node:fs/promises";
-import * as path10 from "node:path";
+import * as fs10 from "node:fs/promises";
+import * as path11 from "node:path";
 function parseSteps(content) {
   const m = content.match(/^\s*steps:\s*(\d+)/m);
   return m ? m[1] : null;
@@ -17319,7 +17752,7 @@ async function reconcileSeats(assetsAgentsDir, installedAgentsDir, log, register
   }
   if (renderedSeats.length === 0) {
     try {
-      await fs9.readdir(assetsAgentsDir);
+      await fs10.readdir(assetsAgentsDir);
     } catch (err) {
       safeWarn(log, "tgo: seat sync readdir failed", { assetsAgentsDir, error: String(err) });
     }
@@ -17329,12 +17762,12 @@ async function reconcileSeats(assetsAgentsDir, installedAgentsDir, log, register
   for (const seat of renderedSeats) {
     const file2 = seat.fileName;
     const expectedContent = seat.content;
-    const seatName = path10.basename(file2, ".md");
-    const installedPath = path10.join(installedAgentsDir, file2);
+    const seatName = path11.basename(file2, ".md");
+    const installedPath = path11.join(installedAgentsDir, file2);
     let installedContent;
     let installedExists = false;
     try {
-      installedContent = await fs9.readFile(installedPath, "utf-8");
+      installedContent = await fs10.readFile(installedPath, "utf-8");
       installedExists = true;
     } catch (err) {
       const code = err?.code;
@@ -17350,27 +17783,27 @@ async function reconcileSeats(assetsAgentsDir, installedAgentsDir, log, register
       continue;
     }
     try {
-      await fs9.mkdir(installedAgentsDir, { recursive: true });
+      await fs10.mkdir(installedAgentsDir, { recursive: true });
     } catch (err) {
       safeWarn(log, "tgo: seat sync mkdir failed", { installedAgentsDir, error: String(err) });
       continue;
     }
     if (installedExists && installedContent !== undefined) {
       try {
-        await fs9.writeFile(`${installedPath}.bak`, installedContent, "utf-8");
+        await fs10.writeFile(`${installedPath}.bak`, installedContent, "utf-8");
       } catch (err) {
         safeWarn(log, "tgo: seat sync backup failed", { file: file2, error: String(err) });
         continue;
       }
     }
-    const tmp = path10.join(installedAgentsDir, `.${file2}.${process.pid}.${Date.now()}.tmp`);
+    const tmp = path11.join(installedAgentsDir, `.${file2}.${process.pid}.${Date.now()}.tmp`);
     try {
-      await fs9.writeFile(tmp, expectedContent, "utf-8");
-      await fs9.rename(tmp, installedPath);
+      await fs10.writeFile(tmp, expectedContent, "utf-8");
+      await fs10.rename(tmp, installedPath);
     } catch (err) {
       safeWarn(log, "tgo: seat sync write failed", { file: file2, error: String(err) });
       try {
-        await fs9.rm(tmp, { force: true });
+        await fs10.rm(tmp, { force: true });
       } catch {}
       continue;
     }
@@ -17395,7 +17828,7 @@ async function reconcileSeats(assetsAgentsDir, installedAgentsDir, log, register
 }
 
 // src/plugin.ts
-import * as path11 from "node:path";
+import * as path12 from "node:path";
 import * as os3 from "node:os";
 import { fileURLToPath as fileURLToPath5 } from "node:url";
 var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => {
@@ -17453,8 +17886,8 @@ var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => 
   const seatDir = resolveAgentsDir({ agentDir: config2.agentDir });
   (async () => {
     try {
-      const packageRoot3 = path11.resolve(path11.dirname(fileURLToPath5(import.meta.url)), "..");
-      const assetsAgentsDir = path11.join(packageRoot3, "assets", "agents");
+      const packageRoot3 = path12.resolve(path12.dirname(fileURLToPath5(import.meta.url)), "..");
+      const assetsAgentsDir = path12.join(packageRoot3, "assets", "agents");
       const summary = await reconcileSeats(assetsAgentsDir, seatDir, appLog, config2.register);
       if (summary.length > 0) {
         let version2 = "unknown";
@@ -17683,7 +18116,7 @@ var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => 
       const nextPermission = preapproveExternalDirectory(input.permission, worktreeRoot);
       if (nextPermission && Object.keys(nextPermission).length > 0) {
         input.permission = nextPermission;
-        const parent = worktreeRoot ? path11.dirname(worktreeRoot) : undefined;
+        const parent = worktreeRoot ? path12.dirname(worktreeRoot) : undefined;
         appLog("info", `pre-approved external_directory for worktree family ${parent}/*`, {
           worktreeRoot,
           projectWorktree: project?.worktree ?? null,
@@ -17766,6 +18199,95 @@ ${truncated}`, synthetic: true }] }
         const authorized = await authorizeLifecycleSession(client, input.sessionID);
         if (!authorized) {
           throw new Error("Beads lifecycle packets are allowed only from an identified primary session.");
+        }
+      }
+      if (delegation?.valid && input.tool === "task") {
+        try {
+          const rawArgs = output?.args;
+          const packet = rawArgs?.delegationPacket && typeof rawArgs.delegationPacket === "object" ? rawArgs.delegationPacket : undefined;
+          if (packet && typeof packet.issueId === "string" && packet.issueId.trim().length > 0) {
+            const issueId = packet.issueId.trim();
+            if (!isValidBeadID(issueId)) {
+              throw new Error(`invalid issueId "${issueId}" — must match VALID_BEAD_ID`);
+            }
+            const repoRoot = directory ?? worktree ?? project?.worktree ?? ".";
+            const useLatest = packet.useLatestDefinitions === true;
+            if (useLatest) {
+              const map2 = await loadSessionMap(repoRoot);
+              const prior = map2[issueId];
+              if (prior?.sessionId) {
+                try {
+                  await client.session.abort({ path: { id: prior.sessionId } });
+                } catch (e) {
+                  throw new Error(`useLatestDefinitions abort failed for ${issueId}: ${String(e)}`);
+                }
+              }
+            }
+            const memories = await readPresetNudge(runBd, appLog);
+            const activePreset = resolveActivePreset(config2, memories);
+            if (!activePreset || activePreset.trim().length === 0) {
+              throw new Error(`host-authoritative preset resolution failed — active preset empty`);
+            }
+            let seatName;
+            try {
+              const subagentRaw = rawArgs?.subagent_type;
+              if (typeof subagentRaw === "string" && subagentRaw.trim().length > 0)
+                seatName = subagentRaw.trim();
+            } catch {}
+            if (!seatName || seatName.trim().length === 0) {
+              throw new Error(`host-authoritative seat resolution failed for preset "${activePreset}" — subagent_type missing`);
+            }
+            let model;
+            const presetMap = config2.presets?.[activePreset];
+            if (!presetMap) {
+              throw new Error(`host-authoritative model resolution failed for preset "${activePreset}" seat "${seatName}" — preset not found`);
+            }
+            const direct = presetMap[seatName];
+            if (direct?.model)
+              model = direct.model;
+            else if (["cobain", "grohl", "novoselic"].includes(seatName) && presetMap["band-members"]?.model) {
+              model = presetMap["band-members"].model;
+            }
+            if (!model || model === "unknown" || model.trim().length === 0) {
+              throw new Error(`host-authoritative model resolution failed for preset "${activePreset}" seat "${seatName}"`);
+            }
+            let seatFrontmatter = "";
+            let seatFileFound = false;
+            try {
+              const seatDir2 = resolveAgentsDir({ agentDir: config2.agentDir });
+              const p = path12.join(seatDir2, `${seatName}.md`);
+              try {
+                const fsMod = await import("node:fs/promises");
+                seatFrontmatter = await fsMod.readFile(p, "utf-8");
+                seatFileFound = true;
+              } catch (e) {
+                const code = e?.code;
+                if (code === "ENOENT") {
+                  seatFileFound = false;
+                  seatFrontmatter = "";
+                } else {
+                  seatFileFound = false;
+                  seatFrontmatter = "";
+                }
+              }
+            } catch {
+              seatFileFound = false;
+              seatFrontmatter = "";
+            }
+            await ensureDefSnapshot({
+              repoRoot,
+              issueId,
+              packet,
+              seatFrontmatter,
+              seatFileFound,
+              model,
+              preset: activePreset,
+              useLatestDefinitions: useLatest
+            });
+          }
+        } catch (e) {
+          safeWarn(appLog, `def-snapshot capture failed: ${String(e)}`);
+          throw e;
         }
       }
       const background = output?.args != null && typeof output.args === "object" && output.args.background === true;
