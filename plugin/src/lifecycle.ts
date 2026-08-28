@@ -89,6 +89,69 @@ function deriveRecoveryFromTaxonomy(report: ParsedReport | undefined): RecoveryA
   }
 }
 
+export type GateReasonCode = "GATE_BLOCKED_CRITICAL" | "GATE_SKIPPED_BAIL" | "GATE_PASSED" | "GATE_SKIPPED_DISABLED" | "GATE_SKIPPED_TOGGLE";
+
+export interface GateResultForLifecycle {
+  passed: boolean;
+  blocked: boolean;
+  reasonCode: GateReasonCode;
+  reason?: string;
+  findings?: unknown[];
+  compensation?: { title: string; body: string; discoveredFrom: string; severity: string };
+  skipped?: boolean;
+  skipReason?: string;
+}
+
+export interface GateAwareClosureGate extends ClosureGate {
+  gateBlocked?: boolean;
+  gateReasonCode?: GateReasonCode;
+  gateReason?: string;
+  gateFindings?: unknown[];
+  gateCompensation?: { title: string; body: string; discoveredFrom: string; severity: string };
+}
+
+/** Determine if exit gate should run — bail/abandon and non-complete skip the gate (taxonomy-aware). */
+export function shouldRunGate(report: ParsedReport | undefined): boolean {
+  if (!report) return false;
+  if (report.watchdogAborted) return false;
+  if (report.taxonomy.status === "bail") return false;
+  if (report.taxonomy.status !== "complete") return false;
+  return true;
+}
+
+/** Merge gate result into closure — CRITICAL gate failure blocks close with typed reason. */
+export function applyGateToClosure(closure: ClosureGate, gate: GateResultForLifecycle | undefined): GateAwareClosureGate {
+  if (!gate || gate.skipped || !gate.blocked) {
+    // Not blocked — preserve original closure but expose gate metadata when present
+    if (!gate) return { ...closure };
+    return {
+      ...closure,
+      gateBlocked: gate.blocked ?? false,
+      gateReasonCode: gate.reasonCode,
+      gateReason: gate.reason,
+      gateFindings: (gate.findings as unknown[]) ?? undefined,
+      gateCompensation: gate.compensation,
+    };
+  }
+  // Gate blocked with CRITICAL — override canClose to false and surface typed reason
+  const blockedDiagnostics = gate.reason ? [`Exit gate blocked: ${gate.reason}`] : ["Exit gate blocked: CRITICAL findings"];
+  const compDiagnostics = gate.compensation
+    ? [`Compensation recommended: ${gate.compensation.title} (discovered-from:${gate.compensation.discoveredFrom}) — bd create with discovered-from link`]
+    : [];
+  return {
+    canClose: false,
+    closureBlocked: true,
+    recovery: closure.recovery ?? "escalate",
+    missing: [...closure.missing, `gate:${gate.reasonCode}`],
+    diagnostics: [...closure.diagnostics, ...blockedDiagnostics, ...compDiagnostics],
+    gateBlocked: true,
+    gateReasonCode: gate.reasonCode,
+    gateReason: gate.reason,
+    gateFindings: (gate.findings as unknown[]) ?? undefined,
+    gateCompensation: gate.compensation,
+  };
+}
+
 /**
  * Validate closure metadata; this does not verify or mutate a Beads issue.
  * Recovery derives from taxonomy {status, retryable} with precedence:
