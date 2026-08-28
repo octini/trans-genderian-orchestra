@@ -18,13 +18,45 @@ export function metricsPath(repoRoot: string): string {
   return path.join(repoRoot, ".tgo", "metrics.json");
 }
 
+let metricsWriteInFlight: Promise<void> | undefined;
 export async function writeMetrics(repoRoot: string, snapshot: MetricsSnapshot): Promise<void> {
-  const dir = path.join(repoRoot, ".tgo");
-  await fs.mkdir(dir, { recursive: true });
-  const target = metricsPath(repoRoot);
-  const tmp = path.join(dir, `metrics.json.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`);
-  await fs.writeFile(tmp, JSON.stringify(snapshot, null, 2), "utf-8");
-  await fs.rename(tmp, target);
+  // F8 single-flight: serialize concurrent writes so older doesn't overwrite newer
+  if (metricsWriteInFlight) {
+    try { await metricsWriteInFlight; } catch {}
+  }
+  const task = (async () => {
+    const dir = path.join(repoRoot, ".tgo");
+    await fs.mkdir(dir, { recursive: true });
+    const target = metricsPath(repoRoot);
+    // F8 stale-overwrite guard: compare updatedAt before replace
+    try {
+      const existing = await readMetrics(repoRoot);
+      if (existing) {
+        const existingTs = Date.parse(existing.updatedAt);
+        const incomingTs = Date.parse(snapshot.updatedAt);
+        if (!Number.isNaN(existingTs) && !Number.isNaN(incomingTs) && incomingTs <= existingTs) {
+          return;
+        }
+      }
+    } catch {}
+    const tmp = path.join(dir, `metrics.json.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`);
+    await fs.writeFile(tmp, JSON.stringify(snapshot, null, 2), "utf-8");
+    // re-check after tmp write in case a newer write landed between our earlier read and now
+    try {
+      const existing2 = await readMetrics(repoRoot);
+      if (existing2) {
+        const existingTs2 = Date.parse(existing2.updatedAt);
+        const incomingTs2 = Date.parse(snapshot.updatedAt);
+        if (!Number.isNaN(existingTs2) && !Number.isNaN(incomingTs2) && incomingTs2 <= existingTs2) {
+          try { await fs.unlink(tmp); } catch {}
+          return;
+        }
+      }
+    } catch {}
+    await fs.rename(tmp, target);
+  })();
+  metricsWriteInFlight = task;
+  try { await task; } finally { if (metricsWriteInFlight === task) metricsWriteInFlight = undefined; }
 }
 
 export async function readMetrics(repoRoot: string): Promise<MetricsSnapshot | undefined> {
@@ -63,13 +95,19 @@ export interface ComputeMetricsInput {
 export function computeMetrics(input: ComputeMetricsInput): MetricsSnapshot {
   const now = input.now ?? Date.now();
   const readyCount = input.ready.length;
-  // blocked intentionally not in queueDepth but available for future
-  // const blockedCount = input.blocked.length;
-
-  // Build per-seat streaming counts and waitMs
+  // F7 dedupe by sessionID (union, not sum): streaming and watchdog may track same sessionID
+  const seenSessionIds = new Set<string>();
   const streamingBySeat = new Map<string, { count: number; earliest: number | undefined }>();
+  // Also track per-seat session sets for accurate waitMs dedupe
+  const perSeatSessions = new Map<string, Set<string>>();
   for (const s of input.streaming) {
     const seat = (s.target ?? "").trim() || "unknown";
+    const sid = s.id;
+    if (sid && seenSessionIds.has(sid)) continue;
+    if (sid) seenSessionIds.add(sid);
+    let set = perSeatSessions.get(seat);
+    if (!set) { set = new Set(); perSeatSessions.set(seat, set); }
+    if (sid) set.add(sid);
     const cur = streamingBySeat.get(seat) ?? { count: 0, earliest: undefined };
     cur.count += 1;
     if (s.startedAt !== undefined && Number.isFinite(s.startedAt)) {
@@ -78,17 +116,18 @@ export function computeMetrics(input: ComputeMetricsInput): MetricsSnapshot {
     streamingBySeat.set(seat, cur);
   }
 
-  // Incorporate watchdog tracked busy sessions via shimAgents mapping
   if (input.watchdogTracked && input.shimAgents) {
     for (const t of input.watchdogTracked) {
       if (!t.busy) continue;
-      const seat = input.shimAgents.get(t.sessionID);
+      const sid = t.sessionID;
+      if (seenSessionIds.has(sid)) continue; // F7 dedupe: already counted via streaming
+      const seat = input.shimAgents.get(sid);
       if (!seat) continue;
+      seenSessionIds.add(sid);
+      let set = perSeatSessions.get(seat);
+      if (!set) { set = new Set(); perSeatSessions.set(seat, set); }
+      set.add(sid);
       const cur = streamingBySeat.get(seat) ?? { count: 0, earliest: undefined };
-      // Only count watchdog if not already counted via streaming? We treat as additional inFlight
-      // To avoid double-count, we increment only if this sessionID not already in streaming.
-      // But streaming entries are keyed by issue id, not session id, so they are distinct.
-      // We count them as extra inFlight for that seat.
       cur.count += 1;
       streamingBySeat.set(seat, cur);
     }

@@ -194,26 +194,34 @@ export type ProblemsData = {
 export function createProblemsStore(worktree: string) {
   const [data, setData] = createSignal<ProblemsData | undefined>(undefined);
   let owner: Owner | null = null;
+  let inFlight = false;
+  let disposed = false;
+  let pending = false;
   function adopt(next: Owner | null) { if (next) owner = next; }
   function commit(next: ProblemsData | undefined) {
+    if (disposed) return;
     if (owner) runWithOwner(owner, () => setData(next));
     else setData(next);
   }
   async function refresh() {
+    if (inFlight) { pending = true; return; }
+    inFlight = true;
     try {
       const flags = await scanRunsForProblems(worktree).catch(() => []);
       const { problemsFromRecovery } = await import("../metrics");
       const problems = problemsFromRecovery(flags as any);
-      // Also include any additional problems derived from metrics or watchdog if needed
       commit({ problems });
     } catch (err) {
       commit({ problems: [], error: String(err) });
+    } finally {
+      inFlight = false;
+      if (pending) { pending = false; void refresh(); }
     }
   }
   function start(): () => void {
     void refresh();
-    const timer = setInterval(() => { void refresh(); }, 3000);
-    return () => clearInterval(timer);
+    const timer = setInterval(() => { if (!disposed) void refresh(); }, 3000);
+    return () => { disposed = true; clearInterval(timer); };
   }
   return { data, refresh, start, adopt };
 }
