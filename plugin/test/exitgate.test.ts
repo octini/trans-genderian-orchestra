@@ -9,6 +9,7 @@ import { loadGateProfile, DEFAULT_GATE_PROFILE, DEFAULT_BLACKLIST, parseGateProf
 import { runExitGate, runExitGateSync } from "../src/exitgate/gate";
 import { evaluateClosure, applyGateToClosure, shouldRunGate, gateBlockedWithError, evaluateGatedClosure } from "../src/lifecycle";
 import { parseTaskReport } from "../src/report";
+import { checkCloseGate, blockedCloseMessage } from "../src/exitgate/close-gate";
 
 // Helper to create temp repoRoot
 async function mkTempRepo(): Promise<string> {
@@ -702,6 +703,111 @@ describe("lifecycle gate integration — enforcing consumer", () => {
     expect(tinyClosure.canClose).toBe(true);
     const merged = applyGateToClosure(tinyClosure, undefined);
     expect(merged.canClose).toBe(true);
+  });
+});
+
+describe("F2 contract optionality: durationMs/note optional, required strict", () => {
+  test("status line without durationMs/note scores as terminal (no false incomplete)", async () => {
+    const dir = await mkTempRepo();
+    try {
+      const runId = "tgo-opt1";
+      const lines = [
+        JSON.stringify({ ts: 1, type: "step", seat: "dylan", tool: "read", argsHash: "abcd", ok: true, issueId: runId, note: "read" }), // missing durationMs → default 0
+        JSON.stringify({ ts: 2, type: "status", seat: "dylan", tool: "heartbeat", argsHash: "efgh", ok: true, issueId: runId }), // missing durationMs and note → defaults
+      ].join("\n");
+      await fs.writeFile(path.join(dir, ".tgo", "runs", `${runId}.jsonl`), lines, "utf-8");
+      const res = await scoreTrajectory(dir, runId, DEFAULT_GATE_PROFILE);
+      expect(res.entries.length).toBe(2);
+      expect(res.entries[1]?.type).toBe("status");
+      expect(res.entries[1]?.durationMs).toBe(0);
+      expect(res.entries[1]?.note).toBe("");
+      // Has terminal status, so no incomplete warning
+      expect(res.findings.find((f) => f.code === "TRAJECTORY_INCOMPLETE")).toBeUndefined();
+    } finally {
+      await cleanup(dir);
+    }
+  });
+  test("wrong-typed optional durationMs/note/cmd → default, not line rejection", async () => {
+    const dir = await mkTempRepo();
+    try {
+      const runId = "tgo-opt2";
+      const lines = [
+        JSON.stringify({ ts: 1, type: "step", seat: "dylan", tool: "bash", argsHash: "abcd", ok: true, durationMs: "bad", note: 123 as unknown as string, cmd: 456 as unknown as string, issueId: runId }),
+        JSON.stringify({ ts: 2, type: "status", seat: "dylan", tool: "heartbeat", argsHash: "efgh", ok: true, issueId: runId }),
+      ].join("\n");
+      await fs.writeFile(path.join(dir, ".tgo", "runs", `${runId}.jsonl`), lines, "utf-8");
+      const res = await scoreTrajectory(dir, runId, DEFAULT_GATE_PROFILE);
+      expect(res.entries.length).toBe(2);
+      expect(res.entries[0]?.durationMs).toBe(0);
+      expect(res.entries[0]?.note).toBe("");
+      expect((res.entries[0] as unknown as { cmd?: string }).cmd).toBeUndefined();
+    } finally {
+      await cleanup(dir);
+    }
+  });
+  test("wrong-typed required ts/ok → line ignored", async () => {
+    const dir = await mkTempRepo();
+    try {
+      const runId = "tgo-opt3";
+      const lines = [
+        JSON.stringify({ ts: "bad", type: "step", seat: "dylan", tool: "bash", argsHash: "abcd", ok: true, issueId: runId }),
+        JSON.stringify({ ts: 2, type: "step", seat: "dylan", tool: "bash", argsHash: "abcd", ok: "false" as unknown as boolean, issueId: runId }),
+        JSON.stringify({ ts: 3, type: "step", seat: "dylan", tool: "read", argsHash: "abcd", ok: true, issueId: runId, note: "valid" }),
+        JSON.stringify({ ts: 4, type: "status", seat: "dylan", tool: "heartbeat", argsHash: "abcd", ok: true, issueId: runId, note: "complete" }),
+      ].join("\n");
+      await fs.writeFile(path.join(dir, ".tgo", "runs", `${runId}.jsonl`), lines, "utf-8");
+      const res = await scoreTrajectory(dir, runId, DEFAULT_GATE_PROFILE);
+      expect(res.entries.length).toBe(2); // only valid step + status
+    } finally {
+      await cleanup(dir);
+    }
+  });
+});
+
+describe("F1 close-gate enforcement at real close consumer", () => {
+  test("close gate blocked → refused with typed GATE_BLOCKED_CRITICAL + compensation", async () => {
+    const dir = await mkTempRepo();
+    try {
+      const runId = "tgo-close-block1";
+      const entries = [syntheticEntry({ tool: "bash", issueId: runId, cmd: "rm -rf /", note: "destructive" }), terminalStatus(runId, "complete")];
+      await fs.writeFile(path.join(dir, ".tgo", "runs", `${runId}.jsonl`), entries.map((e) => JSON.stringify(e)).join("\n"), "utf-8");
+      const specText = "SHALL not destroy filesystem";
+      const { allowed, gate } = await checkCloseGate(dir, runId, specText);
+      expect(allowed).toBe(false);
+      expect(gate.blocked).toBe(true);
+      expect(gate.reasonCode).toBe("GATE_BLOCKED_CRITICAL");
+      const msg = blockedCloseMessage(gate);
+      expect(msg).toContain("GATE_BLOCKED_CRITICAL");
+      expect(msg).toContain(`discovered-from:${runId}`);
+    } finally {
+      await cleanup(dir);
+    }
+  });
+  test("close gate allowed when trajectory clean and no incomplete", async () => {
+    const dir = await mkTempRepo();
+    try {
+      const runId = "tgo-close-allow1";
+      const entries = [syntheticEntry({ tool: "read", issueId: runId, note: "safe" }), terminalStatus(runId, "complete")];
+      await fs.writeFile(path.join(dir, ".tgo", "runs", `${runId}.jsonl`), entries.map((e) => JSON.stringify(e)).join("\n"), "utf-8");
+      const { allowed, gate } = await checkCloseGate(dir, runId, "SHALL do safe work");
+      expect(allowed).toBe(true);
+      expect(gate.blocked).toBe(false);
+    } finally {
+      await cleanup(dir);
+    }
+  });
+  test("close gate uses synthetic complete report — bail spec does not skip (sidebar close is complete intent)", async () => {
+    const dir = await mkTempRepo();
+    try {
+      const runId = "tgo-close-bail";
+      // Even though bead description might mention bail, sidebar close is treated as complete intent, so gate runs
+      const entries = [syntheticEntry({ tool: "bash", issueId: runId, cmd: "rm -rf /", note: "x" }), terminalStatus(runId, "complete")];
+      await fs.writeFile(path.join(dir, ".tgo", "runs", `${runId}.jsonl`), entries.map((e) => JSON.stringify(e)).join("\n"), "utf-8");
+      const { allowed } = await checkCloseGate(dir, runId, "bail but closing");
+      expect(allowed).toBe(false); // still blocked on blacklist
+    } finally {
+      await cleanup(dir);
+    }
   });
 });
 
