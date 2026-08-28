@@ -45,13 +45,14 @@ describe("plugin completion observer boundary", () => {
     await run({
       touchSet: ["src/value.ts"], boundedTouchSet: true, transformation: "replace", reversible: true,
       deterministicVerification: true,
+      subagent_type: "dylan",
       delegationPacket: { minimal: true, Objective: "Replace", Files: ["src/value.ts"], Verification: "test", exitGate: true },
     });
-    await run({ touchSet: ["src/value.ts"], delegationPacket: {
+    await run({ touchSet: ["src/value.ts"], subagent_type: "dylan", delegationPacket: {
       Objective: "Replace", Files: ["src/value.ts"], Interfaces: "same", Constraints: "bounded", Verification: "test", exitGate: true,
       issueId: "tgo-standard", issueStatusObserved: "in_progress", issueAssigneeObserved: "ryangking", claimExitCode: 0, delegationId: "d-standard", beadsOperator: "Bernstein",
     }});
-    await run({ touchSet: ["src/value.ts"], ambiguity: true, delegationPacket: {
+    await run({ touchSet: ["src/value.ts"], ambiguity: true, subagent_type: "dylan", delegationPacket: {
       Objective: "Resolve", Files: ["src/value.ts"], Interfaces: "same", Constraints: "bounded", Verification: "review", exitGate: true,
       issueId: "tgo-heavy", issueStatusObserved: "in_progress", issueAssigneeObserved: "ryangking", claimExitCode: 0, delegationId: "d-heavy", beadsOperator: "Bernstein",
     }});

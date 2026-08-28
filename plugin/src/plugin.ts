@@ -504,48 +504,31 @@ export const TgoPlugin: Plugin = async (
                 }
               }
             }
-            // Host-authoritative preset: resolve ACTIVE preset (post-nudge), not config.preset
-            let activePreset: string;
-            try {
-              const memories = await readPresetNudge(runBd, appLog);
-              activePreset = resolveActivePreset(config, memories);
-            } catch {
-              activePreset = config.preset;
+            // Host-authoritative preset: resolve ACTIVE preset (post-nudge) — exact dispatch, no fallback to config.preset
+            const memories = await readPresetNudge(runBd, appLog);
+            const activePreset = resolveActivePreset(config, memories);
+            if (!activePreset || activePreset.trim().length === 0) {
+              throw new Error(`host-authoritative preset resolution failed — active preset empty`);
             }
-            // Resolve seat name for model + frontmatter — host-authoritative
+            // Resolve seat name for model + frontmatter — host-authoritative, no fallback
             let seatName: string | undefined;
             try {
               const subagentRaw = (rawArgs as Record<string, unknown>)?.subagent_type;
               if (typeof subagentRaw === "string" && subagentRaw.trim().length > 0) seatName = subagentRaw.trim();
             } catch {}
-            // Fallback: try packet delegationId hint or default to dylan (sole writer) for model resolution
-            if (!seatName) {
-              // If no explicit seat, we still need a model — default to dylan as primary writer seat
-              seatName = "dylan";
+            if (!seatName || seatName.trim().length === 0) {
+              throw new Error(`host-authoritative seat resolution failed for preset "${activePreset}" — subagent_type missing`);
             }
-            // Resolve model from ACTIVE preset — never "unknown"
+            // Resolve model from ACTIVE preset — exact dispatch, no fallback to other models
             let model: string | undefined;
-            try {
-              const presetMap = (config.presets as Record<string, Record<string, { model: string }>>)?.[activePreset];
-              if (presetMap) {
-                const direct = presetMap[seatName as string];
-                if (direct?.model) model = direct.model;
-                else if (["cobain", "grohl", "novoselic"].includes(seatName) && presetMap["band-members"]?.model) model = presetMap["band-members"].model;
-                else if (presetMap["dylan"]?.model) model = presetMap["dylan"].model;
-                else {
-                  for (const fallback of ["dylan", "horowitz", "nas", "bernstein", "nirvana"] as const) {
-                    if (presetMap[fallback]?.model) { model = presetMap[fallback].model; break; }
-                  }
-                }
-              }
-            } catch {}
-            if (!model || model === "unknown" || model.trim().length === 0) {
-              // As last fallback, use the first available preset's dylan model rather than "unknown"
-              try {
-                const anyPreset = config.presets?.[activePreset as keyof typeof config.presets] ?? config.presets?.balanced;
-                const candidate = (anyPreset as Record<string, { model?: string }> | undefined)?.[seatName] ?? (anyPreset as Record<string, { model?: string }> | undefined)?.dylan;
-                if (candidate?.model) model = candidate.model;
-              } catch {}
+            const presetMap = (config.presets as Record<string, Record<string, { model: string }>>)?.[activePreset];
+            if (!presetMap) {
+              throw new Error(`host-authoritative model resolution failed for preset "${activePreset}" seat "${seatName}" — preset not found`);
+            }
+            const direct = presetMap[seatName as string];
+            if (direct?.model) model = direct.model;
+            else if (["cobain", "grohl", "novoselic"].includes(seatName) && presetMap["band-members"]?.model) {
+              model = presetMap["band-members"].model;
             }
             if (!model || model === "unknown" || model.trim().length === 0) {
               throw new Error(`host-authoritative model resolution failed for preset "${activePreset}" seat "${seatName}"`);
@@ -583,8 +566,8 @@ export const TgoPlugin: Plugin = async (
           }
         } catch (e) {
           safeWarn(appLog, `def-snapshot capture failed: ${String(e)}`);
-          // Re-throw invalid issueId and useLatest abort failures so caller sees typed error
-          if (String(e).includes("invalid issueId") || String(e).includes("useLatestDefinitions abort failed") || String(e).includes("model resolution failed")) {
+          // Re-throw typed host-authoritative resolution failures so caller sees typed error before dispatch
+          if (String(e).includes("invalid issueId") || String(e).includes("useLatestDefinitions abort failed") || String(e).includes("host-authoritative") || String(e).includes("model resolution failed") || String(e).includes("preset resolution failed") || String(e).includes("seat resolution failed")) {
             throw e;
           }
         }
