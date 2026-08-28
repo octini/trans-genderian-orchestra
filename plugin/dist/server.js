@@ -14338,11 +14338,18 @@ var setupConfig = exports_external.object({
 });
 var watchdogConfig = exports_external.object({
   enabled: exports_external.boolean().default(true),
-  wallClockMs: exports_external.number().int().positive().default(20 * 60 * 1000),
+  wallClockMs: exports_external.number().int().positive().default(30 * 60 * 1000),
   idleMs: exports_external.number().int().positive().default(15 * 60 * 1000),
   checkMs: exports_external.number().int().positive().default(10 * 1000),
   stuckLoopTools: exports_external.number().int().positive().default(20),
   stuckLoopMs: exports_external.number().int().positive().default(5 * 60 * 1000)
+});
+var sessionReuseConfig = exports_external.object({
+  enabled: exports_external.boolean().default(true),
+  maxContextTokens: exports_external.number().int().positive().default(1e5)
+});
+var terminationConfig = exports_external.object({
+  enabled: exports_external.boolean().default(true)
 });
 var tgoConfigSchema = exports_external.object({
   preset: exports_external.enum(PRESET_NAMES).default("balanced"),
@@ -14359,12 +14366,14 @@ var tgoConfigSchema = exports_external.object({
   setup: setupConfig.optional().default(() => ({ enabled: true, autoInstallBeads: true })),
   watchdog: watchdogConfig.optional().default(() => ({
     enabled: true,
-    wallClockMs: 20 * 60 * 1000,
+    wallClockMs: 30 * 60 * 1000,
     idleMs: 15 * 60 * 1000,
     checkMs: 10 * 1000,
     stuckLoopTools: 20,
     stuckLoopMs: 5 * 60 * 1000
-  }))
+  })),
+  sessionReuse: sessionReuseConfig.optional().default(() => ({ enabled: true, maxContextTokens: 1e5 })),
+  termination: terminationConfig.optional().default(() => ({ enabled: true }))
 });
 function estimateTokens(text) {
   const normalized = text.replace(/\s+/g, " ").trim();
@@ -14417,6 +14426,496 @@ async function validateAgentDir(agentDir) {
 
 // src/board.ts
 import * as crypto from "node:crypto";
+
+// src/progress.ts
+import * as fs2 from "node:fs/promises";
+import * as path2 from "node:path";
+var PROGRESS_LOCK_STALE_MS = 1e4;
+function progressPath(repoRoot, issueId) {
+  return path2.join(repoRoot, ".tgo", issueId, "progress.md");
+}
+async function readProgress(repoRoot, issueId) {
+  try {
+    const target = progressPath(repoRoot, issueId);
+    const data = await fs2.readFile(target, "utf-8");
+    return data;
+  } catch {
+    return;
+  }
+}
+async function acquireProgressLock(issueDir, lockPath) {
+  try {
+    await fs2.mkdir(issueDir, { recursive: true });
+  } catch {}
+  const ownerToken = `${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}`;
+  let acquired = false;
+  const tryAcquire = async () => {
+    let handle;
+    try {
+      handle = await fs2.open(lockPath, "wx");
+      try {
+        await handle.writeFile(ownerToken, "utf-8");
+      } catch {}
+      acquired = true;
+      return true;
+    } catch (err) {
+      const code = err?.code;
+      if (code !== "EEXIST") {
+        return false;
+      }
+      return false;
+    } finally {
+      if (handle) {
+        try {
+          await handle.close();
+        } catch {}
+      }
+    }
+  };
+  let ok = await tryAcquire();
+  if (!ok) {
+    try {
+      const stat2 = await fs2.stat(lockPath);
+      const age = Date.now() - stat2.mtimeMs;
+      if (age > PROGRESS_LOCK_STALE_MS) {
+        try {
+          await fs2.unlink(lockPath);
+        } catch {}
+        ok = await tryAcquire();
+        if (!ok)
+          return null;
+        acquired = true;
+      } else {
+        return null;
+      }
+    } catch {
+      return null;
+    }
+  } else {
+    acquired = true;
+  }
+  if (!acquired)
+    return null;
+  return ownerToken;
+}
+async function releaseProgressLock(lockPath, ownerToken) {
+  try {
+    const cur = await fs2.readFile(lockPath, "utf-8");
+    if (cur === ownerToken) {
+      await fs2.unlink(lockPath);
+    }
+  } catch {}
+}
+async function updateProgress(repoRoot, issueId, merge2) {
+  try {
+    const issueDir = path2.join(repoRoot, ".tgo", issueId);
+    const lockPath = path2.join(issueDir, "progress.lock");
+    const targetPath = path2.join(issueDir, "progress.md");
+    const ownerToken = await acquireProgressLock(issueDir, lockPath);
+    if (!ownerToken)
+      return false;
+    try {
+      let current;
+      try {
+        const data = await fs2.readFile(targetPath, "utf-8");
+        current = parseProgress(data);
+      } catch {
+        current = { touchSet: [], decisions: [], blockers: [], extra: {} };
+      }
+      let next;
+      try {
+        next = merge2(current);
+      } catch {
+        return false;
+      }
+      if (!next.extra)
+        next.extra = current.extra ?? {};
+      if (!Array.isArray(next.touchSet))
+        next.touchSet = [];
+      if (!Array.isArray(next.decisions))
+        next.decisions = [];
+      if (!Array.isArray(next.blockers))
+        next.blockers = [];
+      const content = formatProgress(next);
+      try {
+        await fs2.mkdir(issueDir, { recursive: true });
+        const tmp = path2.join(issueDir, `progress.md.${process.pid}.${Date.now()}.tmp`);
+        await fs2.writeFile(tmp, content, "utf-8");
+        await fs2.rename(tmp, targetPath);
+        return true;
+      } catch {
+        return false;
+      }
+    } finally {
+      await releaseProgressLock(lockPath, ownerToken);
+    }
+  } catch {
+    return false;
+  }
+}
+function formatProgress(parts) {
+  const lines = [];
+  lines.push("## Objective");
+  if (parts.objective !== undefined) {
+    lines.push(parts.objective);
+  }
+  lines.push("## Touch set");
+  for (const f of parts.touchSet) {
+    lines.push(`- ${f}`);
+  }
+  lines.push("## Decisions");
+  for (const d of parts.decisions) {
+    lines.push(`- ${d}`);
+  }
+  lines.push("## Blockers");
+  for (const b of parts.blockers) {
+    lines.push(`- ${b}`);
+  }
+  lines.push("## Status");
+  if (parts.lastStatus !== undefined) {
+    lines.push(parts.lastStatus);
+  }
+  const extra = parts.extra ?? {};
+  for (const [name, items] of Object.entries(extra)) {
+    lines.push(`## ${name}`);
+    for (const it of items) {
+      lines.push(it);
+    }
+  }
+  return lines.join(`
+`) + `
+`;
+}
+function parseProgress(content) {
+  const result = {
+    touchSet: [],
+    decisions: [],
+    blockers: [],
+    extra: {}
+  };
+  const lines = content.split(/\r?\n/);
+  let current = null;
+  let currentExtra = null;
+  const objectiveLines = [];
+  const statusLines = [];
+  for (const raw of lines) {
+    const trimmed = raw.trim();
+    if (trimmed.startsWith("## ")) {
+      const headerRaw = trimmed.slice(3).trim();
+      const header = headerRaw.toLowerCase();
+      if (header === "objective") {
+        current = "objective";
+        currentExtra = null;
+      } else if (header === "touch set") {
+        current = "touchSet";
+        currentExtra = null;
+      } else if (header === "decisions") {
+        current = "decisions";
+        currentExtra = null;
+      } else if (header === "blockers") {
+        current = "blockers";
+        currentExtra = null;
+      } else if (header === "status") {
+        current = "status";
+        currentExtra = null;
+      } else {
+        current = null;
+        currentExtra = headerRaw;
+        if (!(currentExtra in result.extra)) {
+          result.extra[currentExtra] = [];
+        }
+      }
+      continue;
+    }
+    if (currentExtra !== null) {
+      result.extra[currentExtra].push(raw);
+      continue;
+    }
+    if (current === null)
+      continue;
+    if (trimmed === "")
+      continue;
+    if (current === "objective") {
+      objectiveLines.push(raw);
+    } else if (current === "status") {
+      statusLines.push(raw);
+    } else if (current === "touchSet" || current === "decisions" || current === "blockers") {
+      if (trimmed.startsWith("- ")) {
+        const val = trimmed.slice(2);
+        if (current === "touchSet")
+          result.touchSet.push(val);
+        else if (current === "decisions")
+          result.decisions.push(val);
+        else
+          result.blockers.push(val);
+      } else if (trimmed.startsWith("-")) {
+        const val = trimmed.slice(1).trim();
+        if (val.length > 0) {
+          if (current === "touchSet")
+            result.touchSet.push(val);
+          else if (current === "decisions")
+            result.decisions.push(val);
+          else
+            result.blockers.push(val);
+        }
+      }
+    }
+  }
+  if (objectiveLines.length > 0) {
+    const joined = objectiveLines.join(`
+`).trim();
+    if (joined.length > 0)
+      result.objective = joined;
+  }
+  if (statusLines.length > 0) {
+    const joined = statusLines.join(`
+`).trim();
+    if (joined.length > 0)
+      result.lastStatus = joined;
+  }
+  for (const key of Object.keys(result.extra)) {
+    const items = result.extra[key] ?? [];
+    let start = 0;
+    let end = items.length;
+    while (start < end && items[start].trim() === "")
+      start++;
+    while (end > start && items[end - 1].trim() === "")
+      end--;
+    result.extra[key] = items.slice(start, end);
+  }
+  return result;
+}
+
+// src/session-reuse.ts
+import * as fs3 from "node:fs/promises";
+import * as path3 from "node:path";
+async function loadSessionMap(repoRoot) {
+  const target = path3.join(repoRoot, ".tgo", "sessions.json");
+  try {
+    const raw = await fs3.readFile(target, "utf-8");
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+      return {};
+    const out = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      if (!value || typeof value !== "object" || Array.isArray(value))
+        continue;
+      const entry = value;
+      if (typeof entry.sessionId !== "string" || !/^ses_[A-Za-z0-9]+$/.test(entry.sessionId))
+        continue;
+      if (typeof entry.updatedAt !== "string")
+        continue;
+      out[key] = entry;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+async function saveSessionMap(repoRoot, map2) {
+  const dir = path3.join(repoRoot, ".tgo");
+  await fs3.mkdir(dir, { recursive: true });
+  const target = path3.join(dir, "sessions.json");
+  const tmp = path3.join(dir, `sessions.json.${process.pid}.${Date.now()}.tmp`);
+  const payload = JSON.stringify(map2, null, 2);
+  await fs3.writeFile(tmp, payload, "utf-8");
+  await fs3.rename(tmp, target);
+}
+function upsertSession(map2, issueId, entry) {
+  return { ...map2, [issueId]: entry };
+}
+function issueIdBySession(map2, sessionId) {
+  for (const [issueId, entry] of Object.entries(map2)) {
+    if (entry.sessionId === sessionId)
+      return issueId;
+  }
+  return;
+}
+function parseIssueIdFromDelegationText(text) {
+  const quoted = text.match(/["']issueId["']\s*:\s*["']([^"']+)["']/);
+  if (quoted && quoted[1]) {
+    const v = quoted[1].trim();
+    if (v.length > 0)
+      return v;
+  }
+  const plain = text.match(/\bissueId\b\s*[:=]\s*["']?([A-Za-z0-9][A-Za-z0-9-_]*)/);
+  if (plain && plain[1]) {
+    const v = plain[1].trim();
+    if (v.length > 0)
+      return v;
+  }
+  return;
+}
+async function persistAbortHandback(opts) {
+  try {
+    let map2 = await loadSessionMap(opts.repoRoot);
+    let issueId = issueIdBySession(map2, opts.sessionID);
+    if (!issueId && opts.fetchSessionMessages) {
+      let fetchedIssueId;
+      try {
+        const messages = await opts.fetchSessionMessages(opts.sessionID);
+        if (!messages || !Array.isArray(messages) || messages.length === 0) {
+          throw new Error("no messages");
+        }
+        let firstText;
+        let hasUserPart = false;
+        for (const msg of messages) {
+          if (!msg || msg.role !== "user" || !Array.isArray(msg.parts))
+            continue;
+          for (const part of msg.parts) {
+            if (part && part.type === "text" && typeof part.text === "string") {
+              hasUserPart = true;
+              if (part.text.trim().length > 0) {
+                firstText = part.text;
+                break;
+              }
+            }
+          }
+          if (firstText)
+            break;
+        }
+        if (!firstText && !hasUserPart) {
+          for (const msg of messages) {
+            if (!msg || !Array.isArray(msg.parts))
+              continue;
+            for (const part of msg.parts) {
+              if (part && part.type === "text" && typeof part.text === "string" && part.text.trim().length > 0) {
+                firstText = part.text;
+                break;
+              }
+            }
+            if (firstText)
+              break;
+          }
+        }
+        if (!firstText) {
+          throw new Error("no text part");
+        }
+        fetchedIssueId = parseIssueIdFromDelegationText(firstText);
+        if (!fetchedIssueId) {
+          throw new Error("no issueId in delegation prompt");
+        }
+      } catch (e) {
+        try {
+          opts.log?.("warn", `progress handback failed: ${String(e)}`);
+        } catch {}
+        return;
+      }
+      issueId = fetchedIssueId;
+      try {
+        const entry = { sessionId: opts.sessionID, updatedAt: new Date().toISOString() };
+        const nextMap = upsertSession(map2, issueId, entry);
+        await saveSessionMap(opts.repoRoot, nextMap);
+        map2 = nextMap;
+      } catch (e) {
+        try {
+          opts.log?.("warn", `progress handback failed: ${String(e)}`);
+        } catch {}
+      }
+    }
+    if (!issueId)
+      return;
+    const blocker = `watchdog abort (${opts.reason}) at ${new Date().toISOString()} — session ${opts.sessionID}; re-dispatch may reuse its task_id`;
+    const ok = await updateProgress(opts.repoRoot, issueId, (parts) => ({
+      ...parts,
+      blockers: [...parts.blockers, blocker]
+    }));
+    if (!ok) {
+      throw new Error(`writeProgress failed for ${issueId}`);
+    }
+  } catch (e) {
+    try {
+      opts.log?.("warn", `progress handback failed: ${String(e)}`);
+    } catch {}
+  }
+}
+function probeSessionReuseCapability(version2) {
+  if (version2 === undefined) {
+    return { supported: true, reason: "version unavailable; assuming v1 task tool" };
+  }
+  const trimmed = version2.trim();
+  if (trimmed.length === 0) {
+    return { supported: true, reason: "version unavailable; assuming v1 task tool" };
+  }
+  const majorStr = trimmed.split(".")[0] ?? "";
+  const cleaned = majorStr.replace(/^v/i, "");
+  const major = Number.parseInt(cleaned, 10);
+  if (Number.isNaN(major)) {
+    return { supported: true, reason: "version unavailable; assuming v1 task tool" };
+  }
+  if (major >= 2) {
+    return { supported: false, reason: "v2 subagent tool cannot resume sessions" };
+  }
+  return { supported: true, reason: "v1 task tool supports task_id resume" };
+}
+function estimateSessionTokens(messages) {
+  let total = 0;
+  for (const message of messages) {
+    for (const part of message.parts) {
+      if (part.type === "text" && typeof part.text === "string") {
+        total += estimateTokens(part.text);
+      }
+    }
+  }
+  return total;
+}
+function shouldReuse(estimate, maxContextTokens) {
+  return estimate < maxContextTokens;
+}
+async function captureDelegationSession(deps) {
+  if (!deps.enabled)
+    return;
+  if (deps.tool !== "task")
+    return;
+  try {
+    const rawInput = deps.input;
+    const taskArgs = rawInput && typeof rawInput.args === "object" && rawInput.args !== null ? rawInput.args : rawInput;
+    const packet = taskArgs?.delegationPacket && typeof taskArgs.delegationPacket === "object" ? taskArgs.delegationPacket : undefined;
+    const issueId = typeof packet?.issueId === "string" ? packet.issueId.trim() : "";
+    const delegationId = typeof packet?.delegationId === "string" ? packet.delegationId.trim() : undefined;
+    const outputRec = deps.output;
+    const outputText = typeof outputRec?.output === "string" ? outputRec.output : "";
+    if (outputText.includes("Background task started")) {
+      return;
+    }
+    if (!issueId) {
+      return;
+    }
+    let sessionId;
+    const meta3 = deps.output?.metadata;
+    if (meta3 && typeof meta3 === "object" && typeof meta3.sessionId === "string") {
+      const raw = meta3.sessionId;
+      if (raw.trim().length > 0)
+        sessionId = raw.trim();
+    }
+    if (!sessionId) {
+      const match = outputText.match(/ses_[A-Za-z0-9]+/);
+      if (match)
+        sessionId = match[0];
+    }
+    if (!sessionId) {
+      return;
+    }
+    if (!/^ses_[A-Za-z0-9]+$/.test(sessionId)) {
+      return;
+    }
+    const map2 = await loadSessionMap(deps.repoRoot);
+    const exitGate = typeof packet?.exitGate === "boolean" ? packet.exitGate : undefined;
+    const entry = {
+      sessionId,
+      delegationId,
+      updatedAt: new Date().toISOString(),
+      ...exitGate !== undefined ? { exitGate } : {}
+    };
+    await saveSessionMap(deps.repoRoot, upsertSession(map2, issueId, entry));
+  } catch (error51) {
+    try {
+      deps.log?.("warn", `session-reuse capture failed: ${String(error51)}`);
+    } catch {}
+  }
+}
+
+// src/board.ts
 var BOARD_SENTINEL_START = "<!-- tgo:board -->";
 var BOARD_SENTINEL_END = "<!-- /tgo:board -->";
 function createShim() {
@@ -14464,6 +14963,53 @@ function buildBoardText(data, maxListed = 6) {
   }
   if (data.inProgress.length > 0) {
     sections.push("IN PROGRESS:", ...data.inProgress.map(line));
+  }
+  if (data.ready.length > 0) {
+    const shown = data.ready.slice(0, maxListed);
+    sections.push("READY:", ...shown.map(line));
+    if (data.ready.length > shown.length) {
+      sections.push(`- … and ${data.ready.length - shown.length} more ready`);
+    }
+  }
+  if (data.blocked.length > 0) {
+    const shown = data.blocked.slice(0, maxListed);
+    const blocked = shown.map((issue2) => {
+      const deps = issue2.blockedBy?.length ? ` ← ${issue2.blockedBy.join(",")}` : "";
+      return `${line(issue2)}${deps}`;
+    });
+    sections.push("BLOCKED:", ...blocked);
+    if (data.blocked.length > shown.length) {
+      sections.push(`- … and ${data.blocked.length - shown.length} more blocked`);
+    }
+  }
+  if (data.streaming.length > 0) {
+    sections.push("STREAMING:", ...data.streaming.map((s) => `- ${s.id} → ${s.target}`));
+  }
+  return sections.join(`
+`);
+}
+async function buildBoardTextWithHints(data, reusableSet, sessionIdsByIssue, maxListed = 6, repoRoot) {
+  const sections = ["## TGO JOB BOARD"];
+  if (data.memories.length > 0) {
+    sections.push("MEMORIES:", ...data.memories.map((m) => `- ${clipTitle(m.value, 120)}`));
+  }
+  if (data.inProgress.length > 0) {
+    const inProgressLines = [];
+    for (const issue2 of data.inProgress) {
+      inProgressLines.push(line(issue2));
+      if (reusableSet?.has(issue2.id) && sessionIdsByIssue?.has(issue2.id)) {
+        const sid = sessionIdsByIssue.get(issue2.id);
+        inProgressLines.push(`reusable session ${sid} — pass task_id: "${sid}" on the next task call to continue it.`);
+      }
+      if (repoRoot) {
+        try {
+          const p = await readProgress(repoRoot, issue2.id);
+          if (p !== undefined)
+            inProgressLines.push(`progress: .tgo/${issue2.id}/progress.md`);
+        } catch {}
+      }
+    }
+    sections.push("IN PROGRESS:", ...inProgressLines);
   }
   if (data.ready.length > 0) {
     const shown = data.ready.slice(0, maxListed);
@@ -14565,10 +15111,12 @@ class BoardController {
   sessionEligibility = new Map;
   injectedSessions = new Set;
   agentCache;
+  sessionReuse;
   constructor(opts) {
     this.run = opts.run;
     this.shim = opts.shim ?? createShim();
     this.refreshMs = opts.refreshMs ?? DEFAULT_BOARD_REFRESH_MS;
+    this.sessionReuse = opts.sessionReuse;
   }
   get shimState() {
     return this.shim;
@@ -14614,12 +15162,73 @@ class BoardController {
   invalidate(sessionID) {
     this.renderCache.delete(sessionID);
   }
+  async buildBoardTextWithHints(data, reusableSet, sessionIdsByIssue, maxListed = 6) {
+    return buildBoardTextWithHints(data, reusableSet, sessionIdsByIssue, maxListed, this.sessionReuse?.repoRoot);
+  }
   async renderFor(sessionID) {
     const now = Date.now();
     const cached2 = this.renderCache.get(sessionID);
     if (cached2 && now - cached2.at < this.refreshMs)
       return cached2.text;
-    const text = await renderBoard(this.run, this.shim);
+    const reuseActive = Boolean(this.sessionReuse) && this.sessionReuse.supported === true && this.sessionReuse.enabled !== false;
+    if (!reuseActive) {
+      const text2 = await renderBoard(this.run, this.shim);
+      if (text2)
+        this.renderCache.set(sessionID, { text: text2, at: now });
+      return text2;
+    }
+    const [inProgressRaw, readyRaw, blockedRaw, memoriesRaw] = await Promise.all([
+      this.run("bd list --status in_progress --json"),
+      this.run("bd ready --json"),
+      this.run("bd blocked --json"),
+      this.run("bd memories --json")
+    ]);
+    if (!inProgressRaw && !readyRaw && !blockedRaw && !memoriesRaw)
+      return;
+    const inProgress = parseIssues(inProgressRaw);
+    const ready = parseIssues(readyRaw);
+    const blocked = parseIssues(blockedRaw);
+    const memories = parseMemories(memoriesRaw);
+    const streaming = Array.from(this.shim.streaming, ([id, s]) => ({ id, target: s.target }));
+    let reusableSet;
+    let sessionIdsByIssue;
+    let map2 = {};
+    try {
+      map2 = await loadSessionMap(this.sessionReuse.repoRoot);
+    } catch {
+      map2 = {};
+    }
+    if (map2 && typeof map2 === "object" && Object.keys(map2).length > 0 && inProgress.length > 0) {
+      reusableSet = new Set;
+      sessionIdsByIssue = new Map;
+      for (const issue2 of inProgress) {
+        const entry = map2[issue2.id];
+        if (!entry || typeof entry.sessionId !== "string" || !entry.sessionId)
+          continue;
+        const sid = entry.sessionId;
+        let raw;
+        try {
+          raw = await this.sessionReuse.client.session.messages({ path: { id: sid } });
+        } catch {
+          continue;
+        }
+        const messages = Array.isArray(raw) ? raw : Array.isArray(raw?.data) ? raw.data : [];
+        let estimate;
+        try {
+          estimate = estimateSessionTokens(messages);
+        } catch {
+          continue;
+        }
+        if (shouldReuse(estimate, this.sessionReuse.maxContextTokens)) {
+          reusableSet.add(issue2.id);
+          sessionIdsByIssue.set(issue2.id, sid);
+        }
+      }
+    }
+    const inner = await this.buildBoardTextWithHints({ inProgress, ready, blocked, memories, streaming }, reusableSet, sessionIdsByIssue);
+    const text = `${BOARD_SENTINEL_START}
+${inner}
+${BOARD_SENTINEL_END}`;
     if (text)
       this.renderCache.set(sessionID, { text, at: now });
     return text;
@@ -14640,28 +15249,28 @@ class BoardController {
 }
 
 // src/concision.ts
-import * as fs3 from "node:fs/promises";
-import * as path3 from "node:path";
+import * as fs5 from "node:fs/promises";
+import * as path5 from "node:path";
 import { fileURLToPath as fileURLToPath3 } from "node:url";
 
 // src/build.ts
-import * as fs2 from "node:fs/promises";
-import * as path2 from "node:path";
+import * as fs4 from "node:fs/promises";
+import * as path4 from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
-var packageRoot = path2.resolve(path2.dirname(fileURLToPath2(import.meta.url)), "..");
+var packageRoot = path4.resolve(path4.dirname(fileURLToPath2(import.meta.url)), "..");
 var REGISTER_SLOT = "{{TGO_REGISTER}}";
 var AGENTS_MARKER_BEGIN = "<!-- TGO: thin always-on advice layer";
 var AGENTS_MARKER_END = "<!-- END TGO advice layer -->";
 async function loadAgentsFragment() {
-  const file2 = path2.join(packageRoot, "assets", "AGENTS.fragment.md");
-  return fs2.readFile(file2, "utf-8");
+  const file2 = path4.join(packageRoot, "assets", "AGENTS.fragment.md");
+  return fs4.readFile(file2, "utf-8");
 }
 async function mergeAgentsFragment(configDir) {
   const fragment = await loadAgentsFragment();
-  const dest = path2.join(configDir, "AGENTS.md");
+  const dest = path4.join(configDir, "AGENTS.md");
   let existing = "";
   try {
-    existing = await fs2.readFile(dest, "utf-8");
+    existing = await fs4.readFile(dest, "utf-8");
   } catch {}
   if (existing.includes(AGENTS_MARKER_BEGIN)) {
     return { action: "unchanged" };
@@ -14672,17 +15281,17 @@ ${AGENTS_MARKER_END}
   const next = existing.trimEnd() ? `${existing.trimEnd()}
 
 ${wrapped}` : wrapped;
-  await fs2.mkdir(configDir, { recursive: true });
-  await fs2.writeFile(dest, next, "utf-8");
+  await fs4.mkdir(configDir, { recursive: true });
+  await fs4.writeFile(dest, next, "utf-8");
   return { action: existing ? "appended" : "created" };
 }
 if (false) {}
 
 // src/concision.ts
-var packageRoot2 = path3.resolve(path3.dirname(fileURLToPath3(import.meta.url)), "..");
+var packageRoot2 = path5.resolve(path5.dirname(fileURLToPath3(import.meta.url)), "..");
 async function loadConcisionInstruction() {
-  const file2 = path3.join(packageRoot2, "assets", "concision-instruction.md");
-  return fs3.readFile(file2, "utf-8");
+  const file2 = path5.join(packageRoot2, "assets", "concision-instruction.md");
+  return fs5.readFile(file2, "utf-8");
 }
 async function buildConcisionInstruction(register = "concise") {
   const template = await loadConcisionInstruction();
@@ -15143,6 +15752,78 @@ function defaultWallNow() {
 function defaultUptimeNow() {
   return Math.round(process.uptime() * 1000);
 }
+function toolSignature(tool, input) {
+  const t = (tool ?? "").trim();
+  let primary = "";
+  if (input != null) {
+    if (typeof input === "string") {
+      primary = input;
+    } else if (typeof input === "object") {
+      const obj = input;
+      const lower = t.toLowerCase();
+      const isGrep = lower.includes("grep");
+      const isRead = lower.includes("read") || lower === "read";
+      const isGlob = lower.includes("glob");
+      const isList = lower.includes("list");
+      const isBash = lower.includes("bash");
+      if (isGrep) {
+        const pattern = obj.pattern ?? obj.query;
+        const pathVal = obj.path ?? obj.filePath ?? obj.target;
+        const patStr = pattern != null ? String(pattern).trim() : "";
+        const pathStr = pathVal != null ? String(pathVal).trim() : "";
+        if (patStr && pathStr)
+          primary = `${patStr}:${pathStr}`;
+        else if (patStr)
+          primary = patStr;
+        else if (pathStr)
+          primary = pathStr;
+        else {
+          try {
+            primary = JSON.stringify(input);
+          } catch {
+            primary = String(input);
+          }
+        }
+      } else if (isRead || isGlob || isList) {
+        const pathVal = obj.path ?? obj.filePath ?? obj.target;
+        if (pathVal != null && String(pathVal).trim().length > 0) {
+          primary = String(pathVal);
+        } else {
+          try {
+            primary = JSON.stringify(input);
+          } catch {
+            primary = String(input);
+          }
+        }
+      } else if (isBash) {
+        const candidate = obj.command ?? obj.cmd ?? (typeof obj.input === "string" ? obj.input : undefined);
+        if (candidate != null && String(candidate).trim().length > 0) {
+          primary = String(candidate);
+        } else {
+          try {
+            primary = JSON.stringify(input);
+          } catch {
+            primary = String(input);
+          }
+        }
+      } else {
+        try {
+          primary = JSON.stringify(input);
+        } catch {
+          primary = String(input);
+        }
+      }
+    } else {
+      primary = String(input);
+    }
+  }
+  let norm = primary.trim();
+  if (norm.length > 200)
+    norm = norm.slice(0, 200);
+  if (norm)
+    return `${t || "unknown"}:${norm}`;
+  return t || "unknown";
+}
 
 class WatchdogController {
   sessions = new Map;
@@ -15185,8 +15866,8 @@ class WatchdogController {
       toolStartedAt: 0,
       backgroundInFlight: 0,
       lastProgress: now,
-      lastMeaningfulProgress: now,
-      nonProgressCount: 0
+      stuckWindow: [],
+      stuckWindowTimes: []
     });
   }
   noteStatus(sessionID, status) {
@@ -15213,20 +15894,47 @@ class WatchdogController {
       return;
     tracked.lastActivity = this.awakeNow();
   }
-  noteToolStart(sessionID, background = false) {
+  noteToolStart(sessionID, background = false, tool, input) {
     const tracked = this.sessions.get(sessionID);
     if (!tracked || tracked.aborted)
       return;
-    if (background) {
+    let bg = false;
+    let toolName = tool;
+    let toolInput = input;
+    if (typeof background === "string") {
+      toolName = background;
+      toolInput = tool;
+      bg = false;
+    } else {
+      bg = background;
+    }
+    if (bg) {
       tracked.backgroundInFlight += 1;
     } else {
       tracked.toolInFlight += 1;
       if (tracked.toolInFlight === 1)
         tracked.toolStartedAt = this.awakeNow();
+      const now = this.awakeNow();
+      const lower = (toolName ?? "").toLowerCase();
+      const isEditTool = lower === "edit" || lower === "write" || lower === "multiedit";
+      if (isEditTool) {
+        tracked.stuckWindow = [];
+        tracked.stuckWindowTimes = [];
+        tracked.lastProgress = now;
+      } else {
+        const sig = toolSignature(toolName ?? "unknown", toolInput);
+        tracked.stuckWindow.push(sig);
+        tracked.stuckWindowTimes.push(now);
+        const max = this.config.stuckLoopTools;
+        while (tracked.stuckWindow.length > max) {
+          tracked.stuckWindow.shift();
+          tracked.stuckWindowTimes.shift();
+        }
+      }
     }
     tracked.lastActivity = this.awakeNow();
   }
-  noteToolEnd(sessionID, background = false, isProgress = false) {
+  noteToolEnd(sessionID, background = false, _isProgress = false) {
     const tracked = this.sessions.get(sessionID);
     if (!tracked || tracked.aborted)
       return;
@@ -15239,12 +15947,14 @@ class WatchdogController {
       if (tracked.toolInFlight === 0)
         tracked.toolStartedAt = 0;
       tracked.lastProgress = now;
-      if (isProgress) {
-        tracked.lastMeaningfulProgress = now;
-        tracked.nonProgressCount = 0;
-      } else {
-        tracked.nonProgressCount += 1;
+      if (_isProgress) {
+        tracked.stuckWindow = [];
+        tracked.stuckWindowTimes = [];
       }
+    } else if (_isProgress) {
+      tracked.stuckWindow = [];
+      tracked.stuckWindowTimes = [];
+      tracked.lastProgress = now;
     }
     tracked.lastActivity = now;
   }
@@ -15296,10 +16006,12 @@ class WatchdogController {
       const wallElapsed = now2 - wallBaseline;
       const wallClockExempt = tracked.backgroundInFlight > 0 && tracked.toolInFlight === 0;
       const idleElapsed = tracked.toolInFlight > 0 ? 0 : now2 - tracked.lastActivity;
-      const stuckElapsed = now2 - tracked.lastMeaningfulProgress;
-      const isStuckLoop = tracked.nonProgressCount >= this.config.stuckLoopTools && stuckElapsed >= this.config.stuckLoopMs;
+      const windowSize = tracked.stuckWindow.length;
+      const distinct = new Set(tracked.stuckWindow).size;
+      const windowElapsed = windowSize > 0 && tracked.stuckWindowTimes.length > 0 ? now2 - tracked.stuckWindowTimes[0] : 0;
+      const isStuckLoop = tracked.toolInFlight === 0 && windowSize >= this.config.stuckLoopTools && this.config.stuckLoopTools > 0 && distinct < 3 && windowElapsed >= this.config.stuckLoopMs;
       if (isStuckLoop) {
-        await this.abort(tracked, "stuck-loop", stuckElapsed);
+        await this.abort(tracked, "stuck-loop", windowElapsed);
       } else if (!wallClockExempt && wallElapsed >= this.config.wallClockMs) {
         await this.abort(tracked, "wall-clock", wallElapsed);
       } else if (idleElapsed >= this.config.idleMs) {
@@ -15326,7 +16038,7 @@ class WatchdogController {
       parentID: tracked.parentID ?? null
     });
     try {
-      await this.deps.abort(tracked.sessionID);
+      await this.deps.abort(tracked.sessionID, reason);
     } catch (error51) {
       this.deps.log("error", `watchdog abort call failed for ${tracked.sessionID}`, {
         error: String(error51)
@@ -15334,7 +16046,7 @@ class WatchdogController {
     }
     if (tracked.parentID && !tracked.notified) {
       tracked.notified = true;
-      const detail = reason === "stuck-loop" ? `was stuck in a read/grep loop without making edits (${tracked.nonProgressCount} tools, ${Math.round(elapsedMs / 1000)}s since last edit)` : reason === "idle" ? `stopped producing output (idle ${Math.round(elapsedMs / 1000)}s)` : `exceeded the wall-clock cap (wall ${Math.round(elapsedMs / 1000)}s)`;
+      const detail = reason === "stuck-loop" ? `was stuck in a loop (${tracked.stuckWindow.length} tools, ${Math.round(elapsedMs / 1000)}s window, ${new Set(tracked.stuckWindow).size} distinct signatures)` : reason === "idle" ? `stopped producing output (idle ${Math.round(elapsedMs / 1000)}s)` : `exceeded the wall-clock cap (wall ${Math.round(elapsedMs / 1000)}s)`;
       try {
         await this.deps.notifyParent(tracked.parentID, `${WATCHDOG_ABORT_MARKER}
 Delegated session ${tracked.sessionID} was aborted by the TGO watchdog (${reason}, ${Math.round(elapsedMs / 1000)}s). It ${detail}. Verify what landed, then re-dispatch it smaller or re-decompose per the lane-card — do not trust the empty result.`);
@@ -15415,8 +16127,8 @@ function parseTaskReport(raw) {
 }
 
 // src/setup.ts
-import * as fs4 from "node:fs/promises";
-import * as path4 from "node:path";
+import * as fs6 from "node:fs/promises";
+import * as path6 from "node:path";
 class SetupController {
   run;
   hasBd;
@@ -15429,7 +16141,7 @@ class SetupController {
   }
   async readAgents(directory) {
     try {
-      return await fs4.readFile(path4.join(directory, "AGENTS.md"), "utf-8");
+      return await fs6.readFile(path6.join(directory, "AGENTS.md"), "utf-8");
     } catch {
       return "";
     }
@@ -15437,7 +16149,7 @@ class SetupController {
   async missingSteps(directory) {
     const steps = [];
     try {
-      await fs4.access(path4.join(directory, ".beads"));
+      await fs6.access(path6.join(directory, ".beads"));
     } catch {
       steps.push("bd init");
     }
@@ -15501,12 +16213,12 @@ class SetupController {
 }
 
 // src/permissions.ts
-import * as path5 from "node:path";
+import * as path7 from "node:path";
 function resolveWorktreeFamily(...candidates) {
   for (const candidate of candidates) {
     if (!candidate)
       continue;
-    const parent = path5.dirname(candidate);
+    const parent = path7.dirname(candidate);
     if (!parent || parent === "/" || parent === ".")
       continue;
     return candidate;
@@ -15516,7 +16228,7 @@ function resolveWorktreeFamily(...candidates) {
 function preapproveExternalDirectory(permission, worktree) {
   if (!worktree)
     return permission ?? {};
-  const parent = path5.dirname(worktree);
+  const parent = path7.dirname(worktree);
   if (!parent || parent === "/" || parent === ".")
     return permission ?? {};
   const existingExternal = permission?.external_directory ?? {};
@@ -15731,6 +16443,20 @@ function validateDelegationPacket(routing, packet, routedTouchSet) {
     if ("issueClaimed" in value && !verifyClaimObserved(value)) {
       diagnostics.push("issueClaimed is forgeable asserted metadata; observed claim fields (issueStatusObserved, issueAssigneeObserved, claimExitCode) are required and must reflect live bd state.");
       if (!malformed.includes("issueStatusObserved") && !missing.includes("issueStatusObserved")) {}
+    }
+  }
+  if ("taskId" in value) {
+    const taskId = value.taskId;
+    if (typeof taskId !== "string" || taskId.trim().length === 0 || !/^ses_[A-Za-z0-9]+$/.test(taskId.trim())) {
+      malformed.push("taskId");
+      diagnostics.push("taskId must be a session identifier matching ses_<alphanumeric>.");
+    }
+  }
+  if ("progressPath" in value) {
+    const progressPath2 = value.progressPath;
+    if (typeof progressPath2 !== "string" || progressPath2.trim().length === 0 || !/^\.tgo\/[A-Za-z0-9-]+\/progress\.md$/.test(progressPath2.trim())) {
+      malformed.push("progressPath");
+      diagnostics.push("progressPath must match .tgo/<issueId>/progress.md");
     }
   }
   if (routedTouchSet !== undefined && "Files" in value && Array.isArray(value.Files)) {
@@ -15959,8 +16685,8 @@ No ready, open, pending, in_progress, or blocked work.`;
 }
 
 // src/version.ts
-import * as fs5 from "node:fs/promises";
-import * as path6 from "node:path";
+import * as fs7 from "node:fs/promises";
+import * as path8 from "node:path";
 import { fileURLToPath as fileURLToPath4 } from "node:url";
 var PLUGIN_NPM_NAME = "trans-genderian-orchestra";
 var REGISTRY_URL = `https://registry.npmjs.org/${PLUGIN_NPM_NAME}/latest`;
@@ -15994,9 +16720,9 @@ function compareVersions(a, b) {
   return pa.pre < pb.pre ? -1 : pa.pre > pb.pre ? 1 : 0;
 }
 async function readLocalVersion(packageRoot3) {
-  const root = packageRoot3 ?? path6.resolve(path6.dirname(fileURLToPath4(import.meta.url)), "..");
+  const root = packageRoot3 ?? path8.resolve(path8.dirname(fileURLToPath4(import.meta.url)), "..");
   try {
-    const raw = await fs5.readFile(path6.join(root, "package.json"), "utf-8");
+    const raw = await fs7.readFile(path8.join(root, "package.json"), "utf-8");
     const json2 = JSON.parse(raw);
     return typeof json2.version === "string" && json2.version.length > 0 ? json2.version : null;
   } catch {
@@ -16033,14 +16759,60 @@ async function checkVersionDrift(opts) {
   return { local, latest, drift: compareVersions(local, latest) < 0 };
 }
 
+// src/termination.ts
+function parseCompletionSignal(text) {
+  try {
+    const input = typeof text === "string" ? text : String(text ?? "");
+    let complete = false;
+    const lines = input.split(/\r?\n/);
+    for (const rawLine of lines) {
+      const trimmed = rawLine.trim();
+      if (trimmed.length >= 7 && trimmed.slice(0, 7).toLowerCase() === "status:") {
+        const value = trimmed.slice(7).trim().toLowerCase();
+        if (value === "complete") {
+          complete = true;
+          break;
+        }
+      } else if (/^\s*STATUS\s*:/i.test(rawLine)) {
+        const colon = rawLine.indexOf(":");
+        if (colon !== -1) {
+          const value = rawLine.slice(colon + 1).trim().toLowerCase();
+          if (value === "complete") {
+            complete = true;
+            break;
+          }
+        }
+      }
+    }
+    let exitGate;
+    if (/"?exit\s*gate"?\s*:\s*true\b/i.test(input)) {
+      exitGate = true;
+    } else if (/"?exit\s*gate"?\s*:\s*false\b/i.test(input)) {
+      exitGate = false;
+    }
+    const result = { complete };
+    if (exitGate !== undefined)
+      result.exitGate = exitGate;
+    return result;
+  } catch {
+    return { complete: false };
+  }
+}
+var and = (...cs) => (i) => cs.every((c) => c(i));
+var terminationDecision = and((i) => i.signal.complete, (i) => !i.exitGateRequired || i.signal.exitGate === true, (i) => i.toolCallsAfterCompletion >= 1);
+
 // src/plugin.ts
-import * as path7 from "node:path";
+import * as path9 from "node:path";
 import * as os2 from "node:os";
 var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => {
   const config2 = await loadTgoConfig(options);
   const appLog = (level, message, extra) => {
     client.app.log({ body: { service: "tgo", level, message, extra } }).catch(() => {});
   };
+  const reuseCapability = probeSessionReuseCapability(undefined);
+  if (!reuseCapability.supported) {
+    appLog("warn", `session reuse disabled: ${reuseCapability.reason}`);
+  }
   if (config2.checkVersion !== false) {
     checkVersionDrift().then((drift) => {
       if (drift?.drift) {
@@ -16048,7 +16820,7 @@ var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => 
       }
     }).catch(() => {});
   }
-  const seatDir = config2.agentDir ?? path7.join(os2.homedir(), ".config", "opencode", "agent");
+  const seatDir = config2.agentDir ?? path9.join(os2.homedir(), ".config", "opencode", "agent");
   try {
     const checked = await validateAgentDir(seatDir);
     if (checked > 0) {
@@ -16067,7 +16839,14 @@ var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => 
   };
   const board = new BoardController({
     run: runBd,
-    refreshMs: config2.board?.refreshMs ?? 5000
+    refreshMs: config2.board?.refreshMs ?? 5000,
+    sessionReuse: {
+      repoRoot: directory ?? worktree ?? project?.worktree ?? ".",
+      client,
+      maxContextTokens: config2.sessionReuse?.maxContextTokens ?? 1e5,
+      supported: reuseCapability.supported,
+      enabled: config2.sessionReuse?.enabled !== false
+    }
   });
   const reconciler = new SessionReconciler({ shim: board.shimState });
   const concision = new ConcisionController({
@@ -16082,8 +16861,26 @@ var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => 
   const fit = new TaskFitController;
   const watchdog = new WatchdogController(config2.watchdog, {
     log: appLog,
-    abort: async (sessionID) => {
+    abort: async (sessionID, reason) => {
       await client.session.abort({ path: { id: sessionID } });
+      try {
+        const repoRoot = directory ?? worktree ?? project?.worktree ?? ".";
+        await persistAbortHandback({
+          repoRoot,
+          sessionID,
+          reason,
+          log: appLog,
+          fetchSessionMessages: async (id) => {
+            const raw = await client.session.messages({ path: { id } });
+            const arr = Array.isArray(raw) ? raw : Array.isArray(raw?.data) ? raw.data : undefined;
+            if (!arr)
+              return;
+            return arr.map((m) => ({ role: m?.info?.role, parts: Array.isArray(m?.parts) ? m.parts : [] }));
+          }
+        });
+      } catch (e) {
+        appLog("warn", `progress handback failed: ${String(e)}`);
+      }
     },
     notifyParent: async (parentID, text) => {
       await client.session.prompt({
@@ -16094,6 +16891,9 @@ var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => 
       });
     }
   });
+  const delegatedSessionIds = new Set;
+  const completionSignals = new Map;
+  const terminationParentIds = new Map;
   const setup = new SetupController({
     run: async (command, cwd) => {
       try {
@@ -16198,7 +16998,30 @@ var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => 
           parentID: info.parentID ?? null
         });
         watchdog.noteSessionCreated(info);
+        try {
+          if (info.id && info.parentID && info.parentID !== "")
+            delegatedSessionIds.add(info.id);
+        } catch {}
+        try {
+          if (info.id)
+            terminationParentIds.set(info.id, info.parentID ?? undefined);
+        } catch {}
         handleSessionCreated(event.properties.info);
+      } else if (event.type === "session.deleted") {
+        const deletedInfo = event.properties?.info;
+        const deletedId = deletedInfo?.id ?? event.properties?.sessionID ?? event.properties?.id;
+        if (deletedId) {
+          try {
+            delegatedSessionIds.delete(deletedId);
+          } catch {}
+          try {
+            completionSignals.delete(deletedId);
+          } catch {}
+          try {
+            terminationParentIds.delete(deletedId);
+          } catch {}
+        }
+        logEvent("session.deleted", deletedId ?? "?", {});
       }
     },
     config: async (input) => {
@@ -16209,7 +17032,7 @@ var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => 
       const nextPermission = preapproveExternalDirectory(input.permission, worktreeRoot);
       if (nextPermission && Object.keys(nextPermission).length > 0) {
         input.permission = nextPermission;
-        const parent = worktreeRoot ? path7.dirname(worktreeRoot) : undefined;
+        const parent = worktreeRoot ? path9.dirname(worktreeRoot) : undefined;
         appLog("info", `pre-approved external_directory for worktree family ${parent}/*`, {
           worktreeRoot,
           projectWorktree: project?.worktree ?? null,
@@ -16245,6 +17068,43 @@ var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => 
       await board.gate(client, { sessionID: input.sessionID, agent });
     },
     "tool.execute.before": async (input, output) => {
+      try {
+        if (config2.termination?.enabled !== false && delegatedSessionIds.has(input.sessionID)) {
+          const entry = completionSignals.get(input.sessionID);
+          if (entry) {
+            const exitGateRequired = entry.exitGateRequired ?? false;
+            const shouldTerminate = terminationDecision({ signal: entry.signal, exitGateRequired, toolCallsAfterCompletion: 1 });
+            if (shouldTerminate) {
+              completionSignals.delete(input.sessionID);
+              try {
+                await client.session.abort({ path: { id: input.sessionID } });
+              } catch {}
+              try {
+                appLog("info", "termination condition met — stopping residual tool calls");
+              } catch {}
+              try {
+                let parentID = terminationParentIds.get(input.sessionID);
+                if (!parentID) {
+                  try {
+                    const sess = await client.session.get({ path: { id: input.sessionID } });
+                    const data = sess?.data;
+                    parentID = data?.parentID ?? sess?.parentID ?? undefined;
+                  } catch {}
+                }
+                if (parentID) {
+                  const truncated = entry.text.slice(0, 2000);
+                  await client.session.prompt({
+                    path: { id: parentID },
+                    body: { parts: [{ type: "text", text: `TGO TERMINATION: completion declared with exit gate satisfied — residual tool call stopped. Report:
+
+${truncated}`, synthetic: true }] }
+                  });
+                }
+              } catch {}
+            }
+          }
+        }
+      } catch {}
       const args = output?.args;
       const delegation = input.tool === "task" ? validateDelegationBoundary(args) : undefined;
       if (delegation && !delegation.valid) {
@@ -16258,13 +17118,16 @@ var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => 
         }
       }
       const background = output?.args != null && typeof output.args === "object" && output.args.background === true;
-      watchdog.noteToolStart(input.sessionID, background);
+      watchdog.noteToolStart(input.sessionID, background, input.tool, output?.args);
     },
     "tool.execute.after": async (input, output) => {
       const background = input.args != null && typeof input.args === "object" && input.args.background === true;
       const isProgress = input.tool === "edit";
       watchdog.noteToolEnd(input.sessionID, background, isProgress);
       watchdog.noteActivity(input.sessionID);
+      if (reuseCapability.supported) {
+        await captureDelegationSession({ tool: input.tool, input, output, repoRoot: directory ?? worktree ?? project?.worktree ?? ".", enabled: config2.sessionReuse?.enabled !== false, log: appLog });
+      }
       if (input.tool === "task" && typeof output?.output === "string") {
         const report = parseTaskReport(output.output);
         if (output && typeof output === "object") {
@@ -16302,6 +17165,47 @@ var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => 
       await fit.normalize(input, output);
     },
     "experimental.chat.messages.transform": async (_input, output) => {
+      try {
+        if (config2.termination?.enabled !== false) {
+          const msgs = output.messages;
+          let lastAssistantText;
+          let sessionID;
+          for (let i = msgs.length - 1;i >= 0; i--) {
+            const m = msgs[i];
+            if (!m)
+              continue;
+            const role = m.info?.role;
+            if (role === "assistant") {
+              const text = m.parts.filter((p) => p.type === "text").map((p) => p.text ?? "").join(`
+`);
+              lastAssistantText = text;
+              sessionID = m.info?.sessionID;
+              break;
+            }
+          }
+          if (lastAssistantText !== undefined && sessionID !== undefined) {
+            if (delegatedSessionIds.has(sessionID)) {
+              try {
+                const signal = parseCompletionSignal(lastAssistantText);
+                if (lastAssistantText.trim().length === 0 || signal.complete === false) {
+                  completionSignals.delete(sessionID);
+                } else if (signal.complete === true) {
+                  let exitGateRequired = false;
+                  try {
+                    const firstUser = msgs.find((msg) => msg.info?.role === "user");
+                    const userText = firstUser ? firstUser.parts.filter((p) => p.type === "text").map((p) => p.text ?? "").join(`
+`) : "";
+                    exitGateRequired = /"?exitGate"?\s*:\s*true/i.test(userText);
+                  } catch {
+                    exitGateRequired = false;
+                  }
+                  completionSignals.set(sessionID, { signal, text: lastAssistantText, exitGateRequired });
+                }
+              } catch {}
+            }
+          }
+        }
+      } catch {}
       if (config2.board?.enabled === false)
         return;
       await board.transform(output.messages);
