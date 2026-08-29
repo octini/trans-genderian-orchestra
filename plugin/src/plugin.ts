@@ -49,6 +49,9 @@ import {
 } from "./suspend";
 import { appendRunEvent, hashArgs, pruneRuns, scanRunsForProblems } from "./runs";
 import { computeMetrics, writeMetrics, readMetrics } from "./metrics";
+// tgo-dw5: manifest + hooks — additive, clearly-named (crowded hook path)
+import { planManifest, MANIFEST_REL_PATH, ManifestScopeConflictError } from "./manifest";
+import { manifestOnDispatch, manifestOnComplete, manifestMessageFilter } from "./manifest-hooks";
 // No runtime function re-exports here: opencode's legacy plugin loader calls
 // EVERY exported function as a plugin factory (input, options), so an entry
 // re-export like evaluateClosure gets invoked as one and throws inside the
@@ -634,6 +637,40 @@ export const TgoPlugin: Plugin = async (
           }
         },
       }),
+      // tgo-dw5: plan-time manifest — primary-seat only, validates + conflict-checks then atomically writes
+      tgo_plan_manifest: tool({
+        description: "Write .tgo/manifest.json at PLAN time — validates and pairwise checks same-parallelSet scope overlaps; typed error on conflict (refuse write). Primary-seat only.",
+        args: {
+          manifestJson: tool.schema.string(),
+        },
+        async execute(args, context) {
+          const repoRoot = directory ?? worktree ?? (project as unknown as { worktree?: string })?.worktree ?? ".";
+          // PERMISSIONS: primary-seat callable only (delegated seats read-only)
+          const authorized = await authorizeLifecycleSession(client, context.sessionID);
+          if (!authorized) {
+            throw new Error("tgo_plan_manifest is primary-seat only — delegated seats are read-only for manifests");
+          }
+          const raw = String((args as Record<string, unknown>).manifestJson ?? "").trim();
+          if (!raw) throw new Error("manifestJson is required and must be a valid JSON string");
+          let parsed: unknown;
+          try {
+            parsed = JSON.parse(raw);
+          } catch (e) {
+            throw new Error(`invalid JSON for manifestJson: ${String(e)}`);
+          }
+          try {
+            const written = await planManifest(repoRoot, parsed as import("./manifest").Manifest);
+            try { board.invalidate(context.sessionID); } catch {}
+            return `manifest written: ${MANIFEST_REL_PATH} (${written.waves.length} waves)`;
+          } catch (e) {
+            if (e instanceof ManifestScopeConflictError) {
+              // typed error surfaced to caller at plan time (refuse write)
+              throw new Error(`MANIFEST_SCOPE_CONFLICT: ${e.message}`);
+            }
+            throw e;
+          }
+        },
+      }),
     },
     event: async ({ event }) => {
       if (event.type === "message.part.updated") {
@@ -1045,6 +1082,40 @@ export const TgoPlugin: Plugin = async (
           throw new Error("Beads lifecycle packets are allowed only from an identified primary session.");
         }
       }
+      // tgo-dw5: manifest onDispatch + messageFilter — additive, zero-overhead when missing (crowded hook path: clearly-named)
+      if (delegation?.valid && input.tool === "task") {
+        try {
+          const rawArgs = output?.args as Record<string, unknown> | undefined;
+          const packet0 = rawArgs?.delegationPacket as Record<string, unknown> | undefined;
+          if (packet0 && typeof packet0.issueId === "string" && isValidBeadID((packet0.issueId as string).trim())) {
+            const issueId = (packet0.issueId as string).trim();
+            const repoRoot = directory ?? worktree ?? (project as unknown as { worktree?: string })?.worktree ?? ".";
+            // onDispatch: inject compact manifest row
+            try {
+              const disp = await manifestOnDispatch({ repoRoot, issueId, packet: packet0 });
+              if (disp.injected) {
+                (rawArgs as Record<string, unknown>).delegationPacket = disp.packet;
+                appLog("info", `manifest onDispatch injected row for ${issueId}`, { issueId, wave: disp.wave });
+              }
+            } catch (e) {
+              safeWarn(appLog, `manifest onDispatch failed: ${String(e)}`);
+            }
+            // messageFilter: strip file refs outside scope
+            try {
+              const curPacket = (rawArgs as Record<string, unknown>).delegationPacket as Record<string, unknown>;
+              const filt = await manifestMessageFilter({ repoRoot, issueId, packet: curPacket });
+              if (filt.filtered) {
+                (rawArgs as Record<string, unknown>).delegationPacket = filt.packet;
+                appLog("info", `manifest messageFilter stripped ${filt.stripped?.length} files for ${issueId}`, { issueId, stripped: filt.stripped });
+              }
+            } catch (e) {
+              safeWarn(appLog, `manifest messageFilter failed: ${String(e)}`);
+            }
+          }
+        } catch (e) {
+          safeWarn(appLog, `manifest hooks (dispatch/filter) failed: ${String(e)}`);
+        }
+      }
       // Host-code delegation snapshot at dispatch — immutable, atomic tmp+rename, write-once (conductor-oss pattern)
       if (delegation?.valid && input.tool === "task") {
         try {
@@ -1383,11 +1454,31 @@ export const TgoPlugin: Plugin = async (
         }
       } catch {}
       if (input.tool === "task" && typeof output?.output === "string") {
-        const report = parseTaskReport(output.output);
+        let report = parseTaskReport(output.output);
         if (output && typeof output === "object") {
           const metadata = output.metadata && typeof output.metadata === "object"
             ? output.metadata as Record<string, unknown>
             : {};
+          // tgo-dw5: manifest onComplete — mismatch routes to BAIL (not retry), zero-overhead when missing
+          // must run before closureGate/gate so bail taxonomy is authoritative
+          let effectiveArgsForManifest: Record<string, unknown> | undefined;
+          try {
+            effectiveArgsForManifest = input.args && typeof input.args === "object" ? input.args as Record<string, unknown> : undefined;
+            const pktForManifest = effectiveArgsForManifest?.delegationPacket && typeof effectiveArgsForManifest.delegationPacket === "object"
+              ? effectiveArgsForManifest.delegationPacket as Record<string, unknown>
+              : undefined;
+            const issueIdForManifest = pktForManifest && typeof pktForManifest.issueId === "string" ? String(pktForManifest.issueId).trim() : undefined;
+            if (issueIdForManifest && isValidBeadID(issueIdForManifest)) {
+              const repoRoot = directory ?? worktree ?? (project as unknown as { worktree?: string })?.worktree ?? ".";
+              const mc = await manifestOnComplete({ repoRoot, issueId: issueIdForManifest, report });
+              if (mc.bail) {
+                report = mc.report;
+                appLog("warn", `manifest scope mismatch → bail for ${issueIdForManifest}`, { issueId: issueIdForManifest, mismatch: mc.mismatchFiles });
+              }
+            }
+          } catch (e) {
+            safeWarn(appLog, `manifest onComplete failed: ${String(e)}`);
+          }
            output.metadata = { ...metadata, specialistReport: report };
           const args = input.args && typeof input.args === "object" ? input.args as Record<string, unknown> : {};
           const packet = args.delegationPacket && typeof args.delegationPacket === "object"

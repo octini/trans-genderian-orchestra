@@ -9,6 +9,8 @@ import { readDefSnapshot } from "./def-snapshot";
 import { readAwaitJson, getRequiredFields, isExpired } from "./suspend";
 import { computeMetrics, readMetrics, writeMetrics, renderQueueLine, buildProblemsSection, type ProblemEntry } from "./metrics";
 import { scanRunsForProblems } from "./runs";
+// Manifest pointer — context-lean one-line pointer, additive (tgo-dw5)
+import { MANIFEST_REL_PATH } from "./manifest";
 
 export const BOARD_SENTINEL_START = "<!-- tgo:board -->";
 export const BOARD_SENTINEL_END = "<!-- /tgo:board -->";
@@ -172,6 +174,19 @@ export async function getSuspendBadge(issueId: string, repoRoot: string): Promis
   }
 }
 
+// tgo-dw5: manifest one-line pointer — context-lean, disk-backed
+async function getManifestBoardLine(repoRoot: string): Promise<string | undefined> {
+  try {
+    const target = path.join(repoRoot, MANIFEST_REL_PATH);
+    const raw = await fs.readFile(target, "utf-8");
+    const parsed = JSON.parse(raw) as { waves?: unknown[] };
+    if (!Array.isArray(parsed.waves)) return undefined;
+    return `manifest: ${MANIFEST_REL_PATH} (${parsed.waves.length} waves)`;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function buildBoardTextWithHints(
   data: {
     inProgress: BdIssue[];
@@ -188,6 +203,13 @@ export async function buildBoardTextWithHints(
   repoRoot?: string
 ): Promise<string> {
   const sections: string[] = ["## TGO JOB BOARD"];
+  // tgo-dw5: one-line manifest pointer (zero overhead when missing, no inlining)
+  if (repoRoot) {
+    try {
+      const manifestLine = await getManifestBoardLine(repoRoot);
+      if (manifestLine) sections.push(manifestLine);
+    } catch {}
+  }
   if (data.memories.length > 0) {
     sections.push(
       "MEMORIES:",

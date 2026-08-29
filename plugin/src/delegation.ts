@@ -1,4 +1,5 @@
 import { classifyRouting, type RouteClass, type RoutingInput } from "./fit";
+import { normalizeScopePath } from "./manifest";
 import {
   hashString,
   hashFivePartPacket,
@@ -241,6 +242,19 @@ export function validateDelegationPacket(
     malformed,
     diagnostics,
   };
+}
+
+// tgo-dw5: manifest scope helpers — additive, clearly-named (hook path crowded)
+export function isFileInManifestScope(file: string, scope: readonly string[]): boolean {
+  const normalizedFile = normalizeScopePath(file);
+  const scopeSet = new Set(scope.map((s) => normalizeScopePath(s)));
+  return scopeSet.has(normalizedFile);
+}
+export function filterFilesByManifestScope(files: string[], scope: readonly string[]): { kept: string[]; stripped: string[] } {
+  const scopeSet = new Set(scope.map((s) => normalizeScopePath(s)));
+  const kept = files.filter((f) => scopeSet.has(normalizeScopePath(f)));
+  const stripped = files.filter((f) => !scopeSet.has(normalizeScopePath(f)));
+  return { kept, stripped };
 }
 
 /** Validate structured task arguments at the plugin's task boundary. */
