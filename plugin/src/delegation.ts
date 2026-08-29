@@ -38,6 +38,8 @@ export interface DelegationPacket {
   model?: unknown;
   preset?: unknown;
   seatFrontmatter?: unknown;
+  /** Worktree lane flag — worktree enforcement active when "worktree", zero overhead otherwise. */
+  lane?: unknown;
 }
 
 export interface DelegationBoundaryArgs {
@@ -212,6 +214,14 @@ export function validateDelegationPacket(
     if (typeof v !== "boolean") {
       malformed.push("useLatestDefinitions");
       diagnostics.push("useLatestDefinitions must be a boolean when present (default false = pinned).");
+    }
+  }
+
+  if ("lane" in value) {
+    const lane = value.lane;
+    if (lane !== "worktree" && lane !== "inline") {
+      malformed.push("lane");
+      diagnostics.push('lane must be "worktree" | "inline" when present (default inline).');
     }
   }
 
