@@ -2,6 +2,35 @@
 
 All notable changes to TGO, in reverse chronological order. Versions track `plugin/package.json`.
 
+## [0.3.0] - 2026-08-31
+
+The governance release — twelve features that close the loop between "work handed out" and "work actually correct."
+
+**Trust the handoff.**
+- **Version pinning (tgo-5t1):** each delegation snapshots its five-part definition (prompt/preset/seat-frontmatter hash) at dispatch; a `[pinned vN]` board badge marks work whose instructions outlived a definition change; `useLatestDefinitions` opt-out.
+- **Worktree lanes (tgo-bh0):** delegated writers run in an isolated git worktree and are blocked outside it — realpath-based symlink-escape detection, `git worktree list --porcelain` validation, multi-edit all-path checks, lifecycle hygiene.
+
+**Check the work.**
+- **Exit gates (tgo-z8s):** deterministic checks (delta-spec, triage, trajectory scorer + blacklist) run before a task closes; a critical finding blocks the close with `GATE_BLOCKED_CRITICAL` and suggests a compensation ticket (`discovered-from` link).
+- **Status taxonomy (tgo-9kk):** outcomes are `complete`/`bail`/`failed`/`tripwire`, each mapped to a recovery action (`retry`/`reroute`/`escalate`/`user-clarification`/`abandon`/`fix-plan`) with a `STATUS` vs `TASK_STATUS` contradiction diagnostic.
+
+**Wait correctly.**
+- **Wait gate (tgo-esy):** a task can suspend with a typed request (`suspendSchema`/`resumeSchema`); the human's prose reply is validated against the requested shape before the task wakes; cross-session single-match resume; expiry scan on next launch (no daemon).
+
+**See the system.**
+- **Problems view (tgo-2ry):** append-only `.tgo/runs/<runId>.jsonl` snapshots; dead-heartbeat/aborted/awaiting detection; a per-seat queue gauge with growth warning.
+- **Cost surface (tgo-5em):** per-seat model budget vs. spend, quota-aware preset recommendation when the queue backs up (downgrade-only advisory).
+
+**Plan and land.**
+- **Typed manifests (tgo-dw5):** `.tgo/manifest.json` declares each bead's scope; plan-time same-parallel-set overlap rejection, completion-time touch-set verification (run-log derived), scope-scoped message filtering, mtime cache.
+- **Convoys (tgo-4wq):** work grouped into waves lands in defined order via `.tgo/convoy/.state.json` (scopeHash re-validation, per-task gate check, ordered merge).
+
+**Contain the chaos.**
+- **Recursion blocking (tgo-wpl):** delegation depth cap + spawn-cycle detection.
+- **Step replay (tgo-ccl):** Horowitz re-watches a recorded step (`replay <runId> step <N>`) without re-running the pipeline; definition-drift pre-flight.
+
+**Also:** sidebar closed-issue filter (`N closed hidden`, tgo-a9i); integration smoke harness (`test/smoke.test.ts`, tgo-4qw); fusion sidekick spike discarded (conditional-go unmet — no frontier-preset cost proof). Config keys added: `runs`, `metrics`, `recursion`, `cost`.
+
 ## [0.2.2] - 2026-08-28
 
 - **Seat frontmatter reconciliation at plugin load (tgo-v2e):** rendered-seat diff against installed agents via shared `resolveAgentsDir`, atomic backup-safe writes (`.bak` + tmp+rename); fixes silently-stale `steps`/`permission` caps on existing installs where self-update swapped the slot but seat files retained old frontmatter (191811a, 00affad).

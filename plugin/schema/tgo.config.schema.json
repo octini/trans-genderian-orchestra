@@ -165,6 +165,42 @@
         "frontier": { "$ref": "#/definitions/seatPreset" }
       },
       "additionalProperties": false
+    },
+    "runs": {
+      "description": "Run-log retention bounds and the dead-heartbeat threshold (problems view + trajectory scoring).",
+      "type": "object",
+      "properties": {
+        "maxAgeMs": { "description": "Prune run logs older than this.", "type": "integer", "exclusiveMinimum": 0, "default": 604800000 },
+        "maxBytes": { "description": "Prune run logs once aggregate bytes exceed this.", "type": "integer", "exclusiveMinimum": 0, "default": 52428800 },
+        "maxFiles": { "description": "Prune run logs once the file count exceeds this.", "type": "integer", "exclusiveMinimum": 0, "default": 200 },
+        "heartbeatThresholdMs": { "description": "A run without a heartbeat for this long is considered dead.", "type": "integer", "exclusiveMinimum": 0, "default": 300000 }
+      },
+      "additionalProperties": false
+    },
+    "metrics": {
+      "description": "Per-seat queue gauge and problems-view scan.",
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean", "default": true }
+      },
+      "additionalProperties": false
+    },
+    "recursion": {
+      "description": "Delegation depth cap and spawn-cycle detection.",
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean", "default": true },
+        "maxDepth": { "description": "Maximum delegation nesting depth.", "type": "integer", "exclusiveMinimum": 0, "default": 4 }
+      },
+      "additionalProperties": false
+    },
+    "cost": {
+      "description": "Cost surface (per-seat model budget vs. spend) and quota-aware preset hints.",
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean", "default": true }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false,

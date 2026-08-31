@@ -2,7 +2,7 @@
 
 > Mirrored byte-for-byte in `plugin/README.md` (the npm readme) — edit one, copy to the other.
 
-[![npm version](https://img.shields.io/badge/npm-0.2.1-ba0ce9e)](https://www.npmjs.com/package/trans-genderian-orchestra)
+[![npm version](https://img.shields.io/badge/npm-0.3.0-ba0ce9e)](https://www.npmjs.com/package/trans-genderian-orchestra)
 [![License: MIT](https://img.shields.io/badge/license-MIT-6a4c93)](LICENSE)
 [![OpenCode 1.18.13](https://img.shields.io/badge/OpenCode-1.18.13-6a4c93)](https://opencode.ai)
 
@@ -36,7 +36,7 @@ One npm package exposes both via dual-package exports since v0.1.5 (`exports "./
 If you prefer to wire it by hand, this also works in `opencode.jsonc`:
 
 ```json
-{ "plugin": ["trans-genderian-orchestra@0.2.1"] }
+{ "plugin": ["trans-genderian-orchestra@0.3.0"] }
 ```
 
 Restart opencode after it installs. That’s the global layer done.
@@ -106,6 +106,17 @@ The Background Job Board is the view that follows you through all of this. Each 
 - **Progress files** — per-issue `.tgo/<issueId>/progress.md` (Objective / Touch set / Decisions / Blockers / Status) written by Dylan, read by Bernstein/Horowitz; survives session end.
 - **Termination conditions** — composable completion detection stops post-completion waffle and hands the report back.
 
+## What 0.3.0 added
+
+TGO 0.3.0 is the governance release — twelve additions that close the loop between “work handed out” and “work actually correct,” grouped by shape:
+
+- **Trust the handoff.** **Version pinning** snapshots each delegation’s definition (prompt/preset/frontmatter hash) at dispatch and badges work whose instructions outlived a change; **worktree lanes** lock each delegated writer into an isolated git worktree and block symlink-escapes, `cd ../` tricks, and multi-file escapes.
+- **Check the work.** **Exit gates** run deterministic checks (delta-spec, trajectory, blacklist) before a task closes — a critical finding blocks the close and suggests a compensation ticket; a **status taxonomy** (`complete`/`bail`/`failed`/`tripwire`) maps each outcome to a recovery action.
+- **Wait correctly.** The **wait gate** lets a task suspend with a typed request, then validates the human’s prose reply against that shape before waking it.
+- **See the system.** The **problems view** surfaces stuck/dead/awaiting sessions with a per-seat queue gauge; the **cost surface** shows each seat’s model budget vs. spend and recommends a cheaper preset when the queue backs up.
+- **Plan and land.** **Typed manifests** reject scope overlaps at plan time and verify touch-sets at completion; **convoys** group work into waves and land them in defined order, gate-checked per task.
+- **Contain the chaos.** **Recursion blocking** caps delegation depth and detects spawn cycles; **step replay** lets Horowitz re-watch a recorded step without re-running the pipeline.
+
 ## The roster
 
 | Seat | What they’re good at |
@@ -136,6 +147,11 @@ Put options in the second element of the plugin tuple: `["trans-genderian-orches
 | `termination` | `{ enabled }` — stops a delegated session after it declares STATUS: complete with its exit gate satisfied and then makes a residual tool call. | `true` |
 | `selfUpdate` | `{ enabled }` — refreshes TGO's own plugin cache slot when a newer version is on npm; activates on next restart. | `true` |
 | `watchdog` | `{ enabled, wallClockMs, idleMs, checkMs, stuckLoopTools, stuckLoopMs }` — aborts a delegated session that’s hung or gone silent and asks Bernstein to re-dispatch. stuck-loop = <3 distinct tool signatures across the last 20 tools within 5m (read-only seats no longer false-trip). | `true`, 30m, 15m, 10s, stuckLoopTools 20, stuckLoopMs 5m |
+
+| `runs` | `{ maxAgeMs, maxBytes, maxFiles, heartbeatThresholdMs }` — run-log retention bounds and the dead-heartbeat threshold for the problems view. | 7d, 50MB, 200, 5m |
+| `metrics` | `{ enabled }` — the per-seat queue gauge and problems-view scan. | `true` |
+| `recursion` | `{ enabled, maxDepth }` — delegation depth cap plus spawn-cycle detection. | `true`, 4 |
+| `cost` | `{ enabled }` — the cost surface (per-seat model budget vs. spend) and quota-aware preset hints. | `true` |
 
 The JSON schema is at `plugin/schema/tgo.config.schema.json`.
 
