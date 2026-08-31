@@ -32,7 +32,7 @@ Seat→model maps are called **presets**: named data files, not code, so model-n
 | Seat | Balanced | Cheap | Frontier |
 |---|---|---|---|
 | Bernstein | `opencode-go/glm-5.3-flash` (max) | `opencode-go/muse-spark-1.2-contributor` (xhigh) | `opencode-go/glm-5.3` (max) |
-| Horowitz | `opencode-go/gpt-5.6-luna` (max) | `opencode-go/muse-spark-1.2-contributor` (xhigh) | `opencode-go/kimi-k3` (max) |
+| Horowitz | `opencode-go/qwen3.8-flash` (xhigh) | `opencode-go/muse-spark-1.2-contributor` (xhigh) | `opencode-go/kimi-k3` (max) |
 | Nas | `opencode-go/muse-spark-1.2-contributor` (xhigh) | `opencode-go/muse-spark-1.2-contributor` (xhigh) | `opencode-go/muse-spark-1.2-contributor` (xhigh) |
 | Dylan | `opencode-go/muse-spark-1.2-contributor` (xhigh) | `opencode-go/muse-spark-1.2-contributor` (xhigh) | `opencode-go/muse-spark-1.2-contributor` (xhigh) |
 | Nirvana synth | `opencode-go/glm-5.3-flash` (max) | `opencode-go/muse-spark-1.2-contributor` (xhigh) | `opencode-go/grok-4.6` (xhigh) |
@@ -40,10 +40,10 @@ Seat→model maps are called **presets**: named data files, not code, so model-n
 
 The routing rationale, from the spec:
 
-- **Balanced = performance-tiered, all under cap** — Bernstein/Nirvana → `glm-5.3-flash` (max, best Go-fit agentic); Horowitz → `gpt-5.6-luna` (max, best Go-fit coder); Dylan/Nas/band-members → `muse-spark-1.2-contributor` (xhigh, massive 226,600/mo cap). Every seat fits its Go request cap.
+- **Balanced = performance-tiered, quota-aware** — Bernstein/Nirvana → `glm-5.3-flash` (max, best Go-fit agentic); Horowitz → `qwen3.8-flash` (xhigh, durable 2× Usage $30 and the strongest practical coder — its cheaper cache-read/write and lower output rate vs Luna cut the review seat's quota burn ~3×); Dylan/Nas/band-members → `muse-spark-1.2-contributor` (xhigh, massive 226,600/mo cap). Every seat fits its Go request cap.
 - **Cheap = Muse Spark on every seat (xhigh)** — the 226,600/mo cap makes cost a non-issue; all six cheap entries route to `muse-spark-1.2-contributor` at effort `xhigh`.
 - **Frontier = best-performance-period (light month)** — Bernstein → `glm-5.3` (max, best Go agentic); Horowitz → `kimi-k3` (max, best Go long-horizon coder); Nirvana → `grok-4.6` (xhigh, best knowledge-work synth); Dylan/Nas/band-members → `muse-spark-1.2-contributor` (xhigh). Frontier caps are tight (Grok 4.6 = 845, Kimi K3 = 490, GLM-5.3 = 1,080 req/mo) — assume a light-usage month; they throttle if a frontier month gets heavy.
-- **Variant support (verified in `~/.cache/opencode/models.json`):** Muse Spark and Grok 4.6 top out at `xhigh` (no `max`); `glm-5.3`, `glm-5.3-flash`, `gpt-5.6-luna`, and `kimi-k3` support `max`.
+- **Variant support (verified in `~/.cache/opencode/models.json`):** Muse Spark, Grok 4.6, and Qwen3.8 Flash top out at `xhigh` (no `max`); `glm-5.3`, `glm-5.3-flash`, and `kimi-k3` support `max`.
 
 Switching presets at runtime is a prose nudge, not a config edit: say "go cheap" or "use frontier for this" and Bernstein sets the active preset, which takes effect at the next plugin load. Partial overrides are possible via the `presets` config option.
 

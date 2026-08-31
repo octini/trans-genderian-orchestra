@@ -2,6 +2,11 @@
 
 All notable changes to TGO, in reverse chronological order. Versions track `plugin/package.json`.
 
+## [0.3.1] - 2026-08-31
+
+- **Balanced Horowitz → Qwen3.8 Flash:** the review seat moved off `gpt-5.6-luna` (Usage $15 → 4× quota multiplier) to `qwen3.8-flash` (Usage $30 → durable 2×), after post-0.1.12 usage analysis showed Horowitz — not Bernstein — consumed ~75% of the weekly quota (Luna `$4.51` raw × 4× vs Muse Spark's 1×). Qwen3.8 Flash is the strongest practical coder on Lending Desk Bench (89.6 No-Skills; forms/mutations 89 vs Luna 44/33) with cheaper cache-read/write and output rates, cutting Horowitz's quota footprint ~3×. Trade-off: weaker "process closeout" (33) — mitigated by the reviewer's tight-verdict prompt. Other presets unchanged. Updated `plugin/assets/presets.json`, `plugin/test/presets.test.ts`, `docs/ROSTER.md`, `docs/spec/roster.md`, `CONTEXT.md:63`.
+- **Gates:** `bun run validate`, `bunx tsc --noEmit`, `bun test`, `bun run src/build.ts` Lean ok.
+
 ## [0.3.0] - 2026-08-31
 
 The governance release — twelve features that close the loop between "work handed out" and "work actually correct."

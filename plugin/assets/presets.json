@@ -1,7 +1,7 @@
 {
   "balanced": {
     "bernstein":     { "model": "opencode-go/glm-5.3-flash",             "variant": "max" },
-    "horowitz":      { "model": "opencode-go/gpt-5.6-luna",              "variant": "max" },
+    "horowitz":      { "model": "opencode-go/qwen3.8-flash",             "variant": "xhigh" },
     "nas":           { "model": "opencode-go/muse-spark-1.2-contributor", "variant": "xhigh" },
     "dylan":         { "model": "opencode-go/muse-spark-1.2-contributor", "variant": "xhigh" },
     "nirvana":       { "model": "opencode-go/glm-5.3-flash",             "variant": "max" },

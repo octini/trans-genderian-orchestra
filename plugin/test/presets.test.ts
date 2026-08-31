@@ -88,7 +88,7 @@ describe("applyPreset", () => {
     const cfg = await loadTgoConfig({ preset: "balanced" });
     const balanced = cfg.presets!.balanced;
     expect(balanced.bernstein).toEqual({ model: "opencode-go/glm-5.3-flash", variant: "max" });
-    expect(balanced.horowitz).toEqual({ model: "opencode-go/gpt-5.6-luna", variant: "max" });
+    expect(balanced.horowitz).toEqual({ model: "opencode-go/qwen3.8-flash", variant: "xhigh" });
     expect(balanced.nirvana).toEqual({ model: "opencode-go/glm-5.3-flash", variant: "max" });
     expect(balanced.dylan).toEqual({ model: "opencode-go/muse-spark-1.2-contributor", variant: "xhigh" });
     expect(balanced.nas).toEqual({ model: "opencode-go/muse-spark-1.2-contributor", variant: "xhigh" });
