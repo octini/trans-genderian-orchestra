@@ -313,15 +313,27 @@ export function checkScopeConflicts(manifest: Manifest): { hasConflict: boolean;
 // Disk IO — atomic tmp+rename, never partial. Missing file = undefined (no-op).
 // ---------------------------------------------------------------------------
 
+// G3: mtime+size-keyed parse cache — missing-manifest hooks stay zero-IO on the hot path.
+// planManifest/other writers invalidate explicitly.
+const manifestCache = new Map<string, [number, number, (Manifest | undefined)?]>();
+
+export function invalidateManifestCache(repoRoot: string): void {
+  manifestCache.delete(path.resolve(manifestPath(repoRoot)));
+}
+
 export async function readManifest(repoRoot: string): Promise<Manifest | undefined> {
   const target = manifestPath(repoRoot);
+  const key = path.resolve(target);
   try {
+    const st = await fs.stat(target);
+    const hit = manifestCache.get(key);
+    if (hit && hit[0] === st.mtimeMs && hit[1] === st.size) return hit[2];
     const raw = await fs.readFile(target, "utf-8");
     const parsed = JSON.parse(raw) as unknown;
     const v = validateManifest(parsed);
-    if (!v.valid || !v.manifest) return undefined;
-    // also check conflicts? reading does not need conflict check, but we can return as is
-    return v.manifest;
+    const result = v.valid && v.manifest ? v.manifest : undefined;
+    manifestCache.set(key, [st.mtimeMs, st.size, result]);
+    return result;
   } catch {
     return undefined;
   }
@@ -367,6 +379,7 @@ export async function planManifest(repoRoot: string, manifest: Manifest | unknow
     throw new ManifestScopeConflictError(`MANIFEST_SCOPE_CONFLICT: manifest scope conflict: ${details}`, conflict.conflicts);
   }
   await writeManifestAtomic(repoRoot, normalized);
+  invalidateManifestCache(repoRoot);
   return normalized;
 }
 

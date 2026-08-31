@@ -8,6 +8,8 @@ import { readDefSnapshot } from "./def-snapshot";
 // Suspend gate badge — additive, no rewrite of existing board hints path
 import { readAwaitJson, getRequiredFields, isExpired } from "./suspend";
 import { computeMetrics, readMetrics, writeMetrics, renderQueueLine, buildProblemsSection, type ProblemEntry } from "./metrics";
+import { scanSeatSteps, buildCostLines } from "./cost";
+import { buildConvoySection } from "./convoy";
 import { scanRunsForProblems } from "./runs";
 // Manifest pointer — context-lean one-line pointer, additive (tgo-dw5)
 import { MANIFEST_REL_PATH } from "./manifest";
@@ -107,6 +109,7 @@ export function buildBoardText(data: {
   memories: Array<{ key: string; value: string }>;
   streaming: Array<{ id: string; target: string }>;
   queueLines?: string[];
+  costLines?: string[];
   problems?: ProblemEntry[];
 }, maxListed = 6): string {
   const sections: string[] = ["## TGO JOB BOARD"];
@@ -146,6 +149,9 @@ export function buildBoardText(data: {
   }
   if (data.queueLines && data.queueLines.length > 0) {
     sections.push(...data.queueLines);
+  }
+  if (data.costLines && data.costLines.length > 0) {
+    sections.push(...data.costLines);
   }
   if (data.problems && data.problems.length > 0) {
     const probText = buildProblemsSection(data.problems);
@@ -195,6 +201,7 @@ export async function buildBoardTextWithHints(
     memories: Array<{ key: string; value: string }>;
     streaming: Array<{ id: string; target: string }>;
     queueLines?: string[];
+    costLines?: string[];
     problems?: ProblemEntry[];
   },
   reusableSet?: Set<string>,
@@ -208,6 +215,11 @@ export async function buildBoardTextWithHints(
     try {
       const manifestLine = await getManifestBoardLine(repoRoot);
       if (manifestLine) sections.push(manifestLine);
+    } catch {}
+    // tgo-4wq: convoy section (single data-flow source; waves + landing hint)
+    try {
+      const convoyLines = await buildConvoySection(repoRoot);
+      if (convoyLines && convoyLines.length > 0) sections.push(...convoyLines);
     } catch {}
   }
   if (data.memories.length > 0) {
@@ -271,6 +283,9 @@ export async function buildBoardTextWithHints(
   }
   if (data.queueLines && data.queueLines.length > 0) {
     sections.push(...data.queueLines);
+  }
+  if (data.costLines && data.costLines.length > 0) {
+    sections.push(...data.costLines);
   }
   if (data.problems && data.problems.length > 0) {
     const probText = buildProblemsSection(data.problems);
@@ -433,6 +448,7 @@ export class BoardController {
   private runsConfig?: { maxAgeMs?: number; maxBytes?: number; maxFiles?: number; heartbeatThresholdMs?: number };
   private pruneInFlight?: Promise<string[]>;
   private scanInFlight = false;
+  private costGetter?: () => Record<string, string> | undefined;
 
   constructor(opts: {
     run: BdRunner;
@@ -461,6 +477,11 @@ export class BoardController {
 
   setRunsConfig(cfg: { maxAgeMs?: number; maxBytes?: number; maxFiles?: number; heartbeatThresholdMs?: number }): void {
     this.runsConfig = cfg;
+  }
+
+  /** tgo-5em: provide seat→model (active preset) for the cost surface. Omit to disable. */
+  setCostGetter(getter: () => Record<string, string> | undefined): void {
+    this.costGetter = getter;
   }
 
   /** tgo-2ry: expose problems for tests and allow external injection */
@@ -577,6 +598,7 @@ export class BoardController {
       memories: Array<{ key: string; value: string }>;
       streaming: Array<{ id: string; target: string }>;
       queueLines?: string[];
+      costLines?: string[];
       problems?: ProblemEntry[];
     },
     reusableSet?: Set<string>,
@@ -663,6 +685,19 @@ export class BoardController {
       }
     } catch (e) {
       safeWarn(this.log, "queue gauge compute failed", { error: String(e) });
+    }
+    // tgo-5em: cost surface — budget + file-derived spend estimate (advisory)
+    let costLines: string[] | undefined;
+    try {
+      const seatModels = this.costGetter ? this.costGetter() : undefined;
+      const repoRootForCost = this.sessionReuse?.repoRoot;
+      if (seatModels && repoRootForCost && Object.keys(seatModels).length > 0) {
+        const stepsBySeat = await scanSeatSteps(repoRootForCost);
+        const lines = buildCostLines({ seatModels, stepsBySeat });
+        if (lines.length > 0) costLines = lines;
+      }
+    } catch (e) {
+      safeWarn(this.log, "cost surface compute failed", { error: String(e) });
     }
     // tgo-2ry: recovery scan -> problems — F5 watchdog wiring + F6 dedupe/drop stale + F9 in-flight guard
     let problems: ProblemEntry[] | undefined;
@@ -760,7 +795,7 @@ export class BoardController {
     }
 
     const inner = await this.buildBoardTextWithHints(
-      { inProgress, ready, blocked, memories, streaming, queueLines, problems },
+      { inProgress, ready, blocked, memories, streaming, queueLines, costLines, problems },
       reusableSet,
       sessionIdsByIssue
     );

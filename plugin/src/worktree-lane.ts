@@ -47,18 +47,44 @@ export function worktreePathForIssue(repoRoot: string, issueId: string): string 
 }
 
 /**
+ * G2: realpath-based resolution — defeats symlink escapes.
+ * Resolves the deepest EXISTING ancestor via fs.realpathSync and joins the
+ * not-yet-existing tail lexically (a symlink cannot exist at a path that
+ * does not exist, so the tail is safe). Returns undefined when even the
+ * filesystem root cannot be resolved (caller treats as conservative block).
+ */
+function realpathTargetSafe(resolved: string): string | undefined {
+  try {
+    return fsSync.realpathSync(resolved);
+  } catch {}
+  // Walk up to the nearest existing ancestor, realpath it, join the lexical tail
+  let cur = path.dirname(resolved);
+  const tail: string[] = [path.basename(resolved)];
+  for (let i = 0; i < 64; i++) {
+    try {
+      const real = fsSync.realpathSync(cur);
+      return tail.length === 0 ? real : path.join(real, ...tail);
+    } catch {}
+    const parent = path.dirname(cur);
+    if (parent === cur) return undefined;
+    tail.unshift(path.basename(cur));
+    cur = parent;
+  }
+  return undefined;
+}
+
+/**
  * Check if a target file path is inside a given worktree path.
+ * - G2: containment is REALPATH-based (fs.realpathSync on the deepest existing
+ *   ancestor of both sides) so symlinked directories inside the worktree that
+ *   escape the boundary are blocked. Unresolvable worktree root → false (block).
  * - If targetPath is absolute, resolves and checks prefix.
  * - If targetPath is relative, resolves against repoRoot (child's actual cwd =
  *   parent checkout) when provided — this implements the G1 strict fallback:
  *   relative paths in lane=worktree child sessions resolve outside the worktree
  *   and are BLOCKED with corrective error asking orchestrator to re-dispatch
- *   with the worktree. When repoRoot is absent, falls back to worktreePath for
- *   backward compat (unit-test helper).</comment>
- *   and checks if it stays inside (prevents ../ escapes).
- * Returns true if inside, false if outside.
- * Also handles repoRoot-relative resolution for absolute checks when targetPath
- * is absolute but repoRoot is different — just checks absolute containment.
+ *   with the worktree. When repoRoot is absent, falls back to worktreePath.
+ * Returns true if inside, false if outside (or unresolvable — conservative).
  */
 export function isPathInsideWorktree(
   targetPath: string,
@@ -80,11 +106,17 @@ export function isPathInsideWorktree(
     const base = repoRoot ? path.resolve(repoRoot) : resolvedWorktree;
     resolvedTarget = path.resolve(base, targetPath);
   }
-  // Exact match is inside
+  // Exact match is inside (fast path, no fs work)
   if (resolvedTarget === resolvedWorktree) return true;
+  // G2: realpath both sides; unresolvable → conservative block
+  const realWorktree = realpathTargetSafe(resolvedWorktree);
+  if (!realWorktree) return false;
+  const realTarget = realpathTargetSafe(resolvedTarget);
+  if (!realTarget) return false;
+  if (realTarget === realWorktree) return true;
   // Ensure worktree prefix with separator to avoid prefix collision (e.g. /tmp/repo vs /tmp/repo2)
-  const prefix = resolvedWorktree.endsWith(path.sep) ? resolvedWorktree : resolvedWorktree + path.sep;
-  return resolvedTarget.startsWith(prefix);
+  const prefix = realWorktree.endsWith(path.sep) ? realWorktree : realWorktree + path.sep;
+  return realTarget.startsWith(prefix);
 }
 
 /**
@@ -102,58 +134,128 @@ export function extractFilePathFromArgs(tool: string, args: unknown): string | u
     const v = obj[key];
     if (typeof v === "string" && v.trim().length > 0) return v.trim();
   }
-  // Some edit tools use nested "edits" array — check first edit's filePath
+  // Some edit tools use nested "edits" array — G2: ALL edits must be checked,
+  // not just the first (second edit could target outside the worktree).
   if (Array.isArray((obj as Record<string, unknown>).edits)) {
-    const first = (obj as Record<string, unknown>).edits as Array<Record<string, unknown>>;
-    if (first.length > 0 && typeof first[0]?.filePath === "string") return (first[0].filePath as string).trim();
+    const edits = (obj as Record<string, unknown>).edits as Array<Record<string, unknown>>;
+    for (const e of edits) {
+      if (e && typeof e === "object" && typeof (e as Record<string, unknown>).filePath === "string") {
+        return ((e as Record<string, unknown>).filePath as string).trim();
+      }
+    }
+    if (edits.length > 0 && typeof edits[0]?.filePath === "string") return (edits[0].filePath as string).trim();
   }
   return undefined;
 }
 
 /**
- * Heuristic: does a bash command string contain an absolute path that is
- * inside repoRoot but outside worktree? If so, treat as outside mutation.
- * Also detects if command explicitly references a path outside worktree via
- * absolute path containment check.
- * Returns true if command should be considered outside (i.e., block).
+ * G2: extract ALL file-path targets from tool args (edit/multiedit/write).
+ * Multi-edit calls carry several targets — every one must pass containment.
  */
+export function extractAllFilePathsFromArgs(tool: string, args: unknown): string[] {
+  if (!args || typeof args !== "object") return [];
+  const obj = args as Record<string, unknown>;
+  if (tool.toLowerCase().includes("bash")) return [];
+  const out: string[] = [];
+  const candidates = ["filePath", "path", "target", "file", "filepath"];
+  for (const key of candidates) {
+    const v = obj[key];
+    if (typeof v === "string" && v.trim().length > 0) out.push(v.trim());
+  }
+  if (Array.isArray((obj as Record<string, unknown>).edits)) {
+    const edits = (obj as Record<string, unknown>).edits as Array<Record<string, unknown>>;
+    for (const e of edits) {
+      if (e && typeof e === "object" && typeof (e as Record<string, unknown>).filePath === "string") {
+        const p = ((e as Record<string, unknown>).filePath as string).trim();
+        if (p) out.push(p);
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * G2: broadened bash-path detection — false negatives are not acceptable.
+ * Extracts ALL path-like tokens (absolute, ~/…, ./…, ../…, bare containing "/"),
+ * resolves each against the child session's cwd (repoRoot = parent checkout),
+ * and blocks when:
+ *  1. any token resolves INSIDE repoRoot but OUTSIDE the worktree (unconditional
+ *     — the child's cwd is the parent checkout, so every repo-relative path is
+ *     outside the lane worktree; false positives are acceptable, the corrective
+ *     error explains);
+ *  2. a mutation verb is present and any token is unresolvable ($VAR, backtick,
+ *     ${}) or has no resolvable path-like token at all (ambiguous);
+ *  3. a mutation verb targets a token that resolves outside repoRoot entirely
+ *     (ambiguous mutation target);
+ *  4. a `cd` token resolves outside the worktree (conservative: shell state
+ *     cannot be tracked across compound commands).
+ */
+const MUTATION_VERBS = /\b(rm|rmdir|mv|cp|dd|tee|truncate|chmod|chown|ln|mkdir|touch|shred|mktemp|sed|patch|install|rsync|scp|unlink)\b|\bgit\s+(clean|checkout|restore|reset|stash|apply|rm|mv)\b|\b(npm|bun|pnpm|yarn)\s+(install|uninstall|add|remove|ci)\b/;
+
+function extractCommandTokens(command: string): string[] {
+  const out: string[] = [];
+  const tokenRe = /"[^"]*"|'[^']*'|[^\s]+/g;
+  let m: RegExpExecArray | null;
+  while ((m = tokenRe.exec(command)) !== null) {
+    const tok = m[0];
+    // strip surrounding quotes and trailing punctuation
+    const cleaned = tok.replace(/^["'`]+/, "").replace(/["'`]+$/, "").replace(/[;|&>)]+$/, "").trim();
+    if (cleaned.length > 0) out.push(cleaned);
+  }
+  return out;
+}
+
+function isPathLikeToken(token: string): boolean {
+  if (token.startsWith("/") || token.startsWith("~/") || token.startsWith("./") || token.startsWith("../")) return true;
+  return token.includes("/") && !token.includes("://");
+}
+
+function isMutationCommand(command: string): boolean {
+  return MUTATION_VERBS.test(command);
+}
+
 export function isBashCommandOutsideWorktree(
   command: string,
   worktreePath: string,
   repoRoot: string,
 ): boolean {
   if (!command || !worktreePath || !repoRoot) return false;
-  // Extract absolute-looking paths from command: tokens starting with "/" or containing ":\"
-  // Simple regex for absolute POSIX paths (and Windows drive)
-  const absolutePathRegex = /(?:^|[\s"'`])(\/(?:[^ \s"'`\\]+\/?)+)/g;
-  let match: RegExpExecArray | null;
   const resolvedWorktree = path.resolve(worktreePath);
   const resolvedRepo = path.resolve(repoRoot);
-  while ((match = absolutePathRegex.exec(command)) !== null) {
-    const candidateRaw = match[1].trim().replace(/[,;|&]+$/, "");
-    if (!candidateRaw) continue;
-    // Strip trailing punctuation that is not part of path
-    const candidate = candidateRaw.replace(/[.]+$/, "");
-    // Only consider paths that are absolute and look like file paths (contain "/" or known repo)
-    // Check if candidate is inside repoRoot but not inside worktree
-    try {
-      const resolvedCandidate = path.resolve(candidate);
-      // If candidate is inside repoRoot (main checkout) but not inside worktree, it's outside
-      const isInsideRepo = resolvedCandidate === resolvedRepo || resolvedCandidate.startsWith(resolvedRepo + path.sep);
-      const isInsideWorktree = resolvedCandidate === resolvedWorktree || resolvedCandidate.startsWith(resolvedWorktree + path.sep);
-      // If it's inside repo but outside worktree, block
-      if (isInsideRepo && !isInsideWorktree) return true;
-      // Also if candidate is absolute and not inside worktree but looks like a file path,
-      // and worktree is sibling of repo, then it's outside.
-      // For generic case, if candidate is absolute and not inside worktree, but command
-      // contains that path, we consider it outside only if it's plausibly a mutation target.
-      // To avoid false positives for "echo /tmp/foo", we only block when candidate is under repoRoot
-      // or when command contains typical mutation verbs?
-      // For now, only block repoRoot-contained paths.
-    } catch {
+  const lowerCommand = command.toLowerCase();
+  const hasMutationVerb = isMutationCommand(lowerCommand);
+  const cwdBase = resolvedRepo;
+  let sawPathToken = false;
+  const tokens = extractCommandTokens(command);
+  for (const raw of tokens) {
+    if (!isPathLikeToken(raw)) continue;
+    sawPathToken = true;
+    if (raw.includes("$") || raw.includes("`")) {
+      // unresolvable (env/expand) — ambiguous under mutation
+      if (hasMutationVerb) return true;
       continue;
     }
+    let resolved: string;
+    if (raw.startsWith("~/")) {
+      const home = process.env.HOME ?? os.homedir();
+      resolved = path.resolve(home, raw.slice(2));
+    } else if (path.isAbsolute(raw)) {
+      resolved = path.resolve(raw);
+    } else {
+      resolved = path.resolve(cwdBase, raw);
+    }
+    const insideWorktree = isPathInsideWorktree(resolved, worktreePath, repoRoot);
+    if (insideWorktree) continue;
+    const insideRepo = resolved === resolvedRepo || resolved.startsWith(resolvedRepo + path.sep);
+    // Rule 1: repo-relative token outside the worktree → always block
+    if (insideRepo) return true;
+    // Rule 4: cd anywhere outside the worktree → conservative block
+    if (/\bcd\b/.test(lowerCommand)) return true;
+    // Rule 2: mutation targeting a path outside the repo → block; read-only → allow
+    if (hasMutationVerb) return true;
   }
+  // Rule 3: mutating command with no path-like tokens at all → ambiguous, block
+  if (hasMutationVerb && !sawPathToken) return true;
   return false;
 }
 
@@ -183,11 +285,13 @@ export function shouldBlockOutsideWorktree(opts: {
     }
     return { block: false };
   }
-  const filePath = extractFilePathFromArgs(tool, args);
-  if (!filePath) return { block: false };
-  const inside = isPathInsideWorktree(filePath, worktreePath, repoRoot);
-  if (!inside) {
-    return { block: true, target: filePath, reason: `file ${filePath} is outside worktree at ${worktreePath}` };
+  const filePaths = extractAllFilePathsFromArgs(tool, args);
+  if (filePaths.length === 0) return { block: false };
+  for (const filePath of filePaths) {
+    const inside = isPathInsideWorktree(filePath, worktreePath, repoRoot);
+    if (!inside) {
+      return { block: true, target: filePath, reason: `file ${filePath} is outside worktree at ${worktreePath}` };
+    }
   }
   return { block: false };
 }
@@ -261,16 +365,22 @@ export async function ensureWorktreeExists(opts: EnsureWorktreeOpts): Promise<{ 
   // Validate again for path construction
   assertValidBeadID(issueId);
 
-  // Idempotent check: if worktree directory already exists, assume it's the correct worktree
-  // (We could run `git worktree list --porcelain` to verify, but fs existence is sufficient for idempotency)
+  // G2: idempotent check now VERIFIES the worktree, not just directory existence.
+  // A plain existing directory must NOT be treated as a valid lane worktree.
   try {
     if (await exists(worktreePath)) {
-      // Also check that it's actually a git worktree (contains .git file/dir)
-      // If it exists but is not a git worktree, we still return created:false to avoid clobbering
-      if (log) log("info", `worktree already exists at ${worktreePath} for ${issueId}`, { worktreePath, issueId, branch });
-      return { worktreePath, branch, created: false };
+      const valid = await isRegisteredWorktree(worktreePath, runGit, repoRoot);
+      if (valid) {
+        if (log) log("info", `worktree already exists at ${worktreePath} for ${issueId}`, { worktreePath, issueId, branch });
+        return { worktreePath, branch, created: false };
+      }
+      // Directory exists but is NOT a registered worktree (stale dir, wrong checkout, stray mkdir)
+      if (log) log("warn", `path exists at ${worktreePath} but is not a registered git worktree for ${issueId} — refusing to clobber`, { worktreePath, issueId });
+      throw new Error(`worktree lane path ${worktreePath} exists but is not a registered git worktree for ${repoRoot} — remove it or choose another issueId`);
     }
-  } catch {}
+  } catch (e) {
+    if (e instanceof Error && e.message.includes("not a registered git worktree")) throw e;
+  }
 
   // Ensure parent directory exists
   const parent = path.dirname(worktreePath);
@@ -305,34 +415,77 @@ export async function ensureWorktreeExists(opts: EnsureWorktreeOpts): Promise<{ 
   try {
     const result = await runGit(worktreeArgs, repoRoot);
     if (result.exitCode === 0) {
+      // G2: post-create verification — the expected path must actually be a registered worktree
+      const verified = await isRegisteredWorktree(worktreePath, runGit, repoRoot);
+      if (!verified) {
+        throw new Error(`git worktree add reported success but ${worktreePath} is not a registered worktree for ${issueId}`);
+      }
       if (log) log("info", `worktree created at ${worktreePath} branch ${branch} for ${issueId}`, { worktreePath, branch, issueId });
       return { worktreePath, branch, created: true };
     }
     // If exitCode !=0, check if it's because worktree already exists (idempotent) or branch exists
     const combined = (result.stdout + " " + result.stderr).toLowerCase();
     if (combined.includes("already exists") || combined.includes("already checked out")) {
-      // Treat as existing
-      return { worktreePath, branch, created: false };
+      // G2: verify the path IS a registered worktree before treating as ours
+      const verified = await isRegisteredWorktree(worktreePath, runGit, repoRoot);
+      if (verified) return { worktreePath, branch, created: false };
+      // Path exists but isn't registered to this repo — surface, don't silently accept
+      throw new Error(`worktree lane path ${worktreePath} exists but is not a registered git worktree for ${issueId}`);
     }
-    // If branchExists was false but -b failed because branch already exists (race), try without -b
-    if (!branchExists && combined.includes("already exists")) {
+    // G2: branch-collision race — if -b failed because the branch exists (race),
+    // retry WITHOUT -b. Previously unreachable: the combined.includes("already exists")
+    // branch above consumed this case before the retry could fire.
+    if (!branchExists) {
       const retry = await runGit(["git", "worktree", "add", worktreePath, branch], repoRoot);
       if (retry.exitCode === 0) return { worktreePath, branch, created: true };
       const retryCombined = (retry.stdout + " " + retry.stderr).toLowerCase();
-      if (retryCombined.includes("already exists") || retryCombined.includes("already checked out")) {
+      if (retryCombined.includes("already checked out")) {
         return { worktreePath, branch, created: false };
       }
       throw new Error(`git worktree add failed for ${issueId}: ${retry.stderr || retry.stdout}`);
     }
     throw new Error(`git worktree add failed for ${issueId}: ${result.stderr || result.stdout} (exit ${result.exitCode})`);
   } catch (e) {
-    // If worktreePath was created despite error (race), treat as exists
+    // G2: do NOT treat bare directory existence as success after an error —
+    // verify porcelain registration before treating as existing
     try {
-      if (await exists(worktreePath)) {
+      if (await exists(worktreePath) && await isRegisteredWorktree(worktreePath, runGit, repoRoot)) {
         return { worktreePath, branch, created: false };
       }
     } catch {}
     throw e;
+  }
+}
+
+/**
+ * G2: porcelain-based worktree validation — `git worktree list --porcelain` is
+ * the authoritative registry. A bare existing directory is NOT a valid lane
+ * worktree. Falls back to the .git-file heuristic only when git fails.
+ */
+async function isRegisteredWorktree(
+  worktreePath: string,
+  runGit: (args: string[], cwd: string) => Promise<{ exitCode: number; stdout: string; stderr: string }>,
+  repoRoot: string,
+): Promise<boolean> {
+  try {
+    const res = await runGit(["git", "worktree", "list", "--porcelain"], repoRoot);
+    if (res.exitCode !== 0) return false;
+    const resolvedTarget = path.resolve(worktreePath);
+    for (const line of res.stdout.split("\n")) {
+      if (line.startsWith("worktree ")) {
+        const wtPath = line.slice("worktree ".length).trim();
+        if (wtPath && path.resolve(wtPath) === resolvedTarget) return true;
+      }
+    }
+    return false;
+  } catch {
+    // git unavailable — fall back to .git-file heuristic (worktrees have a .git FILE, checkouts a directory)
+    try {
+      const st = await fs.stat(path.join(worktreePath, ".git"));
+      return st.isFile();
+    } catch {
+      return false;
+    }
   }
 }
 

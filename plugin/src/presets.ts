@@ -67,3 +67,38 @@ export function applyPreset(
   }
   return applied;
 }
+
+/**
+ * tgo-5em: pressure-aware preset recommendation. Advisory only — never
+ * upgrades, only ratchets DOWN under queue pressure when the active preset is
+ * a cheaper option than the current one.
+ * - queueDepth >= 6 → cheap
+ * - queueDepth >= 3 → balanced
+ * - otherwise → current (unchanged)
+ */
+export const PRESSURE_HIGH = 6;
+export const PRESSURE_MID = 3;
+
+export function recommendPresetForPressure(queueDepth: number, currentPreset: string): string {
+  if (!Number.isFinite(queueDepth)) return currentPreset;
+  if (queueDepth >= PRESSURE_HIGH) return "cheap";
+  if (queueDepth >= PRESSURE_MID) return "balanced";
+  return currentPreset;
+}
+
+/** Resolve seat → model for a preset (band-members expands to its lens seats). */
+export function resolveSeatModels(
+  preset: string,
+  presets: TgoConfig["presets"]
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!presets) return out;
+  const seatMap = presets[preset as keyof typeof presets];
+  if (!seatMap) return out;
+  for (const seat of SEATS) {
+    const ref = seatMap[seat];
+    if (!ref || !ref.model) continue;
+    for (const name of agentName(seat)) out[name] = ref.model;
+  }
+  return out;
+}

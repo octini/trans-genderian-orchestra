@@ -14715,7 +14715,7 @@ async function validateAgentDir(agentDir, log) {
   }
   return checked;
 }
-var MAX_PROMPT_TOKENS = 1000, BD_ENV, SEATS, PRESET_NAMES, modelRef, seatPreset, boardConfig, concisionConfig, setupConfig, watchdogConfig, sessionReuseConfig, terminationConfig, selfUpdateConfig, runsConfig, metricsConfig, tgoConfigSchema;
+var MAX_PROMPT_TOKENS = 1000, BD_ENV, SEATS, PRESET_NAMES, modelRef, seatPreset, boardConfig, concisionConfig, setupConfig, watchdogConfig, sessionReuseConfig, terminationConfig, selfUpdateConfig, runsConfig, metricsConfig, recursionConfig, costConfig, tgoConfigSchema;
 var init_config = __esm(() => {
   init_zod();
   BD_ENV = {
@@ -14783,6 +14783,13 @@ var init_config = __esm(() => {
   metricsConfig = exports_external.object({
     enabled: exports_external.boolean().default(true)
   });
+  recursionConfig = exports_external.object({
+    enabled: exports_external.boolean().default(true),
+    maxDepth: exports_external.number().int().positive().default(4)
+  });
+  costConfig = exports_external.object({
+    enabled: exports_external.boolean().default(true)
+  });
   tgoConfigSchema = exports_external.object({
     preset: exports_external.enum(PRESET_NAMES).default("balanced"),
     presets: exports_external.object({
@@ -14813,7 +14820,9 @@ var init_config = __esm(() => {
       maxFiles: 200,
       heartbeatThresholdMs: 5 * 60 * 1000
     })),
-    metrics: metricsConfig.optional().default(() => ({ enabled: true }))
+    metrics: metricsConfig.optional().default(() => ({ enabled: true })),
+    recursion: recursionConfig.optional().default(() => ({ enabled: true, maxDepth: 4 })),
+    cost: costConfig.optional().default(() => ({ enabled: true }))
   });
 });
 
@@ -15965,8 +15974,8 @@ __export(exports_runs, {
   DEFAULT_PRUNE_MAX_AGE_MS: () => DEFAULT_PRUNE_MAX_AGE_MS,
   DEFAULT_HEARTBEAT_THRESHOLD_MS: () => DEFAULT_HEARTBEAT_THRESHOLD_MS
 });
-import * as fs7 from "node:fs/promises";
-import * as path7 from "node:path";
+import * as fs10 from "node:fs/promises";
+import * as path10 from "node:path";
 function isTerminalStatus(event) {
   return event.type === "status" && typeof event.note === "string" && TERMINAL_NOTES.has(event.note.trim().toLowerCase());
 }
@@ -15977,21 +15986,21 @@ function sanitizeCmd(cmd) {
   return stripped;
 }
 function runsDir(repoRoot) {
-  return path7.join(repoRoot, ".tgo", "runs");
+  return path10.join(repoRoot, ".tgo", "runs");
 }
 function runPath(repoRoot, runId) {
   assertValidBeadID(runId);
-  return path7.join(runsDir(repoRoot), `${runId}.jsonl`);
+  return path10.join(runsDir(repoRoot), `${runId}.jsonl`);
 }
 function awaitJsonPath2(repoRoot, issueId) {
   assertValidBeadID(issueId);
-  return path7.join(repoRoot, ".tgo", issueId, "await.json");
+  return path10.join(repoRoot, ".tgo", issueId, "await.json");
 }
 async function hasAwaitJson(repoRoot, issueId) {
   assertValidBeadID(issueId);
   const p = awaitJsonPath2(repoRoot, issueId);
   try {
-    await fs7.stat(p);
+    await fs10.stat(p);
     return true;
   } catch {
     return false;
@@ -16033,17 +16042,17 @@ async function appendRunEvent(repoRoot, runId, event) {
     event = { ...event, cmd: sanitizeCmd(event.cmd) };
   }
   const dir = runsDir(repoRoot);
-  await fs7.mkdir(dir, { recursive: true });
+  await fs10.mkdir(dir, { recursive: true });
   const target = runPath(repoRoot, runId);
   const line = JSON.stringify(event) + `
 `;
-  await fs7.appendFile(target, line, "utf-8");
+  await fs10.appendFile(target, line, "utf-8");
 }
 async function readRunEvents(repoRoot, runId) {
   assertValidBeadID(runId);
   const target = runPath(repoRoot, runId);
   try {
-    const raw = await fs7.readFile(target, "utf-8");
+    const raw = await fs10.readFile(target, "utf-8");
     if (!raw.trim())
       return [];
     const out = [];
@@ -16095,7 +16104,7 @@ async function scanRunsForProblems(repoRoot, opts = {}) {
   const dir = runsDir(repoRoot);
   let files = [];
   try {
-    files = await fs7.readdir(dir);
+    files = await fs10.readdir(dir);
   } catch {
     return [];
   }
@@ -16149,7 +16158,7 @@ async function scanRunsForProblems(repoRoot, opts = {}) {
   return out;
 }
 async function pruneRuns(repoRoot, opts = {}) {
-  const key = path7.resolve(repoRoot);
+  const key = path10.resolve(repoRoot);
   if (pruneInFlight.has(key))
     return pruneInFlight.get(key);
   const p = (async () => {
@@ -16160,7 +16169,7 @@ async function pruneRuns(repoRoot, opts = {}) {
     const dir = runsDir(repoRoot);
     let files = [];
     try {
-      files = await fs7.readdir(dir);
+      files = await fs10.readdir(dir);
     } catch {
       return [];
     }
@@ -16174,15 +16183,15 @@ async function pruneRuns(repoRoot, opts = {}) {
       } catch {
         continue;
       }
-      const full = path7.join(dir, file2);
-      let stat3;
+      const full = path10.join(dir, file2);
+      let stat4;
       try {
-        const s = await fs7.stat(full);
-        stat3 = { mtimeMs: s.mtimeMs, size: s.size };
+        const s = await fs10.stat(full);
+        stat4 = { mtimeMs: s.mtimeMs, size: s.size };
       } catch {
         continue;
       }
-      totalBytes += stat3.size;
+      totalBytes += stat4.size;
       let events = [];
       let hasTerminal = false;
       let lastTs;
@@ -16200,7 +16209,7 @@ async function pruneRuns(repoRoot, opts = {}) {
       } catch {
         issueId = runId;
       }
-      infos.push({ file: file2, runId, issueId, mtimeMs: stat3.mtimeMs, size: stat3.size, events, hasTerminal, lastTs });
+      infos.push({ file: file2, runId, issueId, mtimeMs: stat4.mtimeMs, size: stat4.size, events, hasTerminal, lastTs });
     }
     infos.sort((a, b) => a.mtimeMs - b.mtimeMs);
     const toDelete = new Set;
@@ -16242,9 +16251,9 @@ async function pruneRuns(repoRoot, opts = {}) {
     }
     const deleted = [];
     for (const file2 of toDelete) {
-      const full = path7.join(dir, file2);
+      const full = path10.join(dir, file2);
       try {
-        await fs7.unlink(full);
+        await fs10.unlink(full);
         deleted.push(file2);
       } catch (e) {
         safeWarn(opts.log, `pruneRuns unlink failed for ${file2}`, { error: String(e) });
@@ -16281,6 +16290,8 @@ init_progress();
 init_session_reuse();
 init_def_snapshot();
 import * as crypto from "node:crypto";
+import * as fs11 from "node:fs/promises";
+import * as path11 from "node:path";
 
 // src/suspend.ts
 init_def_snapshot();
@@ -16712,6 +16723,586 @@ async function scanExpiredAwaits(repoRoot, log, nowMs = Date.now()) {
 
 // src/board.ts
 init_metrics();
+
+// src/cost.ts
+import * as fs7 from "node:fs/promises";
+import * as path7 from "node:path";
+var WINDOW_LIMITS = {
+  fiveHour: 12,
+  weekly: 30,
+  monthly: 60
+};
+var MODEL_BUDGETS = {
+  "opencode-go/gpt-5.6-luna": { usageMonthlyUsd: 15, listStepUsd: 0.00146 },
+  "opencode-go/glm-5.3-flash": { usageMonthlyUsd: 15, listStepUsd: 0.0019 },
+  "opencode-go/muse-spark-1.2-contributor": { usageMonthlyUsd: 60, listStepUsd: 0.00027 }
+};
+function round2(n) {
+  return Math.round(n * 100) / 100;
+}
+function budgetsForModel(model, table = MODEL_BUDGETS) {
+  const b = table[model];
+  if (!b || typeof b.usageMonthlyUsd !== "number" || b.usageMonthlyUsd <= 0)
+    return;
+  const factor = b.usageMonthlyUsd / 60;
+  return {
+    usageMonthlyUsd: b.usageMonthlyUsd,
+    fiveHour: round2(WINDOW_LIMITS.fiveHour * factor),
+    weekly: round2(WINDOW_LIMITS.weekly * factor),
+    monthly: round2(WINDOW_LIMITS.monthly * factor)
+  };
+}
+function spendPct(spendUsd, budgetUsd) {
+  if (budgetUsd === undefined || budgetUsd <= 0)
+    return;
+  return Math.round(spendUsd / budgetUsd * 100);
+}
+function estimateSpendFromSteps(model, steps, table = MODEL_BUDGETS) {
+  const s = table[model]?.listStepUsd;
+  if (s === undefined || !Number.isFinite(steps) || steps <= 0)
+    return;
+  return round2(steps * s);
+}
+function buildCostLines(input, table = MODEL_BUDGETS) {
+  const lines = [];
+  const seats = Object.keys(input.seatModels).sort();
+  for (const seat of seats) {
+    const model = input.seatModels[seat];
+    if (!model)
+      continue;
+    const bw = budgetsForModel(model, table);
+    const steps = input.stepsBySeat[seat] ?? 0;
+    const spend = estimateSpendFromSteps(model, steps, table);
+    if (!bw) {
+      lines.push(`COST: ${seat} → ${model}: budget unknown`);
+      continue;
+    }
+    const spendPart = spend !== undefined ? `est. $${spend}` : "no spend data";
+    const pct = spend !== undefined ? spendPct(spend, bw.fiveHour) : undefined;
+    const pctPart = pct !== undefined ? ` (${pct}% of 5h budget)` : "";
+    lines.push(`COST: ${seat} → ${model}: ${spendPart} of $${bw.fiveHour} 5h${pctPart}`);
+  }
+  return lines;
+}
+var stepCache;
+async function scanSeatSteps(repoRoot, ttlMs = 30000) {
+  const now = Date.now();
+  if (stepCache && stepCache.repoRoot === repoRoot && now - stepCache.at < ttlMs) {
+    return stepCache.bySeat;
+  }
+  const out = {};
+  const dir = path7.join(repoRoot, ".tgo", "runs");
+  let files = [];
+  try {
+    files = await fs7.readdir(dir);
+  } catch {
+    stepCache = { at: now, repoRoot, bySeat: out };
+    return out;
+  }
+  for (const f of files) {
+    if (!f.endsWith(".jsonl"))
+      continue;
+    let raw = "";
+    try {
+      raw = await fs7.readFile(path7.join(dir, f), "utf-8");
+    } catch {
+      continue;
+    }
+    for (const line of raw.split(`
+`)) {
+      const t = line.trim();
+      if (!t || !t.startsWith("{"))
+        continue;
+      let ev = null;
+      try {
+        ev = JSON.parse(t);
+      } catch {
+        continue;
+      }
+      if (ev && ev.type === "step" && typeof ev.seat === "string" && ev.seat.trim().length > 0) {
+        out[ev.seat] = (out[ev.seat] ?? 0) + 1;
+      }
+    }
+  }
+  stepCache = { at: now, repoRoot, bySeat: out };
+  return out;
+}
+
+// src/convoy.ts
+init_def_snapshot();
+import * as fs9 from "node:fs/promises";
+import * as path9 from "node:path";
+
+// src/manifest.ts
+init_def_snapshot();
+import * as fs8 from "node:fs/promises";
+import * as path8 from "node:path";
+var MANIFEST_REL_PATH = ".tgo/manifest.json";
+function manifestPath(repoRoot) {
+  return path8.join(repoRoot, MANIFEST_REL_PATH);
+}
+
+class ManifestScopeConflictError extends Error {
+  code = "MANIFEST_SCOPE_CONFLICT";
+  conflicts;
+  constructor(message, conflicts) {
+    super(message);
+    this.name = "ManifestScopeConflictError";
+    this.conflicts = conflicts;
+  }
+}
+function normalizeScopePath(p) {
+  let s = String(p ?? "").trim();
+  s = s.replace(/^\.\/+/g, "");
+  if (s === "." || s === "./" || s === "")
+    return "";
+  s = path8.posix.normalize(s);
+  s = s.replace(/\/+/g, "/");
+  s = s.replace(/^\.\/+/g, "");
+  if (s === ".")
+    return "";
+  s = s.toLowerCase();
+  return s;
+}
+function mergeWaves(waves) {
+  const byWave = new Map;
+  for (const w of waves) {
+    const existing = byWave.get(w.wave);
+    if (!existing) {
+      byWave.set(w.wave, { wave: w.wave, beads: [...w.beads] });
+    } else {
+      existing.beads.push(...w.beads);
+    }
+  }
+  return [...byWave.values()];
+}
+function validateManifest(manifest) {
+  const errors3 = [];
+  if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)) {
+    errors3.push("manifest must be an object with waves[]");
+    return { valid: false, errors: errors3 };
+  }
+  const m = manifest;
+  if (!Array.isArray(m.waves)) {
+    errors3.push("manifest.waves must be an array");
+    return { valid: false, errors: errors3 };
+  }
+  const waves = [];
+  const seenIssueIds = new Set;
+  const seenWaveNumbers = new Map;
+  for (let wi = 0;wi < m.waves.length; wi++) {
+    const w = m.waves[wi];
+    if (!w || typeof w !== "object" || Array.isArray(w)) {
+      errors3.push(`waves[${wi}] must be an object`);
+      continue;
+    }
+    const waveRec = w;
+    const waveNum = waveRec.wave;
+    if (typeof waveNum !== "number" || !Number.isInteger(waveNum) || waveNum < 0) {
+      errors3.push(`waves[${wi}].wave must be a non-negative integer`);
+    }
+    if (!Array.isArray(waveRec.beads)) {
+      errors3.push(`waves[${wi}].beads must be an array`);
+      continue;
+    }
+    const beads = [];
+    for (let bi = 0;bi < waveRec.beads.length; bi++) {
+      const b = waveRec.beads[bi];
+      if (!b || typeof b !== "object" || Array.isArray(b)) {
+        errors3.push(`waves[${wi}].beads[${bi}] must be an object`);
+        continue;
+      }
+      const rec = b;
+      const issueId = rec.issueId;
+      if (typeof issueId !== "string" || issueId.trim().length === 0) {
+        errors3.push(`waves[${wi}].beads[${bi}].issueId must be non-empty string`);
+      } else if (!isValidBeadID(issueId.trim())) {
+        errors3.push(`waves[${wi}].beads[${bi}].issueId must match VALID_BEAD_ID ${VALID_BEAD_ID.source} — got ${JSON.stringify(issueId)}`);
+      } else if (seenIssueIds.has(issueId.trim())) {
+        errors3.push(`duplicate issueId ${issueId} across waves`);
+      } else {
+        seenIssueIds.add(issueId.trim());
+      }
+      const story = rec.story;
+      if (typeof story !== "string" || story.trim().length === 0) {
+        errors3.push(`waves[${wi}].beads[${bi}].story must be non-empty string`);
+      }
+      const scope = rec.scope;
+      if (!Array.isArray(scope) || scope.length === 0) {
+        errors3.push(`waves[${wi}].beads[${bi}].scope must be non-empty string array`);
+      } else {
+        for (let si = 0;si < scope.length; si++) {
+          const s = scope[si];
+          if (typeof s !== "string" || s.trim().length === 0) {
+            errors3.push(`waves[${wi}].beads[${bi}].scope[${si}] must be non-empty string`);
+          }
+        }
+        const scopeSet = new Set;
+        for (const s of scope) {
+          if (typeof s !== "string")
+            continue;
+          const normalized = normalizeScopePath(s);
+          if (scopeSet.has(normalized)) {
+            errors3.push(`waves[${wi}].beads[${bi}].scope duplicate ${JSON.stringify(s)} (normalized to ${JSON.stringify(normalized)})`);
+          } else
+            scopeSet.add(normalized);
+        }
+      }
+      const parallelSet = rec.parallelSet;
+      if (typeof parallelSet !== "string" || parallelSet.trim().length === 0) {
+        errors3.push(`waves[${wi}].beads[${bi}].parallelSet must be non-empty string`);
+      }
+      const deps = rec.deps;
+      if (!Array.isArray(deps)) {
+        errors3.push(`waves[${wi}].beads[${bi}].deps must be an array`);
+      } else {
+        for (let di = 0;di < deps.length; di++) {
+          const d = deps[di];
+          if (typeof d !== "string" || d.trim().length === 0) {
+            errors3.push(`waves[${wi}].beads[${bi}].deps[${di}] must be non-empty string`);
+          } else if (!isValidBeadID(d.trim())) {
+            errors3.push(`waves[${wi}].beads[${bi}].deps[${di}] must match VALID_BEAD_ID`);
+          }
+        }
+      }
+      if (typeof issueId === "string" && isValidBeadID(issueId.trim()) && typeof story === "string" && story.trim().length > 0 && Array.isArray(scope) && typeof parallelSet === "string" && parallelSet.trim().length > 0 && Array.isArray(deps)) {
+        const normalizedScope = scope.map((s) => normalizeScopePath(typeof s === "string" ? s.trim() : String(s))).filter((s) => s.length > 0);
+        const bead = {
+          issueId: issueId.trim(),
+          story: story.trim(),
+          scope: normalizedScope,
+          parallelSet: parallelSet.trim(),
+          deps: deps.map((d) => typeof d === "string" ? d.trim() : String(d))
+        };
+        if (typeof waveNum === "number" && Number.isInteger(waveNum) && waveNum >= 0) {
+          let waveInfo = seenWaveNumbers.get(waveNum);
+          if (!waveInfo) {
+            waveInfo = { firstIdx: wi, beadsById: new Map };
+            seenWaveNumbers.set(waveNum, waveInfo);
+          } else {
+            const existing = waveInfo.beadsById.get(bead.issueId);
+            if (existing) {
+              const existingNormalizedScope = [...existing.scope].sort().join(",");
+              const newNormalizedScope = [...bead.scope].sort().join(",");
+              if (existing.story !== bead.story || existingNormalizedScope !== newNormalizedScope || existing.parallelSet !== bead.parallelSet || existing.deps.join(",") !== bead.deps.join(",")) {
+                errors3.push(`duplicate wave ${waveNum} has conflicting bead ${bead.issueId} (waves[${waveInfo.firstIdx}] vs waves[${wi}])`);
+              }
+            }
+          }
+          if (!waveInfo.beadsById.has(bead.issueId)) {
+            waveInfo.beadsById.set(bead.issueId, bead);
+          }
+        }
+        beads.push(bead);
+      }
+    }
+    if (typeof waveNum === "number" && Number.isInteger(waveNum) && waveNum >= 0) {
+      waves.push({ wave: waveNum, beads });
+    }
+  }
+  if (errors3.length > 0)
+    return { valid: false, errors: errors3 };
+  const mergedWaves = mergeWaves(waves);
+  mergedWaves.sort((a, b) => a.wave - b.wave);
+  return { valid: true, errors: [], manifest: { waves: mergedWaves } };
+}
+function checkScopeConflicts(manifest) {
+  const conflicts = [];
+  const waves = mergeWaves(manifest.waves);
+  for (const wave of waves) {
+    const bySet = new Map;
+    for (const bead of wave.beads) {
+      const key = bead.parallelSet;
+      const list = bySet.get(key) ?? [];
+      list.push(bead);
+      bySet.set(key, list);
+    }
+    for (const [parallelSet, beads] of bySet) {
+      for (let i = 0;i < beads.length; i++) {
+        for (let j = i + 1;j < beads.length; j++) {
+          const a = beads[i];
+          const b = beads[j];
+          const setA = new Set(a.scope.map(normalizeScopePath));
+          const normalizedB = b.scope.map(normalizeScopePath);
+          const overlapping = normalizedB.filter((f) => setA.has(f));
+          if (overlapping.length > 0) {
+            conflicts.push({
+              wave: wave.wave,
+              parallelSet,
+              beads: [a.issueId, b.issueId],
+              overlappingFiles: [...new Set(overlapping)]
+            });
+          }
+        }
+      }
+    }
+  }
+  return { hasConflict: conflicts.length > 0, conflicts };
+}
+var manifestCache = new Map;
+function invalidateManifestCache(repoRoot) {
+  manifestCache.delete(path8.resolve(manifestPath(repoRoot)));
+}
+async function readManifest(repoRoot) {
+  const target = manifestPath(repoRoot);
+  const key = path8.resolve(target);
+  try {
+    const st = await fs8.stat(target);
+    const hit = manifestCache.get(key);
+    if (hit && hit[0] === st.mtimeMs && hit[1] === st.size)
+      return hit[2];
+    const raw = await fs8.readFile(target, "utf-8");
+    const parsed = JSON.parse(raw);
+    const v = validateManifest(parsed);
+    const result = v.valid && v.manifest ? v.manifest : undefined;
+    manifestCache.set(key, [st.mtimeMs, st.size, result]);
+    return result;
+  } catch {
+    return;
+  }
+}
+async function writeManifestAtomic(repoRoot, manifest) {
+  const target = manifestPath(repoRoot);
+  const dir = path8.dirname(target);
+  await fs8.mkdir(dir, { recursive: true });
+  const content = JSON.stringify(manifest, null, 2);
+  const tmp = path8.join(dir, `.manifest-${Date.now()}-${process.pid}-${Math.random().toString(36).slice(2)}.tmp`);
+  let renamed = false;
+  try {
+    await fs8.writeFile(tmp, content, "utf-8");
+    await fs8.rename(tmp, target);
+    renamed = true;
+  } finally {
+    if (!renamed) {
+      try {
+        await fs8.unlink(tmp);
+      } catch {}
+    }
+  }
+}
+async function planManifest(repoRoot, manifest) {
+  const v = validateManifest(manifest);
+  if (!v.valid || !v.manifest) {
+    throw new Error(`manifest validation failed: ${v.errors.join("; ")}`);
+  }
+  const normalized = v.manifest;
+  const conflict = checkScopeConflicts(normalized);
+  if (conflict.hasConflict) {
+    const details = conflict.conflicts.map((c) => `wave ${c.wave} parallelSet ${JSON.stringify(c.parallelSet)} beads ${c.beads.join(" vs ")} overlap ${c.overlappingFiles.join(", ")}`).join("; ");
+    throw new ManifestScopeConflictError(`MANIFEST_SCOPE_CONFLICT: manifest scope conflict: ${details}`, conflict.conflicts);
+  }
+  await writeManifestAtomic(repoRoot, normalized);
+  invalidateManifestCache(repoRoot);
+  return normalized;
+}
+function getManifestRowSyncFromManifest(manifest, issueId) {
+  if (!manifest)
+    return;
+  for (const wave of manifest.waves) {
+    for (const bead of wave.beads) {
+      if (bead.issueId === issueId)
+        return { bead, wave: wave.wave };
+    }
+  }
+  return;
+}
+
+// src/convoy.ts
+var CONVOY_REL_DIR = ".tgo/convoy";
+var CONVOY_STATE_REL = ".tgo/convoy/.state.json";
+var MAX_PARALLEL_WAVES = 3;
+function convoyStatePath(repoRoot) {
+  return path9.join(repoRoot, CONVOY_STATE_REL);
+}
+function computeScopeHash(waves) {
+  const all = new Set;
+  for (const w of waves) {
+    for (const b of w.beads) {
+      for (const s of b.scope) {
+        const n = normalizeScopePath(s);
+        if (n)
+          all.add(n);
+      }
+    }
+  }
+  const canonical = [...all].sort().map((s) => `${s.length}:${s}`).join("|");
+  return hashString(canonical);
+}
+function validateConvoyState(state) {
+  const errors3 = [];
+  if (!state || typeof state !== "object" || Array.isArray(state)) {
+    return { valid: false, errors: ["convoy state must be an object"] };
+  }
+  const s = state;
+  if (typeof s.goal !== "string" || s.goal.trim().length === 0) {
+    errors3.push("goal must be a non-empty string");
+  }
+  if (typeof s.remainingBudget !== "number" || !Number.isFinite(s.remainingBudget) || s.remainingBudget < 0) {
+    errors3.push("remainingBudget must be a non-negative number");
+  }
+  if (!Array.isArray(s.completedDeps)) {
+    errors3.push("completedDeps must be an array");
+  } else {
+    for (const d of s.completedDeps) {
+      if (typeof d !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(d)) {
+        errors3.push(`completedDeps entry ${JSON.stringify(d)} is not a valid bead id`);
+      }
+    }
+  }
+  if (!Array.isArray(s.waves) || s.waves.length === 0) {
+    errors3.push("waves must be a non-empty array");
+  } else {
+    if (s.waves.length > MAX_PARALLEL_WAVES) {
+      errors3.push(`waves must not exceed ${MAX_PARALLEL_WAVES} (got ${s.waves.length})`);
+    }
+    const seenWaves = new Set;
+    for (const w of s.waves) {
+      if (!w || typeof w.wave !== "number") {
+        errors3.push("each wave must have a numeric wave number");
+        continue;
+      }
+      if (seenWaves.has(w.wave))
+        errors3.push(`duplicate wave number ${w.wave}`);
+      seenWaves.add(w.wave);
+      if (!Array.isArray(w.beads) || w.beads.length === 0) {
+        errors3.push(`wave ${w.wave} must have a non-empty beads array`);
+        continue;
+      }
+      for (const b of w.beads) {
+        if (!b || typeof b.issueId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(b.issueId)) {
+          errors3.push(`wave ${w.wave} bead issueId ${JSON.stringify(b?.issueId)} is invalid`);
+        }
+        if (!Array.isArray(b.scope) || b.scope.length === 0) {
+          errors3.push(`wave ${w.wave} bead ${b?.issueId} must have a non-empty scope`);
+        }
+      }
+    }
+  }
+  if (typeof s.scopeHash !== "string" || !/^[0-9a-f]{8}$/.test(s.scopeHash)) {
+    errors3.push("scopeHash must be an 8-hex hash string");
+  } else if (Array.isArray(s.waves) && errors3.length === 0) {
+    const expected = computeScopeHash(s.waves);
+    if (s.scopeHash !== expected) {
+      errors3.push(`scopeHash mismatch (expected ${expected}, got ${s.scopeHash})`);
+    }
+  }
+  return { valid: errors3.length === 0, errors: errors3 };
+}
+async function writeConvoyStateAtomic(repoRoot, state) {
+  const dir = path9.join(repoRoot, CONVOY_REL_DIR);
+  await fs9.mkdir(dir, { recursive: true });
+  const target = convoyStatePath(repoRoot);
+  const tmp = path9.join(dir, `.state.json.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`);
+  await fs9.writeFile(tmp, JSON.stringify(state, null, 2), "utf-8");
+  await fs9.rename(tmp, target);
+}
+async function initConvoy(repoRoot, input) {
+  const state = {
+    goal: input.goal,
+    scopeHash: computeScopeHash(input.waves),
+    remainingBudget: input.remainingBudget,
+    completedDeps: [],
+    waves: input.waves
+  };
+  const v = validateConvoyState(state);
+  if (!v.valid) {
+    throw new Error(`CONVOY_INVALID: ${v.errors.join("; ")}`);
+  }
+  await writeConvoyStateAtomic(repoRoot, state);
+  return state;
+}
+async function readConvoyState(repoRoot) {
+  const target = convoyStatePath(repoRoot);
+  let raw;
+  try {
+    raw = await fs9.readFile(target, "utf-8");
+  } catch {
+    return;
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    const v = validateConvoyState(parsed);
+    return v.valid ? parsed : undefined;
+  } catch {
+    return;
+  }
+}
+async function markWaveComplete(repoRoot, completedIssueIds) {
+  const state = await readConvoyState(repoRoot);
+  if (!state)
+    throw new Error("CONVOY_MISSING: no convoy state to update");
+  const existing = new Set(state.completedDeps);
+  for (const id of completedIssueIds) {
+    assertValidBeadID(id);
+    existing.add(id);
+  }
+  const next = { ...state, completedDeps: [...existing] };
+  const v = validateConvoyState(next);
+  if (!v.valid)
+    throw new Error(`CONVOY_INVALID: ${v.errors.join("; ")}`);
+  await writeConvoyStateAtomic(repoRoot, next);
+  return next;
+}
+function allWavesComplete(state) {
+  const done = new Set(state.completedDeps);
+  for (const w of state.waves) {
+    for (const b of w.beads) {
+      if (!done.has(b.issueId))
+        return false;
+    }
+  }
+  return true;
+}
+function convoyLandingOrder(state) {
+  return state.waves.map((w) => w.wave).sort((a, b) => a - b);
+}
+async function landConvoy(repoRoot, deps) {
+  const state = await readConvoyState(repoRoot);
+  if (!state)
+    return { landed: false, reason: "no convoy state", mergedWaves: [] };
+  const v = validateConvoyState(state);
+  if (!v.valid)
+    return { landed: false, reason: `state invalid: ${v.errors.join("; ")}`, mergedWaves: [] };
+  if (state.scopeHash !== computeScopeHash(state.waves)) {
+    return { landed: false, reason: "scopeHash mismatch — abort landing", mergedWaves: [] };
+  }
+  if (!allWavesComplete(state)) {
+    return { landed: false, reason: "not all waves complete", mergedWaves: [] };
+  }
+  const merged = [];
+  for (const wave of convoyLandingOrder(state)) {
+    const w = state.waves.find((x) => x.wave === wave);
+    if (!w)
+      continue;
+    for (const b of w.beads) {
+      const g = await deps.gateCheck(b.issueId);
+      if (!g.ok) {
+        return { landed: false, reason: `gate blocked ${b.issueId}: ${g.reason ?? "unknown"}`, mergedWaves: merged };
+      }
+    }
+    await deps.mergeWorktree(wave, w.beads.map((b) => b.issueId));
+    merged.push(wave);
+  }
+  return { landed: true, mergedWaves: merged };
+}
+async function buildConvoySection(repoRoot) {
+  const state = await readConvoyState(repoRoot);
+  if (!state)
+    return;
+  const done = new Set(state.completedDeps);
+  const lines = [
+    `CONVOY: ${state.goal.slice(0, 80)} | budget $${state.remainingBudget} | scope ${state.scopeHash.slice(0, 8)}`
+  ];
+  for (const w of state.waves) {
+    const landed = w.beads.filter((b) => done.has(b.issueId)).length;
+    lines.push(`  wave ${w.wave}: ${landed}/${w.beads.length} landed`);
+  }
+  if (allWavesComplete(state))
+    lines.push("  → all waves complete — run tgo_land_convoy to land");
+  return lines;
+}
+
+// src/board.ts
 init_runs();
 var BOARD_SENTINEL_START = "<!-- tgo:board -->";
 var BOARD_SENTINEL_END = "<!-- /tgo:board -->";
@@ -16785,6 +17376,9 @@ function buildBoardText(data, maxListed = 6) {
   if (data.queueLines && data.queueLines.length > 0) {
     sections.push(...data.queueLines);
   }
+  if (data.costLines && data.costLines.length > 0) {
+    sections.push(...data.costLines);
+  }
   if (data.problems && data.problems.length > 0) {
     const probText = buildProblemsSection(data.problems);
     if (probText)
@@ -16810,8 +17404,32 @@ async function getSuspendBadge(issueId, repoRoot) {
     return;
   }
 }
+async function getManifestBoardLine(repoRoot) {
+  try {
+    const target = path11.join(repoRoot, MANIFEST_REL_PATH);
+    const raw = await fs11.readFile(target, "utf-8");
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed.waves))
+      return;
+    return `manifest: ${MANIFEST_REL_PATH} (${parsed.waves.length} waves)`;
+  } catch {
+    return;
+  }
+}
 async function buildBoardTextWithHints(data, reusableSet, sessionIdsByIssue, maxListed = 6, repoRoot) {
   const sections = ["## TGO JOB BOARD"];
+  if (repoRoot) {
+    try {
+      const manifestLine = await getManifestBoardLine(repoRoot);
+      if (manifestLine)
+        sections.push(manifestLine);
+    } catch {}
+    try {
+      const convoyLines = await buildConvoySection(repoRoot);
+      if (convoyLines && convoyLines.length > 0)
+        sections.push(...convoyLines);
+    } catch {}
+  }
   if (data.memories.length > 0) {
     sections.push("MEMORIES:", ...data.memories.map((m) => `- ${clipTitle(m.value, 120)}`));
   }
@@ -16869,6 +17487,9 @@ async function buildBoardTextWithHints(data, reusableSet, sessionIdsByIssue, max
   }
   if (data.queueLines && data.queueLines.length > 0) {
     sections.push(...data.queueLines);
+  }
+  if (data.costLines && data.costLines.length > 0) {
+    sections.push(...data.costLines);
   }
   if (data.problems && data.problems.length > 0) {
     const probText = buildProblemsSection(data.problems);
@@ -16979,6 +17600,7 @@ class BoardController {
   runsConfig;
   pruneInFlight;
   scanInFlight = false;
+  costGetter;
   constructor(opts) {
     this.run = opts.run;
     this.shim = opts.shim ?? createShim();
@@ -16995,6 +17617,9 @@ class BoardController {
   }
   setRunsConfig(cfg) {
     this.runsConfig = cfg;
+  }
+  setCostGetter(getter) {
+    this.costGetter = getter;
   }
   setProblems(problems) {
     const map2 = new Map;
@@ -17171,6 +17796,19 @@ class BoardController {
     } catch (e) {
       safeWarn(this.log, "queue gauge compute failed", { error: String(e) });
     }
+    let costLines;
+    try {
+      const seatModels = this.costGetter ? this.costGetter() : undefined;
+      const repoRootForCost = this.sessionReuse?.repoRoot;
+      if (seatModels && repoRootForCost && Object.keys(seatModels).length > 0) {
+        const stepsBySeat = await scanSeatSteps(repoRootForCost);
+        const lines = buildCostLines({ seatModels, stepsBySeat });
+        if (lines.length > 0)
+          costLines = lines;
+      }
+    } catch (e) {
+      safeWarn(this.log, "cost surface compute failed", { error: String(e) });
+    }
     let problems;
     try {
       if (this.scanInFlight) {
@@ -17265,7 +17903,7 @@ class BoardController {
         }
       }
     }
-    const inner = await this.buildBoardTextWithHints({ inProgress, ready, blocked, memories, streaming, queueLines, problems }, reusableSet, sessionIdsByIssue);
+    const inner = await this.buildBoardTextWithHints({ inProgress, ready, blocked, memories, streaming, queueLines, costLines, problems }, reusableSet, sessionIdsByIssue);
     const text = `${BOARD_SENTINEL_START}
 ${inner}
 ${BOARD_SENTINEL_END}`;
@@ -17289,27 +17927,27 @@ ${BOARD_SENTINEL_END}`;
 }
 
 // src/concision.ts
-import * as fs9 from "node:fs/promises";
-import * as path9 from "node:path";
+import * as fs13 from "node:fs/promises";
+import * as path13 from "node:path";
 import { fileURLToPath as fileURLToPath3 } from "node:url";
 
 // src/build.ts
 init_config();
-import * as fs8 from "node:fs/promises";
-import * as path8 from "node:path";
+import * as fs12 from "node:fs/promises";
+import * as path12 from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
-var packageRoot = path8.resolve(path8.dirname(fileURLToPath2(import.meta.url)), "..");
+var packageRoot = path12.resolve(path12.dirname(fileURLToPath2(import.meta.url)), "..");
 var HOUSE_STYLE_SLOT = "{{TGO_HOUSE_STYLE}}";
 var REGISTER_SLOT = "{{TGO_REGISTER}}";
 var AGENTS_MARKER_BEGIN = "<!-- TGO: thin always-on advice layer";
 var AGENTS_MARKER_END = "<!-- END TGO advice layer -->";
 async function loadHouseStyle() {
-  const file2 = path8.join(packageRoot, "assets", "house-style.md");
-  return fs8.readFile(file2, "utf-8");
+  const file2 = path12.join(packageRoot, "assets", "house-style.md");
+  return fs12.readFile(file2, "utf-8");
 }
 async function loadAgentsFragment() {
-  const file2 = path8.join(packageRoot, "assets", "AGENTS.fragment.md");
-  return fs8.readFile(file2, "utf-8");
+  const file2 = path12.join(packageRoot, "assets", "AGENTS.fragment.md");
+  return fs12.readFile(file2, "utf-8");
 }
 function foldHouseStyle(template, houseStyle, register = "concise") {
   if (!template.includes(HOUSE_STYLE_SLOT))
@@ -17318,7 +17956,7 @@ function foldHouseStyle(template, houseStyle, register = "concise") {
 }
 async function renderSeats(sourceDir, register = "concise") {
   const houseStyle = await loadHouseStyle();
-  const files = await fs8.readdir(sourceDir).catch((err) => {
+  const files = await fs12.readdir(sourceDir).catch((err) => {
     console.warn(`tgo: renderSeats readdir failed: ${String(err)}`, { sourceDir });
     return [];
   });
@@ -17326,7 +17964,7 @@ async function renderSeats(sourceDir, register = "concise") {
   for (const file2 of files) {
     if (!file2.endsWith(".md"))
       continue;
-    const template = await fs8.readFile(path8.join(sourceDir, file2), "utf-8");
+    const template = await fs12.readFile(path12.join(sourceDir, file2), "utf-8");
     const content = foldHouseStyle(template, houseStyle, register);
     assertPromptUnderBudget(content, file2);
     seats.push({ fileName: file2, content });
@@ -17335,10 +17973,10 @@ async function renderSeats(sourceDir, register = "concise") {
 }
 async function mergeAgentsFragment(configDir) {
   const fragment = await loadAgentsFragment();
-  const dest = path8.join(configDir, "AGENTS.md");
+  const dest = path12.join(configDir, "AGENTS.md");
   let existing = "";
   try {
-    existing = await fs8.readFile(dest, "utf-8");
+    existing = await fs12.readFile(dest, "utf-8");
   } catch {}
   if (existing.includes(AGENTS_MARKER_BEGIN)) {
     return { action: "unchanged" };
@@ -17349,18 +17987,18 @@ ${AGENTS_MARKER_END}
   const next = existing.trimEnd() ? `${existing.trimEnd()}
 
 ${wrapped}` : wrapped;
-  await fs8.mkdir(configDir, { recursive: true });
-  await fs8.writeFile(dest, next, "utf-8");
+  await fs12.mkdir(configDir, { recursive: true });
+  await fs12.writeFile(dest, next, "utf-8");
   return { action: existing ? "appended" : "created" };
 }
 if (false) {}
 
 // src/concision.ts
 init_config();
-var packageRoot2 = path9.resolve(path9.dirname(fileURLToPath3(import.meta.url)), "..");
+var packageRoot2 = path13.resolve(path13.dirname(fileURLToPath3(import.meta.url)), "..");
 async function loadConcisionInstruction() {
-  const file2 = path9.join(packageRoot2, "assets", "concision-instruction.md");
-  return fs9.readFile(file2, "utf-8");
+  const file2 = path13.join(packageRoot2, "assets", "concision-instruction.md");
+  return fs13.readFile(file2, "utf-8");
 }
 async function buildConcisionInstruction(register = "concise") {
   const template = await loadConcisionInstruction();
@@ -18387,8 +19025,8 @@ function parseTaskReport(raw) {
 }
 
 // src/setup.ts
-import * as fs10 from "node:fs/promises";
-import * as path10 from "node:path";
+import * as fs14 from "node:fs/promises";
+import * as path14 from "node:path";
 class SetupController {
   run;
   hasBd;
@@ -18404,7 +19042,7 @@ class SetupController {
   }
   async readAgents(directory) {
     try {
-      return await fs10.readFile(path10.join(directory, "AGENTS.md"), "utf-8");
+      return await fs14.readFile(path14.join(directory, "AGENTS.md"), "utf-8");
     } catch {
       return "";
     }
@@ -18412,7 +19050,7 @@ class SetupController {
   async missingSteps(directory) {
     const steps = [];
     try {
-      await fs10.access(path10.join(directory, ".beads"));
+      await fs14.access(path14.join(directory, ".beads"));
     } catch {
       steps.push("bd init");
     }
@@ -18510,12 +19148,12 @@ class SetupController {
 }
 
 // src/permissions.ts
-import * as path11 from "node:path";
+import * as path15 from "node:path";
 function resolveWorktreeFamily(...candidates) {
   for (const candidate of candidates) {
     if (!candidate)
       continue;
-    const parent = path11.dirname(candidate);
+    const parent = path15.dirname(candidate);
     if (!parent || parent === "/" || parent === ".")
       continue;
     return candidate;
@@ -18525,7 +19163,7 @@ function resolveWorktreeFamily(...candidates) {
 function preapproveExternalDirectory(permission, worktree) {
   if (!worktree)
     return permission ?? {};
-  const parent = path11.dirname(worktree);
+  const parent = path15.dirname(worktree);
   if (!parent || parent === "/" || parent === ".")
     return permission ?? {};
   const existingExternal = permission?.external_directory ?? {};
@@ -18660,6 +19298,22 @@ function applyPreset(config2, preset, presets) {
   }
   return applied;
 }
+function resolveSeatModels(preset, presets) {
+  const out = {};
+  if (!presets)
+    return out;
+  const seatMap = presets[preset];
+  if (!seatMap)
+    return out;
+  for (const seat of SEATS) {
+    const ref = seatMap[seat];
+    if (!ref || !ref.model)
+      continue;
+    for (const name of agentName(seat))
+      out[name] = ref.model;
+  }
+  return out;
+}
 
 // src/delegation.ts
 init_def_snapshot();
@@ -18780,6 +19434,13 @@ function validateDelegationPacket(routing, packet, routedTouchSet) {
       diagnostics.push("useLatestDefinitions must be a boolean when present (default false = pinned).");
     }
   }
+  if ("lane" in value) {
+    const lane = value.lane;
+    if (lane !== "worktree" && lane !== "inline") {
+      malformed.push("lane");
+      diagnostics.push('lane must be "worktree" | "inline" when present (default inline).');
+    }
+  }
   if (routedTouchSet !== undefined && "Files" in value && Array.isArray(value.Files)) {
     const allowed = new Set(routedTouchSet ?? []);
     const outside = value.Files.filter((file2) => typeof file2 === "string" && !allowed.has(file2));
@@ -18809,6 +19470,342 @@ function validateDelegationBoundary(args) {
 // src/plugin.ts
 init_session_reuse();
 init_def_snapshot();
+
+// src/worktree-lane.ts
+init_def_snapshot();
+import * as fs15 from "node:fs/promises";
+import * as fsSync from "node:fs";
+import * as path16 from "node:path";
+import * as os2 from "node:os";
+function worktreeBranchForIssue(issueId) {
+  assertValidBeadID(issueId);
+  return `tgo/${issueId}-lane`;
+}
+function worktreePathForIssue(repoRoot, issueId) {
+  assertValidBeadID(issueId);
+  const resolved = path16.resolve(repoRoot);
+  const parent = path16.dirname(resolved);
+  if (!parent || parent === "/" || parent === "." || parent === resolved) {
+    return path16.join(resolved, `${issueId}-lane`);
+  }
+  return path16.join(parent, `${issueId}-lane`);
+}
+function realpathTargetSafe(resolved) {
+  try {
+    return fsSync.realpathSync(resolved);
+  } catch {}
+  let cur = path16.dirname(resolved);
+  const tail = [path16.basename(resolved)];
+  for (let i = 0;i < 64; i++) {
+    try {
+      const real = fsSync.realpathSync(cur);
+      return tail.length === 0 ? real : path16.join(real, ...tail);
+    } catch {}
+    const parent = path16.dirname(cur);
+    if (parent === cur)
+      return;
+    tail.unshift(path16.basename(cur));
+    cur = parent;
+  }
+  return;
+}
+function isPathInsideWorktree(targetPath, worktreePath, repoRoot) {
+  if (!targetPath || !worktreePath)
+    return false;
+  const resolvedWorktree = path16.resolve(worktreePath);
+  let resolvedTarget;
+  if (path16.isAbsolute(targetPath)) {
+    resolvedTarget = path16.resolve(targetPath);
+  } else if (targetPath.startsWith("~/")) {
+    const home = process.env.HOME ?? os2.homedir();
+    resolvedTarget = path16.resolve(home, targetPath.slice(2));
+  } else {
+    const base = repoRoot ? path16.resolve(repoRoot) : resolvedWorktree;
+    resolvedTarget = path16.resolve(base, targetPath);
+  }
+  if (resolvedTarget === resolvedWorktree)
+    return true;
+  const realWorktree = realpathTargetSafe(resolvedWorktree);
+  if (!realWorktree)
+    return false;
+  const realTarget = realpathTargetSafe(resolvedTarget);
+  if (!realTarget)
+    return false;
+  if (realTarget === realWorktree)
+    return true;
+  const prefix = realWorktree.endsWith(path16.sep) ? realWorktree : realWorktree + path16.sep;
+  return realTarget.startsWith(prefix);
+}
+function extractAllFilePathsFromArgs(tool, args) {
+  if (!args || typeof args !== "object")
+    return [];
+  const obj = args;
+  if (tool.toLowerCase().includes("bash"))
+    return [];
+  const out = [];
+  const candidates = ["filePath", "path", "target", "file", "filepath"];
+  for (const key of candidates) {
+    const v = obj[key];
+    if (typeof v === "string" && v.trim().length > 0)
+      out.push(v.trim());
+  }
+  if (Array.isArray(obj.edits)) {
+    const edits = obj.edits;
+    for (const e of edits) {
+      if (e && typeof e === "object" && typeof e.filePath === "string") {
+        const p = e.filePath.trim();
+        if (p)
+          out.push(p);
+      }
+    }
+  }
+  return out;
+}
+var MUTATION_VERBS = /\b(rm|rmdir|mv|cp|dd|tee|truncate|chmod|chown|ln|mkdir|touch|shred|mktemp|sed|patch|install|rsync|scp|unlink)\b|\bgit\s+(clean|checkout|restore|reset|stash|apply|rm|mv)\b|\b(npm|bun|pnpm|yarn)\s+(install|uninstall|add|remove|ci)\b/;
+function extractCommandTokens(command) {
+  const out = [];
+  const tokenRe = /"[^"]*"|'[^']*'|[^\s]+/g;
+  let m;
+  while ((m = tokenRe.exec(command)) !== null) {
+    const tok = m[0];
+    const cleaned = tok.replace(/^["'`]+/, "").replace(/["'`]+$/, "").replace(/[;|&>)]+$/, "").trim();
+    if (cleaned.length > 0)
+      out.push(cleaned);
+  }
+  return out;
+}
+function isPathLikeToken(token) {
+  if (token.startsWith("/") || token.startsWith("~/") || token.startsWith("./") || token.startsWith("../"))
+    return true;
+  return token.includes("/") && !token.includes("://");
+}
+function isMutationCommand(command) {
+  return MUTATION_VERBS.test(command);
+}
+function isBashCommandOutsideWorktree(command, worktreePath, repoRoot) {
+  if (!command || !worktreePath || !repoRoot)
+    return false;
+  const resolvedWorktree = path16.resolve(worktreePath);
+  const resolvedRepo = path16.resolve(repoRoot);
+  const lowerCommand = command.toLowerCase();
+  const hasMutationVerb = isMutationCommand(lowerCommand);
+  const cwdBase = resolvedRepo;
+  let sawPathToken = false;
+  const tokens = extractCommandTokens(command);
+  for (const raw of tokens) {
+    if (!isPathLikeToken(raw))
+      continue;
+    sawPathToken = true;
+    if (raw.includes("$") || raw.includes("`")) {
+      if (hasMutationVerb)
+        return true;
+      continue;
+    }
+    let resolved;
+    if (raw.startsWith("~/")) {
+      const home = process.env.HOME ?? os2.homedir();
+      resolved = path16.resolve(home, raw.slice(2));
+    } else if (path16.isAbsolute(raw)) {
+      resolved = path16.resolve(raw);
+    } else {
+      resolved = path16.resolve(cwdBase, raw);
+    }
+    const insideWorktree = isPathInsideWorktree(resolved, worktreePath, repoRoot);
+    if (insideWorktree)
+      continue;
+    const insideRepo = resolved === resolvedRepo || resolved.startsWith(resolvedRepo + path16.sep);
+    if (insideRepo)
+      return true;
+    if (/\bcd\b/.test(lowerCommand))
+      return true;
+    if (hasMutationVerb)
+      return true;
+  }
+  if (hasMutationVerb && !sawPathToken)
+    return true;
+  return false;
+}
+function shouldBlockOutsideWorktree(opts) {
+  const { tool, args, worktreePath, repoRoot } = opts;
+  const lower = tool.toLowerCase();
+  if (lower.includes("bash")) {
+    const obj = args && typeof args === "object" ? args : {};
+    const cmd = obj.command ?? obj.cmd ?? obj.input;
+    if (typeof cmd === "string" && cmd.trim().length > 0) {
+      if (isBashCommandOutsideWorktree(cmd, worktreePath, repoRoot)) {
+        return { block: true, target: cmd, reason: `bash command references path outside worktree at ${worktreePath}` };
+      }
+      return { block: false };
+    }
+    return { block: false };
+  }
+  const filePaths = extractAllFilePathsFromArgs(tool, args);
+  if (filePaths.length === 0)
+    return { block: false };
+  for (const filePath of filePaths) {
+    const inside = isPathInsideWorktree(filePath, worktreePath, repoRoot);
+    if (!inside) {
+      return { block: true, target: filePath, reason: `file ${filePath} is outside worktree at ${worktreePath}` };
+    }
+  }
+  return { block: false };
+}
+async function defaultRunGit(args, cwd) {
+  try {
+    if (typeof Bun !== "undefined" && typeof Bun.spawn === "function") {
+      const proc = Bun.spawn(args, {
+        cwd,
+        stdout: "pipe",
+        stderr: "pipe"
+      });
+      const [stdout, stderr, exitCode] = await Promise.all([
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+        proc.exited
+      ]);
+      return { exitCode, stdout, stderr };
+    }
+  } catch {}
+  const { spawn } = await import("node:child_process");
+  return await new Promise((resolve7) => {
+    const child = spawn(args[0], args.slice(1), { cwd });
+    let stdout = "";
+    let stderr = "";
+    child.stdout?.on("data", (d) => {
+      stdout += d.toString();
+    });
+    child.stderr?.on("data", (d) => {
+      stderr += d.toString();
+    });
+    child.on("close", (code) => resolve7({ exitCode: code ?? 1, stdout, stderr }));
+    child.on("error", (err) => resolve7({ exitCode: 1, stdout: "", stderr: String(err) }));
+  });
+}
+async function defaultExists(p) {
+  try {
+    await fs15.stat(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
+async function ensureWorktreeExists(opts) {
+  const { repoRoot, issueId } = opts;
+  assertValidBeadID(issueId);
+  const worktreePath = opts.worktreePath ?? worktreePathForIssue(repoRoot, issueId);
+  const branch = opts.branch ?? worktreeBranchForIssue(issueId);
+  const runGit = opts.runGit ?? defaultRunGit;
+  const exists = opts.exists ?? defaultExists;
+  const log = opts.log;
+  assertValidBeadID(issueId);
+  try {
+    if (await exists(worktreePath)) {
+      const valid = await isRegisteredWorktree(worktreePath, runGit, repoRoot);
+      if (valid) {
+        if (log)
+          log("info", `worktree already exists at ${worktreePath} for ${issueId}`, { worktreePath, issueId, branch });
+        return { worktreePath, branch, created: false };
+      }
+      if (log)
+        log("warn", `path exists at ${worktreePath} but is not a registered git worktree for ${issueId} — refusing to clobber`, { worktreePath, issueId });
+      throw new Error(`worktree lane path ${worktreePath} exists but is not a registered git worktree for ${repoRoot} — remove it or choose another issueId`);
+    }
+  } catch (e) {
+    if (e instanceof Error && e.message.includes("not a registered git worktree"))
+      throw e;
+  }
+  const parent = path16.dirname(worktreePath);
+  try {
+    await fs15.mkdir(parent, { recursive: true });
+  } catch {}
+  let branchExists = false;
+  try {
+    const ref = `refs/heads/${branch}`;
+    const res = await runGit(["git", "show-ref", "--verify", ref], repoRoot);
+    branchExists = res.exitCode === 0;
+  } catch {
+    branchExists = false;
+  }
+  if (!branchExists) {
+    try {
+      const res = await runGit(["git", "branch", "--list", branch], repoRoot);
+      if (res.stdout && res.stdout.trim().length > 0)
+        branchExists = true;
+    } catch {}
+  }
+  const worktreeArgs = branchExists ? ["git", "worktree", "add", worktreePath, branch] : ["git", "worktree", "add", worktreePath, "-b", branch];
+  try {
+    const result = await runGit(worktreeArgs, repoRoot);
+    if (result.exitCode === 0) {
+      const verified = await isRegisteredWorktree(worktreePath, runGit, repoRoot);
+      if (!verified) {
+        throw new Error(`git worktree add reported success but ${worktreePath} is not a registered worktree for ${issueId}`);
+      }
+      if (log)
+        log("info", `worktree created at ${worktreePath} branch ${branch} for ${issueId}`, { worktreePath, branch, issueId });
+      return { worktreePath, branch, created: true };
+    }
+    const combined = (result.stdout + " " + result.stderr).toLowerCase();
+    if (combined.includes("already exists") || combined.includes("already checked out")) {
+      const verified = await isRegisteredWorktree(worktreePath, runGit, repoRoot);
+      if (verified)
+        return { worktreePath, branch, created: false };
+      throw new Error(`worktree lane path ${worktreePath} exists but is not a registered git worktree for ${issueId}`);
+    }
+    if (!branchExists) {
+      const retry = await runGit(["git", "worktree", "add", worktreePath, branch], repoRoot);
+      if (retry.exitCode === 0)
+        return { worktreePath, branch, created: true };
+      const retryCombined = (retry.stdout + " " + retry.stderr).toLowerCase();
+      if (retryCombined.includes("already checked out")) {
+        return { worktreePath, branch, created: false };
+      }
+      throw new Error(`git worktree add failed for ${issueId}: ${retry.stderr || retry.stdout}`);
+    }
+    throw new Error(`git worktree add failed for ${issueId}: ${result.stderr || result.stdout} (exit ${result.exitCode})`);
+  } catch (e) {
+    try {
+      if (await exists(worktreePath) && await isRegisteredWorktree(worktreePath, runGit, repoRoot)) {
+        return { worktreePath, branch, created: false };
+      }
+    } catch {}
+    throw e;
+  }
+}
+async function isRegisteredWorktree(worktreePath, runGit, repoRoot) {
+  try {
+    const res = await runGit(["git", "worktree", "list", "--porcelain"], repoRoot);
+    if (res.exitCode !== 0)
+      return false;
+    const resolvedTarget = path16.resolve(worktreePath);
+    for (const line2 of res.stdout.split(`
+`)) {
+      if (line2.startsWith("worktree ")) {
+        const wtPath = line2.slice("worktree ".length).trim();
+        if (wtPath && path16.resolve(wtPath) === resolvedTarget)
+          return true;
+      }
+    }
+    return false;
+  } catch {
+    try {
+      const st = await fs15.stat(path16.join(worktreePath, ".git"));
+      return st.isFile();
+    } catch {
+      return false;
+    }
+  }
+}
+function buildWorktreeViolationMessage(opts) {
+  const { sessionID, tool, target, worktreePath, issueId } = opts;
+  const issuePart = issueId ? ` for ${issueId}` : "";
+  const targetPart = target ? ` Target: ${target}.` : "";
+  const isRelativeTarget = Boolean(target && !path16.isAbsolute(target) && !target.startsWith("~/") && !target.startsWith("/"));
+  if (isRelativeTarget) {
+    return `Worktree lane violation: session ${sessionID}${issuePart} with lane=worktree attempted ${tool} outside worktree.${targetPart} your lane requires worktree ${worktreePath} — ask the orchestrator to re-dispatch with the worktree. Run inside your worktree at ${worktreePath}.`;
+  }
+  return `Worktree lane violation: session ${sessionID}${issuePart} with lane=worktree attempted ${tool} outside worktree.${targetPart} Run inside your worktree at ${worktreePath}. All mutating operations must be inside ${worktreePath}.`;
+}
 
 // src/lifecycle.ts
 async function authorizeLifecycleSession(client, sessionID) {
@@ -18963,8 +19960,8 @@ function evaluateClosure(route, lifecycle, report) {
 }
 
 // src/exitgate/profile.ts
-import * as fs11 from "node:fs/promises";
-import * as path12 from "node:path";
+import * as fs16 from "node:fs/promises";
+import * as path17 from "node:path";
 var DEFAULT_BLACKLIST = [
   "rm\\s+-rf\\s+/(\\s|$)",
   "rm\\s+-rf\\s+\\*",
@@ -19036,12 +20033,12 @@ function toGateProfile(raw) {
   };
 }
 function gateProfilePath(repoRoot) {
-  return path12.join(repoRoot, ".tgo", "gate.json");
+  return path17.join(repoRoot, ".tgo", "gate.json");
 }
 async function loadGateProfile(repoRoot) {
   const target = gateProfilePath(repoRoot);
   try {
-    const raw = await fs11.readFile(target, "utf-8");
+    const raw = await fs16.readFile(target, "utf-8");
     const parsed = JSON.parse(raw);
     const profile = toGateProfile(parsed);
     if (profile)
@@ -19207,8 +20204,8 @@ function parseDeltaSpec(specText) {
 
 // src/exitgate/trajectory.ts
 init_def_snapshot();
-import * as fs12 from "node:fs/promises";
-import * as path13 from "node:path";
+import * as fs17 from "node:fs/promises";
+import * as path18 from "node:path";
 function isRecord(v) {
   return typeof v === "object" && v !== null;
 }
@@ -19288,14 +20285,14 @@ function parseEntry(line2, lineNo) {
 }
 function runLogPath(repoRoot, runId) {
   assertValidBeadID(runId);
-  return path13.join(repoRoot, ".tgo", "runs", `${runId}.jsonl`);
+  return path18.join(repoRoot, ".tgo", "runs", `${runId}.jsonl`);
 }
 async function scoreTrajectory(repoRoot, runId, profile = DEFAULT_GATE_PROFILE) {
   const findings = [];
   const target = runLogPath(repoRoot, runId);
   let raw;
   try {
-    raw = await fs12.readFile(target, "utf-8");
+    raw = await fs17.readFile(target, "utf-8");
   } catch (e) {
     const code = e?.code;
     if (code === "ENOENT") {
@@ -19746,8 +20743,8 @@ No ready, open, pending, in_progress, or blocked work.`;
 }
 
 // src/version.ts
-import * as fs13 from "node:fs/promises";
-import * as path14 from "node:path";
+import * as fs18 from "node:fs/promises";
+import * as path19 from "node:path";
 import { fileURLToPath as fileURLToPath4 } from "node:url";
 var PLUGIN_NPM_NAME = "trans-genderian-orchestra";
 var REGISTRY_URL = `https://registry.npmjs.org/${PLUGIN_NPM_NAME}/latest`;
@@ -19782,9 +20779,9 @@ function compareVersions(a, b) {
   return pa.pre < pb.pre ? -1 : pa.pre > pb.pre ? 1 : 0;
 }
 async function readLocalVersion(packageRoot3) {
-  const root = packageRoot3 ?? path14.resolve(path14.dirname(fileURLToPath4(import.meta.url)), "..");
+  const root = packageRoot3 ?? path19.resolve(path19.dirname(fileURLToPath4(import.meta.url)), "..");
   try {
-    const raw = await fs13.readFile(path14.join(root, "package.json"), "utf-8");
+    const raw = await fs18.readFile(path19.join(root, "package.json"), "utf-8");
     const json2 = JSON.parse(raw);
     return typeof json2.version === "string" && json2.version.length > 0 ? json2.version : null;
   } catch {
@@ -19864,24 +20861,24 @@ var and = (...cs) => (i) => cs.every((c) => c(i));
 var terminationDecision = and((i) => i.signal.complete, (i) => !i.exitGateRequired || i.signal.exitGate === true, (i) => i.toolCallsAfterCompletion >= 1);
 
 // src/self-update.ts
-import * as fs14 from "node:fs/promises";
-import * as fsSync from "node:fs";
-import * as path15 from "node:path";
-import * as os2 from "node:os";
+import * as fs19 from "node:fs/promises";
+import * as fsSync2 from "node:fs";
+import * as path20 from "node:path";
+import * as os3 from "node:os";
 var LOCK_STALE_MS = 120000;
 var LOCK_FILE = ".tgo-selfupdate.lock";
 function resolveCacheRoot(homeDir) {
-  const base = process.env.OPENCODE_TEST_HOME ?? process.env.XDG_CACHE_HOME ?? path15.join(homeDir ?? os2.homedir(), ".cache");
-  return path15.join(base, "opencode");
+  const base = process.env.OPENCODE_TEST_HOME ?? process.env.XDG_CACHE_HOME ?? path20.join(homeDir ?? os3.homedir(), ".cache");
+  return path20.join(base, "opencode");
 }
 function slotDirs(cacheRoot, pkgName) {
   const candidates = [
-    path15.join(cacheRoot, "packages", `${pkgName}@latest`),
-    path15.join(cacheRoot, "packages", pkgName)
+    path20.join(cacheRoot, "packages", `${pkgName}@latest`),
+    path20.join(cacheRoot, "packages", pkgName)
   ];
   return candidates.filter((dir) => {
     try {
-      return fsSync.existsSync(dir) && fsSync.statSync(dir).isDirectory();
+      return fsSync2.existsSync(dir) && fsSync2.statSync(dir).isDirectory();
     } catch {
       return false;
     }
@@ -19986,14 +20983,14 @@ function buildInstallArgs(dir, pkgName) {
 }
 async function recoverOrphans(dir) {
   try {
-    const dirExists = await fs14.stat(dir).then(() => true).catch(() => false);
+    const dirExists = await fs19.stat(dir).then(() => true).catch(() => false);
     const backup = `${dir}.tgo-backup`;
     const staging = `${dir}.tgo-staging`;
     if (!dirExists) {
-      const backupExists = await fs14.stat(backup).then(() => true).catch(() => false);
+      const backupExists = await fs19.stat(backup).then(() => true).catch(() => false);
       if (backupExists) {
         try {
-          await fs14.rename(backup, dir);
+          await fs19.rename(backup, dir);
         } catch {}
       }
       return;
@@ -20004,27 +21001,27 @@ async function recoverOrphans(dir) {
 }
 async function rmRf(p) {
   try {
-    await fs14.rm(p, { recursive: true, force: true });
+    await fs19.rm(p, { recursive: true, force: true });
   } catch {}
 }
 async function copyDir(src, dest) {
-  const cp2 = fs14.cp;
+  const cp2 = fs19.cp;
   if (typeof cp2 === "function") {
-    await cp2.call(fs14, src, dest, { recursive: true, force: true });
+    await cp2.call(fs19, src, dest, { recursive: true, force: true });
     return;
   }
-  await fs14.mkdir(dest, { recursive: true });
-  const entries = await fs14.readdir(src, { withFileTypes: true });
+  await fs19.mkdir(dest, { recursive: true });
+  const entries = await fs19.readdir(src, { withFileTypes: true });
   for (const e of entries) {
-    const s = path15.join(src, e.name);
-    const d = path15.join(dest, e.name);
+    const s = path20.join(src, e.name);
+    const d = path20.join(dest, e.name);
     if (e.isDirectory()) {
       await copyDir(s, d);
     } else if (e.isSymbolicLink()) {
-      const target = await fs14.readlink(s);
-      await fs14.symlink(target, d);
+      const target = await fs19.readlink(s);
+      await fs19.symlink(target, d);
     } else {
-      await fs14.copyFile(s, d);
+      await fs19.copyFile(s, d);
     }
   }
 }
@@ -20051,20 +21048,20 @@ async function selfUpdate(deps) {
       try {
         await recoverOrphans(dir);
       } catch {}
-      const lockPath = path15.join(dir, LOCK_FILE);
+      const lockPath = path20.join(dir, LOCK_FILE);
       const staging = `${dir}.tgo-staging`;
       const backup = `${dir}.tgo-backup`;
       let ownerToken = null;
       let acquired = false;
       try {
         try {
-          await fs14.mkdir(dir, { recursive: true });
+          await fs19.mkdir(dir, { recursive: true });
         } catch {}
         const token = `${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}`;
         const tryAcquire = async () => {
           let handle;
           try {
-            handle = await fs14.open(lockPath, "wx");
+            handle = await fs19.open(lockPath, "wx");
             try {
               await handle.writeFile(token, "utf-8");
             } catch {}
@@ -20087,11 +21084,11 @@ async function selfUpdate(deps) {
         let ok = await tryAcquire();
         if (!ok) {
           try {
-            const stat4 = await fs14.stat(lockPath);
-            const age = nowMs - stat4.mtimeMs;
+            const stat6 = await fs19.stat(lockPath);
+            const age = nowMs - stat6.mtimeMs;
             if (age > LOCK_STALE_MS) {
               try {
-                await fs14.unlink(lockPath);
+                await fs19.unlink(lockPath);
               } catch {}
               ok = await tryAcquire();
               if (!ok)
@@ -20126,8 +21123,8 @@ async function selfUpdate(deps) {
           }
           let newVersion = "";
           try {
-            const pkgJsonPath = path15.join(staging, "node_modules", deps.pkgName, "package.json");
-            const raw = await fs14.readFile(pkgJsonPath, "utf-8");
+            const pkgJsonPath = path20.join(staging, "node_modules", deps.pkgName, "package.json");
+            const raw = await fs19.readFile(pkgJsonPath, "utf-8");
             const json2 = JSON.parse(raw);
             newVersion = typeof json2.version === "string" ? json2.version : "";
           } catch (e) {
@@ -20142,16 +21139,16 @@ async function selfUpdate(deps) {
           newVersionForLog = newVersion;
           try {
             await rmRf(backup);
-            await fs14.rename(dir, backup);
-            await fs14.rename(staging, dir);
+            await fs19.rename(dir, backup);
+            await fs19.rename(staging, dir);
             await rmRf(backup);
           } catch (e) {
             try {
-              const backupExists = await fs14.stat(backup).then(() => true).catch(() => false);
-              const dirExists = await fs14.stat(dir).then(() => true).catch(() => false);
+              const backupExists = await fs19.stat(backup).then(() => true).catch(() => false);
+              const dirExists = await fs19.stat(dir).then(() => true).catch(() => false);
               if (backupExists && !dirExists) {
                 try {
-                  await fs14.rename(backup, dir);
+                  await fs19.rename(backup, dir);
                 } catch {}
               }
               await rmRf(staging);
@@ -20164,11 +21161,11 @@ async function selfUpdate(deps) {
         } catch (e) {
           innerError = e;
           try {
-            const backupExists = await fs14.stat(backup).then(() => true).catch(() => false);
-            const dirExists = await fs14.stat(dir).then(() => true).catch(() => false);
+            const backupExists = await fs19.stat(backup).then(() => true).catch(() => false);
+            const dirExists = await fs19.stat(dir).then(() => true).catch(() => false);
             if (backupExists && !dirExists) {
               try {
-                await fs14.rename(backup, dir);
+                await fs19.rename(backup, dir);
               } catch {}
             }
             await rmRf(staging);
@@ -20185,9 +21182,9 @@ async function selfUpdate(deps) {
       } finally {
         try {
           if (ownerToken) {
-            const cur = await fs14.readFile(lockPath, "utf-8").catch(() => "");
+            const cur = await fs19.readFile(lockPath, "utf-8").catch(() => "");
             if (cur === ownerToken) {
-              await fs14.unlink(lockPath).catch(() => {});
+              await fs19.unlink(lockPath).catch(() => {});
             }
           }
         } catch {}
@@ -20200,8 +21197,8 @@ async function selfUpdate(deps) {
 
 // src/seat-sync.ts
 init_config();
-import * as fs15 from "node:fs/promises";
-import * as path16 from "node:path";
+import * as fs20 from "node:fs/promises";
+import * as path21 from "node:path";
 function parseSteps(content) {
   const m = content.match(/^\s*steps:\s*(\d+)/m);
   return m ? m[1] : null;
@@ -20217,7 +21214,7 @@ async function reconcileSeats(assetsAgentsDir, installedAgentsDir, log, register
   }
   if (renderedSeats.length === 0) {
     try {
-      await fs15.readdir(assetsAgentsDir);
+      await fs20.readdir(assetsAgentsDir);
     } catch (err) {
       safeWarn(log, "tgo: seat sync readdir failed", { assetsAgentsDir, error: String(err) });
     }
@@ -20227,12 +21224,12 @@ async function reconcileSeats(assetsAgentsDir, installedAgentsDir, log, register
   for (const seat of renderedSeats) {
     const file2 = seat.fileName;
     const expectedContent = seat.content;
-    const seatName = path16.basename(file2, ".md");
-    const installedPath = path16.join(installedAgentsDir, file2);
+    const seatName = path21.basename(file2, ".md");
+    const installedPath = path21.join(installedAgentsDir, file2);
     let installedContent;
     let installedExists = false;
     try {
-      installedContent = await fs15.readFile(installedPath, "utf-8");
+      installedContent = await fs20.readFile(installedPath, "utf-8");
       installedExists = true;
     } catch (err) {
       const code = err?.code;
@@ -20248,27 +21245,27 @@ async function reconcileSeats(assetsAgentsDir, installedAgentsDir, log, register
       continue;
     }
     try {
-      await fs15.mkdir(installedAgentsDir, { recursive: true });
+      await fs20.mkdir(installedAgentsDir, { recursive: true });
     } catch (err) {
       safeWarn(log, "tgo: seat sync mkdir failed", { installedAgentsDir, error: String(err) });
       continue;
     }
     if (installedExists && installedContent !== undefined) {
       try {
-        await fs15.writeFile(`${installedPath}.bak`, installedContent, "utf-8");
+        await fs20.writeFile(`${installedPath}.bak`, installedContent, "utf-8");
       } catch (err) {
         safeWarn(log, "tgo: seat sync backup failed", { file: file2, error: String(err) });
         continue;
       }
     }
-    const tmp = path16.join(installedAgentsDir, `.${file2}.${process.pid}.${Date.now()}.tmp`);
+    const tmp = path21.join(installedAgentsDir, `.${file2}.${process.pid}.${Date.now()}.tmp`);
     try {
-      await fs15.writeFile(tmp, expectedContent, "utf-8");
-      await fs15.rename(tmp, installedPath);
+      await fs20.writeFile(tmp, expectedContent, "utf-8");
+      await fs20.rename(tmp, installedPath);
     } catch (err) {
       safeWarn(log, "tgo: seat sync write failed", { file: file2, error: String(err) });
       try {
-        await fs15.rm(tmp, { force: true });
+        await fs20.rm(tmp, { force: true });
       } catch {}
       continue;
     }
@@ -20294,8 +21291,326 @@ async function reconcileSeats(assetsAgentsDir, installedAgentsDir, log, register
 
 // src/plugin.ts
 init_runs();
-import * as path17 from "node:path";
-import * as os3 from "node:os";
+
+// src/manifest-hooks.ts
+init_def_snapshot();
+import * as fs21 from "node:fs/promises";
+import * as path22 from "node:path";
+async function manifestOnDispatch(opts) {
+  const { repoRoot, issueId, packet } = opts;
+  if (!isValidBeadID(issueId))
+    return { injected: false, packet };
+  let manifest;
+  try {
+    manifest = await readManifest(repoRoot);
+  } catch {
+    return { injected: false, packet };
+  }
+  if (!manifest)
+    return { injected: false, packet };
+  const found = getManifestRowSyncFromManifest(manifest, issueId);
+  if (!found)
+    return { injected: false, packet };
+  const { bead, wave } = found;
+  const next = { ...packet };
+  next.manifest = {
+    issueId: bead.issueId,
+    story: bead.story,
+    scope: bead.scope,
+    parallelSet: bead.parallelSet,
+    deps: bead.deps,
+    wave
+  };
+  return { injected: true, packet: next, row: bead, wave };
+}
+function extractTouchedFilesFromReport(report) {
+  const changes = report.fields.CHANGES ?? "";
+  if (!changes || changes.trim().length === 0)
+    return [];
+  const tokens = [];
+  const parts = changes.split(/[\n,]+/);
+  for (const raw of parts) {
+    const trimmed = raw.trim().replace(/^-\s*/, "").trim();
+    if (trimmed.length === 0)
+      continue;
+    if (trimmed.endsWith(":"))
+      continue;
+    const lower = trimmed.toLowerCase();
+    if (lower === "none" || lower === "none." || lower === "n/a")
+      continue;
+    if (!trimmed.includes("/") && /^[A-Za-z0-9_.-]+$/.test(trimmed) && /[-.]\d/.test(trimmed) && trimmed.length <= 12)
+      continue;
+    const candidates = trimmed.split(/\s+/).filter(Boolean);
+    for (const c of candidates) {
+      const cleaned = c.replace(/^[\[`'"({]+|[,\]`'")}\]]+$/g, "").trim();
+      if (cleaned.length === 0)
+        continue;
+      if (cleaned.includes("/") || cleaned.includes(".") || /^[A-Za-z0-9._-]+\.[A-Za-z0-9]+$/.test(cleaned)) {
+        tokens.push(cleaned);
+      } else if (/^[A-Za-z0-9._\-\/]+$/.test(cleaned) && cleaned.length > 2) {
+        if (cleaned.includes("/"))
+          tokens.push(cleaned);
+      }
+    }
+  }
+  return [...new Set(tokens.map(normalizeScopePath).filter(Boolean))];
+}
+async function extractTouchedFilesFromRunLog(repoRoot, issueId) {
+  try {
+    const target = path22.join(repoRoot, ".tgo", "runs", issueId + ".jsonl");
+    const raw = await fs21.readFile(target, "utf-8");
+    const touched = [];
+    for (const line2 of raw.split(`
+`)) {
+      if (!line2.trim())
+        continue;
+      let ev = null;
+      try {
+        ev = JSON.parse(line2);
+      } catch {
+        continue;
+      }
+      if (!ev || typeof ev.tool !== "string")
+        continue;
+      const tool = ev.tool.toLowerCase();
+      if (tool !== "edit" && tool !== "write" && tool !== "multiedit")
+        continue;
+      if (typeof ev.cmd !== "string" || !ev.cmd.trim())
+        continue;
+      const norm = normalizeScopePath(ev.cmd.trim());
+      if (norm)
+        touched.push(norm);
+    }
+    return [...new Set(touched)];
+  } catch {
+    return;
+  }
+}
+function reportClaimsEdits(changes) {
+  if (typeof changes !== "string" || changes.trim().length === 0)
+    return false;
+  return /(edit|modif|chang|writ|updat)/i.test(changes);
+}
+function toBailReport(original, mismatchFiles) {
+  const bailFields = {
+    ...original.fields,
+    TASK_STATUS: "bail",
+    RETRYABLE: "false"
+  };
+  return {
+    ...original,
+    valid: original.valid,
+    completionSafe: false,
+    exitGate: original.exitGate,
+    taxonomy: { status: "bail", retryable: false },
+    recovery: "abandon",
+    fields: bailFields,
+    raw: original.raw + `
+[m manifest mismatch: touched outside scope: ${mismatchFiles.join(", ")}]`
+  };
+}
+async function manifestOnComplete(opts) {
+  const { repoRoot, issueId, report, touchedFiles } = opts;
+  if (!isValidBeadID(issueId))
+    return { bail: false, report };
+  let manifest;
+  try {
+    manifest = await readManifest(repoRoot);
+  } catch {
+    return { bail: false, report };
+  }
+  if (!manifest)
+    return { bail: false, report };
+  const found = getManifestRowSyncFromManifest(manifest, issueId);
+  if (!found)
+    return { bail: false, report };
+  const { bead } = found;
+  const scopeSet = new Set(bead.scope.map(normalizeScopePath));
+  const effectiveTouched = touchedFiles ?? await extractTouchedFilesFromRunLog(repoRoot, issueId);
+  const touchedSet = [];
+  const srcFiles = effectiveTouched !== undefined ? effectiveTouched : extractTouchedFilesFromReport(report);
+  for (const f2 of srcFiles) {
+    const nf = normalizeScopePath(f2);
+    if (nf && !touchedSet.includes(nf))
+      touchedSet.push(nf);
+  }
+  const touched = [...new Set(touchedSet)];
+  if (touched.length === 0) {
+    const warning = reportClaimsEdits(report.fields.CHANGES) ? "manifest onComplete: report claims changes but extracted zero touched files — cannot verify scope compliance (UNVERIFIABLE" : undefined;
+    return { bail: false, report, row: bead, warning };
+  }
+  const mismatch = touched.filter((f) => !scopeSet.has(f));
+  if (mismatch.length === 0)
+    return { bail: false, report, row: bead };
+  const bailed = toBailReport(report, mismatch);
+  return { bail: true, report: bailed, mismatchFiles: mismatch, row: bead };
+}
+async function manifestMessageFilter(opts) {
+  const { repoRoot, issueId, packet } = opts;
+  if (!isValidBeadID(issueId))
+    return { filtered: false, packet };
+  let manifest;
+  try {
+    manifest = await readManifest(repoRoot);
+  } catch {
+    return { filtered: false, packet };
+  }
+  if (!manifest)
+    return { filtered: false, packet };
+  const found = getManifestRowSyncFromManifest(manifest, issueId);
+  if (!found)
+    return { filtered: false, packet };
+  const { bead } = found;
+  const scopeSet = new Set(bead.scope.map(normalizeScopePath));
+  const files = packet.Files;
+  if (!Array.isArray(files) || files.length === 0)
+    return { filtered: false, packet };
+  const original = files.filter((f) => typeof f === "string");
+  const kept = original.filter((f) => scopeSet.has(normalizeScopePath(f)));
+  const stripped = original.filter((f) => !scopeSet.has(normalizeScopePath(f)));
+  if (original.length > 0 && kept.length === 0) {
+    return {
+      filtered: false,
+      packet,
+      refused: `manifest scope for ${issueId} excludes all listed files — refusing dispatch (plan error)`
+    };
+  }
+  if (stripped.length === 0)
+    return { filtered: false, packet };
+  const next = { ...packet, Files: kept };
+  return { filtered: true, packet: next, stripped };
+}
+
+// src/recursion.ts
+var DEFAULT_MAX_DEPTH = 4;
+var sessionDepth = new Map;
+var sessionParent = new Map;
+var sessionIssueId = new Map;
+var pendingSpawn = new Map;
+function recordDispatch(parentSessionId, issueId) {
+  const depth = (sessionDepth.get(parentSessionId) ?? 0) + 1;
+  const queue = pendingSpawn.get(parentSessionId) ?? [];
+  queue.push({ issueId, depth });
+  pendingSpawn.set(parentSessionId, queue);
+}
+function onChildCreated(childSessionId, parentSessionId) {
+  sessionParent.set(childSessionId, parentSessionId);
+  const queue = pendingSpawn.get(parentSessionId);
+  const entry = queue && queue.length > 0 ? queue.shift() : undefined;
+  if (entry && queue && queue.length === 0) {
+    pendingSpawn.delete(parentSessionId);
+  }
+  sessionDepth.set(childSessionId, entry ? entry.depth : (sessionDepth.get(parentSessionId) ?? 0) + 1);
+  if (entry && entry.issueId)
+    sessionIssueId.set(childSessionId, entry.issueId);
+}
+function onSessionDeleted(sessionId) {
+  sessionDepth.delete(sessionId);
+  sessionParent.delete(sessionId);
+  sessionIssueId.delete(sessionId);
+  pendingSpawn.delete(sessionId);
+}
+function checkSpawnAllowed(sessionId, issueId, config2) {
+  if (config2 && config2.enabled === false)
+    return { allowed: true };
+  const maxDepth = config2?.maxDepth ?? DEFAULT_MAX_DEPTH;
+  const cycleBound = config2?.cycleBound ?? maxDepth;
+  const depth = sessionDepth.get(sessionId) ?? 0;
+  if (depth >= maxDepth) {
+    return {
+      allowed: false,
+      depth,
+      reason: `spawn depth cap exceeded (depth ${depth} >= maxDepth ${maxDepth})`
+    };
+  }
+  if (issueId) {
+    let cur = sessionId;
+    let steps = 0;
+    while (cur !== undefined && steps <= cycleBound) {
+      if (sessionIssueId.get(cur) === issueId) {
+        return {
+          allowed: false,
+          depth,
+          reason: `spawn cycle detected (${issueId} already in the delegation chain)`
+        };
+      }
+      cur = sessionParent.get(cur);
+      steps += 1;
+    }
+  }
+  return { allowed: true, depth: depth + 1 };
+}
+
+// src/replay.ts
+init_runs();
+init_def_snapshot();
+function parseReplayIntent(text) {
+  const m = /replay\s+([A-Za-z0-9][A-Za-z0-9._-]*)\s+step\s+(\d+)/i.exec(text);
+  if (!m)
+    return;
+  return { runId: m[1], stepIndex: Number.parseInt(m[2], 10) };
+}
+async function replayStep(repoRoot, runId, stepIndex, opts) {
+  const events = await readRunEvents(repoRoot, runId);
+  if (events.length === 0) {
+    return { ok: false, reason: `no run events for ${runId}`, runId, stepIndex };
+  }
+  const steps = events.filter((e) => e.type === "step");
+  const step = steps[stepIndex];
+  if (!step) {
+    return { ok: false, reason: `no step ${stepIndex} in run ${runId} (${steps.length} steps)`, runId, stepIndex };
+  }
+  if (opts?.currentPromptHash) {
+    let snapshot;
+    try {
+      snapshot = await readDefSnapshot(repoRoot, step.issueId);
+    } catch {
+      snapshot = undefined;
+    }
+    if (snapshot?.promptHash && opts.currentPromptHash !== snapshot.promptHash) {
+      return {
+        ok: false,
+        reason: "definition drifted — replay rejected",
+        runId,
+        stepIndex,
+        step,
+        driftDetected: true
+      };
+    }
+  }
+  return {
+    ok: true,
+    runId,
+    stepIndex,
+    step,
+    inputHash: step.argsHash,
+    output: { tool: step.tool, ok: step.ok, note: step.note, cmd: step.cmd, durationMs: step.durationMs }
+  };
+}
+function formatReplayResult(r) {
+  if (!r.ok)
+    return `step replay rejected: ${r.reason}`;
+  const o = r.output;
+  const extras = [o.note ? `note=${o.note}` : "", o.cmd ? `cmd=${o.cmd}` : ""].filter(Boolean).join(" ");
+  return `step replay ${r.runId}#${r.stepIndex}: tool=${o.tool} ok=${o.ok} inputHash=${r.inputHash}${extras ? ` ${extras}` : ""}`;
+}
+
+// src/exitgate/close-gate.ts
+async function checkCloseGate(repoRoot, issueId, specText) {
+  const syntheticComplete = parseTaskReport(`STATUS: complete
+CHANGES: close via sidebar
+VERIFIED: exit gate: true; close check
+GAPS: none`);
+  const gate = await runExitGate({ repoRoot, issueId, specText: specText ?? "", report: syntheticComplete });
+  if (gate.blocked) {
+    return { allowed: false, gate };
+  }
+  return { allowed: true, gate };
+}
+
+// src/plugin.ts
+import * as path23 from "node:path";
+import * as os4 from "node:os";
 import { fileURLToPath as fileURLToPath5 } from "node:url";
 var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => {
   const config2 = await loadTgoConfig(options);
@@ -20352,8 +21667,8 @@ var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => 
   const seatDir = resolveAgentsDir({ agentDir: config2.agentDir });
   (async () => {
     try {
-      const packageRoot3 = path17.resolve(path17.dirname(fileURLToPath5(import.meta.url)), "..");
-      const assetsAgentsDir = path17.join(packageRoot3, "assets", "agents");
+      const packageRoot3 = path23.resolve(path23.dirname(fileURLToPath5(import.meta.url)), "..");
+      const assetsAgentsDir = path23.join(packageRoot3, "assets", "agents");
       const summary = await reconcileSeats(assetsAgentsDir, seatDir, appLog, config2.register);
       if (summary.length > 0) {
         let version2 = "unknown";
@@ -20397,6 +21712,14 @@ var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => 
     log: appLog
   });
   const reconciler = new SessionReconciler({ shim: board.shimState });
+  if (config2.cost?.enabled !== false) {
+    try {
+      const costPreset = resolveActivePreset(config2, await readPresetNudge(runBd, appLog));
+      board.setCostGetter(() => resolveSeatModels(costPreset, config2.presets));
+    } catch (e) {
+      safeWarn(appLog, "tgo: cost surface init failed", { error: String(e) });
+    }
+  }
   const concision = new ConcisionController({
     enabled: config2.concision?.enabled,
     register: config2.register,
@@ -20555,6 +21878,89 @@ var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => 
   const delegatedSessionIds = new Set;
   const completionSignals = new Map;
   const terminationParentIds = new Map;
+  const worktreeLaneBySession = new Map;
+  const pendingWorktreeLaneByParentSession = new Map;
+  const pendingWorktreeLaneByIssue = new Map;
+  function rememberWorktreeLaneForDelegation(packet, parentSessionId, repoRoot) {
+    const laneRaw = packet.lane;
+    if (laneRaw === undefined)
+      return;
+    if (laneRaw !== "worktree" && laneRaw !== "inline")
+      return;
+    const lane = laneRaw;
+    if (lane !== "worktree")
+      return;
+    const issueIdRaw = packet.issueId;
+    if (typeof issueIdRaw !== "string")
+      return;
+    const issueId = issueIdRaw.trim();
+    if (!issueId || !isValidBeadID(issueId))
+      return;
+    const worktreePath = worktreePathForIssue(repoRoot, issueId);
+    pendingWorktreeLaneByParentSession.set(parentSessionId, { lane, issueId, worktreePath });
+    pendingWorktreeLaneByIssue.set(issueId, { lane, issueId });
+  }
+  async function captureWorktreeLaneForChildSession(childSessionId, issueId, repoRoot) {
+    const pending = pendingWorktreeLaneByIssue.get(issueId);
+    if (!pending || pending.lane !== "worktree")
+      return;
+    if (!isValidBeadID(issueId))
+      return;
+    const worktreePath = worktreePathForIssue(repoRoot, issueId);
+    worktreeLaneBySession.set(childSessionId, { lane: "worktree", issueId, worktreePath });
+    try {
+      await ensureWorktreeExists({ repoRoot, issueId, worktreePath, log: appLog });
+    } catch (e) {
+      safeWarn(appLog, `worktree lane after-capture ensure failed for ${issueId}: ${String(e)}`);
+    }
+    pendingWorktreeLaneByIssue.delete(issueId);
+  }
+  async function captureWorktreeLaneForChildSessionViaParent(childSessionId, parentSessionId, repoRoot) {
+    const pending = pendingWorktreeLaneByParentSession.get(parentSessionId);
+    if (!pending || pending.lane !== "worktree")
+      return;
+    if (!isValidBeadID(pending.issueId)) {
+      pendingWorktreeLaneByParentSession.delete(parentSessionId);
+      return;
+    }
+    const { issueId, worktreePath } = pending;
+    worktreeLaneBySession.set(childSessionId, { lane: "worktree", issueId, worktreePath });
+    try {
+      await ensureWorktreeExists({ repoRoot, issueId, worktreePath, log: appLog });
+    } catch (e) {
+      safeWarn(appLog, `worktree lane session.created ensure failed for ${issueId}: ${String(e)}`);
+    }
+    pendingWorktreeLaneByParentSession.delete(parentSessionId);
+    pendingWorktreeLaneByIssue.delete(issueId);
+  }
+  async function enforceWorktreeLaneBeforeHook(input, output) {
+    const entry = worktreeLaneBySession.get(input.sessionID);
+    if (!entry || entry.lane !== "worktree")
+      return;
+    const repoRoot = directory ?? worktree ?? project?.worktree ?? ".";
+    const worktreePath = entry.worktreePath;
+    try {
+      await ensureWorktreeExists({ repoRoot, issueId: entry.issueId, worktreePath, log: appLog });
+    } catch (e) {
+      safeWarn(appLog, `worktree lane ensure failed for ${entry.issueId}: ${String(e)}`);
+    }
+    const shouldBlock = shouldBlockOutsideWorktree({
+      tool: input.tool,
+      args: output.args,
+      worktreePath,
+      repoRoot
+    });
+    if (shouldBlock.block) {
+      const msg = buildWorktreeViolationMessage({
+        sessionID: input.sessionID,
+        tool: input.tool,
+        target: shouldBlock.target,
+        worktreePath,
+        issueId: entry.issueId
+      });
+      throw new Error(msg);
+    }
+  }
   watchdog.setHydrationPending(true);
   try {
     const repoRoot = directory ?? worktree ?? project?.worktree ?? ".";
@@ -20606,7 +22012,7 @@ var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => 
       try {
         const args = command.split(/\s+/);
         const proc = cwd ? $`${args}`.cwd(cwd) : $`${args}`;
-        const completed = await proc.env({ ...process.env, BD_NON_INTERACTIVE: "1", HOME: os3.homedir() }).nothrow();
+        const completed = await proc.env({ ...process.env, BD_NON_INTERACTIVE: "1", HOME: os4.homedir() }).nothrow();
         return {
           exitCode: completed.exitCode,
           stdout: completed.stdout.toString(),
@@ -20740,6 +22146,135 @@ var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => 
             return `already suspended ${issueId}`;
           }
         }
+      }),
+      tgo_plan_manifest: tool({
+        description: "Write .tgo/manifest.json at PLAN time — validates and pairwise checks same-parallelSet scope overlaps; typed error on conflict (refuse write). Primary-seat only.",
+        args: {
+          manifestJson: tool.schema.string()
+        },
+        async execute(args, context) {
+          const repoRoot = directory ?? worktree ?? project?.worktree ?? ".";
+          const authorized = await authorizeLifecycleSession(client, context.sessionID);
+          if (!authorized) {
+            throw new Error("tgo_plan_manifest is primary-seat only — delegated seats are read-only for manifests");
+          }
+          const raw = String(args.manifestJson ?? "").trim();
+          if (!raw)
+            throw new Error("manifestJson is required and must be a valid JSON string");
+          let parsed;
+          try {
+            parsed = JSON.parse(raw);
+          } catch (e) {
+            throw new Error(`invalid JSON for manifestJson: ${String(e)}`);
+          }
+          try {
+            const written = await planManifest(repoRoot, parsed);
+            try {
+              board.invalidate(context.sessionID);
+            } catch {}
+            return `manifest written: ${MANIFEST_REL_PATH} (${written.waves.length} waves)`;
+          } catch (e) {
+            if (e instanceof ManifestScopeConflictError) {
+              throw new Error(`MANIFEST_SCOPE_CONFLICT: ${e.message}`);
+            }
+            throw e;
+          }
+        }
+      }),
+      tgo_land_convoy: tool({
+        description: "Land a convoy: validate .tgo/convoy/.state.json, run per-bead exit-gate checks, then merge wave worktrees in wave order. Primary-seat only. Pass completedIssueIds (comma-separated) to mark complete before landing.",
+        args: {
+          completedIssueIds: tool.schema.string().optional()
+        },
+        async execute(args, context) {
+          const repoRoot = directory ?? worktree ?? project?.worktree ?? ".";
+          const authorized = await authorizeLifecycleSession(client, context.sessionID);
+          if (!authorized)
+            throw new Error("tgo_land_convoy is primary-seat only — delegated seats cannot land convoys");
+          const rawIds = String(args.completedIssueIds ?? "").trim();
+          const ids = rawIds ? rawIds.split(",").map((s) => s.trim()).filter(Boolean) : [];
+          if (ids.length > 0) {
+            try {
+              await markWaveComplete(repoRoot, ids);
+            } catch (e) {
+              throw new Error(`mark complete failed: ${String(e)}`);
+            }
+          }
+          const mergeBranch = async (branch) => {
+            try {
+              const proc = Bun.spawn(["git", "merge", "--no-ff", "-m", `tgo-convoy: land ${branch}`, branch], { cwd: repoRoot, stdout: "pipe", stderr: "pipe" });
+              const code = await proc.exited;
+              const stderr = await new Response(proc.stderr).text();
+              return { ok: code === 0, err: stderr.trim().slice(0, 400) };
+            } catch (e) {
+              return { ok: false, err: String(e) };
+            }
+          };
+          const result = await landConvoy(repoRoot, {
+            gateCheck: async (issueId) => {
+              let specText = "";
+              try {
+                specText = await runBd(`bd show ${issueId} --json`);
+              } catch {}
+              try {
+                const g = await checkCloseGate(repoRoot, issueId, specText);
+                if (!g.allowed)
+                  return { ok: false, reason: "exit gate blocked" };
+              } catch (e) {
+                return { ok: false, reason: `gate check failed: ${String(e)}` };
+              }
+              return { ok: true };
+            },
+            mergeWorktree: async (_wave, beadIssueIds) => {
+              for (const id of beadIssueIds) {
+                const m = await mergeBranch(worktreeBranchForIssue(id));
+                if (!m.ok)
+                  throw new Error(`merge failed for ${id} (${worktreeBranchForIssue(id)}): ${m.err ?? "unknown"}`);
+              }
+            }
+          });
+          try {
+            board.invalidate(context.sessionID);
+          } catch {}
+          if (!result.landed)
+            return `convoy landing aborted: ${result.reason}`;
+          return `convoy landed (waves [${result.mergedWaves.join(", ")}])`;
+        }
+      }),
+      tgo_init_convoy: tool({
+        description: "Create/overwrite a convoy state file at .tgo/convoy/.state.json. Input convoyJson is {goal, remainingBudget, waves:[{wave,beads:[{issueId,scope:[...]}]}]}. Validated (max 3 waves, scopeHash computed from scopes). Primary-seat only.",
+        args: {
+          convoyJson: tool.schema.string()
+        },
+        async execute(args, context) {
+          const repoRoot = directory ?? worktree ?? project?.worktree ?? ".";
+          const authorized = await authorizeLifecycleSession(client, context.sessionID);
+          if (!authorized)
+            throw new Error("tgo_init_convoy is primary-seat only");
+          const raw = String(args.convoyJson ?? "").trim();
+          if (!raw)
+            throw new Error("convoyJson is required and must be a valid JSON string");
+          let parsed;
+          try {
+            parsed = JSON.parse(raw);
+          } catch (e) {
+            throw new Error(`invalid JSON for convoyJson: ${String(e)}`);
+          }
+          const c = parsed;
+          try {
+            const state = await initConvoy(repoRoot, {
+              goal: String(c.goal ?? ""),
+              remainingBudget: Number(c.remainingBudget),
+              waves: c.waves ?? []
+            });
+            try {
+              board.invalidate(context.sessionID);
+            } catch {}
+            return `convoy written: ${CONVOY_STATE_REL} (${state.waves.length} waves, scope ${state.scopeHash})`;
+          } catch (e) {
+            throw new Error(`CONVOY_INVALID: ${String(e)}`);
+          }
+        }
       })
     },
     event: async ({ event }) => {
@@ -20773,6 +22308,12 @@ var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => 
         watchdog.noteSessionCreated(info);
         try {
           if (info.id && info.parentID) {
+            const repoRootWt = directory ?? worktree ?? project?.worktree ?? ".";
+            await captureWorktreeLaneForChildSessionViaParent(info.id, info.parentID, repoRootWt);
+          }
+        } catch {}
+        try {
+          if (info.id && info.parentID) {
             const parentRunId = sessionToRunId.get(info.parentID);
             if (parentRunId)
               sessionToRunId.set(info.id, parentRunId);
@@ -20785,6 +22326,10 @@ var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => 
         try {
           if (info.id)
             terminationParentIds.set(info.id, info.parentID ?? undefined);
+        } catch {}
+        try {
+          if (info.id && info.parentID)
+            onChildCreated(info.id, info.parentID);
         } catch {}
         handleSessionCreated(event.properties.info);
       } else if (event.type === "session.deleted") {
@@ -20799,6 +22344,15 @@ var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => 
           } catch {}
           try {
             terminationParentIds.delete(deletedId);
+          } catch {}
+          try {
+            worktreeLaneBySession.delete(deletedId);
+          } catch {}
+          try {
+            pendingWorktreeLaneByParentSession.delete(deletedId);
+          } catch {}
+          try {
+            onSessionDeleted(deletedId);
           } catch {}
           try {
             const runId = sessionToRunId.get(deletedId);
@@ -20863,7 +22417,7 @@ var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => 
       const nextPermission = preapproveExternalDirectory(input.permission, worktreeRoot);
       if (nextPermission && Object.keys(nextPermission).length > 0) {
         input.permission = nextPermission;
-        const parent = worktreeRoot ? path17.dirname(worktreeRoot) : undefined;
+        const parent = worktreeRoot ? path23.dirname(worktreeRoot) : undefined;
         appLog("info", `pre-approved external_directory for worktree family ${parent}/*`, {
           worktreeRoot,
           projectWorktree: project?.worktree ?? null,
@@ -20877,6 +22431,24 @@ var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => 
         const repoRoot = directory ?? worktree ?? project?.worktree ?? ".";
         const rawText = output.parts.filter((p) => p.type === "text").map((p) => p.text ?? "").join(`
 `).trim();
+        if (rawText.length > 0) {
+          try {
+            const intent = parseReplayIntent(rawText);
+            if (intent) {
+              const result = await replayStep(repoRoot, intent.runId, intent.stepIndex);
+              const summary = `tgo: ${formatReplayResult(result)}`;
+              appLog("info", `tgo: ${formatReplayResult(result)}`, { runId: intent.runId, stepIndex: intent.stepIndex });
+              try {
+                await client.session.prompt({
+                  path: { id: input.sessionID },
+                  body: { parts: [{ type: "text", text: summary, synthetic: true }] }
+                });
+              } catch {}
+            }
+          } catch (e) {
+            safeWarn(appLog, "tgo: step replay invocation failed", { error: String(e?.message ?? e) });
+          }
+        }
         if (rawText.length > 0) {
           let issueId;
           try {
@@ -21040,6 +22612,19 @@ var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => 
     },
     "tool.execute.before": async (input, output) => {
       try {
+        const rawDispatch = output?.args;
+        const pktDispatch = rawDispatch?.delegationPacket;
+        if (pktDispatch && typeof pktDispatch.lane === "string" && pktDispatch.lane === "worktree") {
+          const rr = directory ?? worktree ?? project?.worktree ?? ".";
+          rememberWorktreeLaneForDelegation(pktDispatch, input.sessionID, rr);
+        }
+      } catch {}
+      try {
+        await enforceWorktreeLaneBeforeHook(input, output);
+      } catch (e) {
+        throw e;
+      }
+      try {
         if (config2.termination?.enabled !== false && delegatedSessionIds.has(input.sessionID)) {
           const entry = completionSignals.get(input.sessionID);
           if (entry) {
@@ -21086,6 +22671,57 @@ ${truncated}`, synthetic: true }] }
         const authorized = await authorizeLifecycleSession(client, input.sessionID);
         if (!authorized) {
           throw new Error("Beads lifecycle packets are allowed only from an identified primary session.");
+        }
+      }
+      let manifestRefusal;
+      if (delegation?.valid && input.tool === "task") {
+        try {
+          const rawArgs = output?.args;
+          const packet0 = rawArgs?.delegationPacket;
+          if (packet0 && typeof packet0.issueId === "string" && isValidBeadID(packet0.issueId.trim())) {
+            const issueId = packet0.issueId.trim();
+            const repoRoot = directory ?? worktree ?? project?.worktree ?? ".";
+            try {
+              const disp = await manifestOnDispatch({ repoRoot, issueId, packet: packet0 });
+              if (disp.injected) {
+                rawArgs.delegationPacket = disp.packet;
+                appLog("info", `manifest onDispatch injected row for ${issueId}`, { issueId, wave: disp.wave });
+              }
+            } catch (e) {
+              safeWarn(appLog, `manifest onDispatch failed: ${String(e)}`);
+            }
+            try {
+              const curPacket = rawArgs.delegationPacket;
+              const filt = await manifestMessageFilter({ repoRoot, issueId, packet: curPacket });
+              if (filt.filtered) {
+                rawArgs.delegationPacket = filt.packet;
+                appLog("info", `manifest messageFilter stripped ${filt.stripped?.length} files for ${issueId}`, { issueId, stripped: filt.stripped });
+              }
+              if (filt.refused)
+                manifestRefusal = filt.refused;
+            } catch (e) {
+              safeWarn(appLog, `manifest messageFilter failed: ${String(e)}`);
+            }
+          }
+        } catch (e) {
+          safeWarn(appLog, `manifest hooks (dispatch/filter) failed: ${String(e)}`);
+        }
+      }
+      if (manifestRefusal)
+        throw new Error(manifestRefusal);
+      if (input.tool === "task" && config2.recursion?.enabled !== false) {
+        try {
+          const rawRec = output?.args;
+          const pktRec = rawRec?.delegationPacket;
+          const issueIdRec = pktRec && typeof pktRec.issueId === "string" && isValidBeadID(pktRec.issueId.trim()) ? pktRec.issueId.trim() : null;
+          const check2 = checkSpawnAllowed(input.sessionID, issueIdRec, config2.recursion);
+          if (!check2.allowed) {
+            appLog("warn", `tgo-wpl: spawn blocked — ${check2.reason}`, { sessionID: input.sessionID, issueId: issueIdRec, depth: check2.depth });
+            throw new Error(`Delegation blocked: ${check2.reason}`);
+          }
+          recordDispatch(input.sessionID, issueIdRec);
+        } catch (e) {
+          throw e;
         }
       }
       if (delegation?.valid && input.tool === "task") {
@@ -21142,7 +22778,7 @@ ${truncated}`, synthetic: true }] }
             let seatFileFound = false;
             try {
               const seatDir2 = resolveAgentsDir({ agentDir: config2.agentDir });
-              const p = path17.join(seatDir2, `${seatName}.md`);
+              const p = path23.join(seatDir2, `${seatName}.md`);
               try {
                 const fsMod = await import("node:fs/promises");
                 seatFrontmatter = await fsMod.readFile(p, "utf-8");
@@ -21177,6 +22813,16 @@ ${truncated}`, synthetic: true }] }
           throw e;
         }
       }
+      try {
+        if (delegation?.valid && input.tool === "task") {
+          const rawArgs2 = output?.args;
+          const pkt2 = rawArgs2?.delegationPacket;
+          if (pkt2) {
+            const rr2 = directory ?? worktree ?? project?.worktree ?? ".";
+            rememberWorktreeLaneForDelegation(pkt2, input.sessionID, rr2);
+          }
+        }
+      } catch {}
       const background = output?.args != null && typeof output.args === "object" && output.args.background === true;
       watchdog.noteToolStart(input.sessionID, background, input.tool, output?.args);
       (async () => {
@@ -21383,10 +23029,53 @@ ${truncated}`, synthetic: true }] }
       if (reuseCapability.supported) {
         await captureDelegationSession({ tool: input.tool, input, output, repoRoot: directory ?? worktree ?? project?.worktree ?? ".", enabled: config2.sessionReuse?.enabled !== false, log: appLog });
       }
+      try {
+        if (input.tool === "task") {
+          const repoRootWt = directory ?? worktree ?? project?.worktree ?? ".";
+          const argsRecWt = input.args;
+          const packetWt = argsRecWt?.delegationPacket;
+          if (packetWt && typeof packetWt.issueId === "string" && packetWt.lane === "worktree") {
+            const issueIdWt = packetWt.issueId.trim();
+            if (issueIdWt && isValidBeadID(issueIdWt)) {
+              let childSidWt;
+              const metaWt = output?.metadata;
+              if (metaWt && typeof metaWt.sessionId === "string" && metaWt.sessionId.trim())
+                childSidWt = metaWt.sessionId.trim();
+              if (!childSidWt) {
+                const outTextWt = typeof output?.output === "string" ? output.output : "";
+                const mWt = outTextWt.match(/ses_[A-Za-z0-9]+/);
+                if (mWt)
+                  childSidWt = mWt[0];
+              }
+              if (childSidWt && /^ses_[A-Za-z0-9]+$/.test(childSidWt)) {
+                await captureWorktreeLaneForChildSession(childSidWt, issueIdWt, repoRootWt);
+              }
+            }
+          }
+        }
+      } catch {}
       if (input.tool === "task" && typeof output?.output === "string") {
-        const report = parseTaskReport(output.output);
+        let report = parseTaskReport(output.output);
         if (output && typeof output === "object") {
           const metadata = output.metadata && typeof output.metadata === "object" ? output.metadata : {};
+          let effectiveArgsForManifest;
+          try {
+            effectiveArgsForManifest = input.args && typeof input.args === "object" ? input.args : undefined;
+            const pktForManifest = effectiveArgsForManifest?.delegationPacket && typeof effectiveArgsForManifest.delegationPacket === "object" ? effectiveArgsForManifest.delegationPacket : undefined;
+            const issueIdForManifest = pktForManifest && typeof pktForManifest.issueId === "string" ? String(pktForManifest.issueId).trim() : undefined;
+            if (issueIdForManifest && isValidBeadID(issueIdForManifest)) {
+              const repoRoot = directory ?? worktree ?? project?.worktree ?? ".";
+              const mc = await manifestOnComplete({ repoRoot, issueId: issueIdForManifest, report });
+              if (mc.bail) {
+                report = mc.report;
+                appLog("warn", `manifest scope mismatch → bail for ${issueIdForManifest}`, { issueId: issueIdForManifest, mismatch: mc.mismatchFiles });
+              }
+              if (mc.warning)
+                appLog("warn", mc.warning, { issueId: issueIdForManifest });
+            }
+          } catch (e) {
+            safeWarn(appLog, `manifest onComplete failed: ${String(e)}`);
+          }
           output.metadata = { ...metadata, specialistReport: report };
           const args = input.args && typeof input.args === "object" ? input.args : {};
           const packet = args.delegationPacket && typeof args.delegationPacket === "object" ? args.delegationPacket : {};
@@ -21537,6 +23226,15 @@ ${truncated}`, synthetic: true }] }
       heartbeatIntervals.clear();
       sessionToRunId.clear();
       runToolStarts.clear();
+      try {
+        worktreeLaneBySession.clear();
+      } catch {}
+      try {
+        pendingWorktreeLaneByIssue.clear();
+      } catch {}
+      try {
+        pendingWorktreeLaneByParentSession.clear();
+      } catch {}
     }
   };
 };

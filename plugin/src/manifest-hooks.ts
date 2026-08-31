@@ -8,6 +8,8 @@
 
 import { readManifest, getManifestRowSyncFromManifest, normalizeScopePath, type ManifestBead } from "./manifest";
 import { isValidBeadID } from "./def-snapshot";
+import * as fs from "node:fs/promises";
+import * as path from "node:path";
 import { parseTaskReport, type ParsedReport } from "./report";
 
 // ---------------------------------------------------------------------------
@@ -96,6 +98,10 @@ function extractTouchedFilesFromReport(report: ParsedReport): string[] {
   for (const raw of parts) {
     const trimmed = raw.trim().replace(/^-\s*/, "").trim();
     if (trimmed.length === 0) continue;
+    if (trimmed.endsWith(":")) continue;
+    const lower = trimmed.toLowerCase();
+    if (lower === "none" || lower === "none." || lower === "n/a") continue;
+    if (!trimmed.includes("/") && /^[A-Za-z0-9_.-]+$/.test(trimmed) && /[-.]\d/.test(trimmed) && trimmed.length <= 12) continue;
     // heuristic: token contains slash or dot, or ends with known extension
     // but also accept bare filenames like "value.ts"
     const candidates = trimmed.split(/\s+/).filter(Boolean);
@@ -114,6 +120,34 @@ function extractTouchedFilesFromReport(report: ParsedReport): string[] {
   // dedupe and normalize via canonical paths (G1)
   return [...new Set(tokens.map(normalizeScopePath).filter(Boolean))];
 }
+
+async function extractTouchedFilesFromRunLog(repoRoot: string, issueId: string): Promise<string[] | undefined> {
+  try {
+    const target = path.join(repoRoot, ".tgo", "runs", issueId + ".jsonl");
+    const raw = await fs.readFile(target, "utf-8");
+    const touched: string[] = [];
+    for (const line of raw.split("\n")) {
+      if (!line.trim()) continue;
+      let ev: { tool?: unknown; cmd?: unknown } | null = null;
+      try { ev = JSON.parse(line as string) as { tool?: unknown; cmd?: unknown }; } catch { continue; }
+      if (!ev || typeof ev.tool !== "string") continue;
+      const tool = ev.tool.toLowerCase();
+      if (tool !== "edit" && tool !== "write" && tool !== "multiedit") continue;
+      if (typeof ev.cmd !== "string" || !ev.cmd.trim()) continue;
+      const norm = normalizeScopePath(ev.cmd.trim());
+      if (norm) touched.push(norm);
+    }
+    return [...new Set(touched)];
+  } catch {
+    return undefined;
+  }
+}
+
+function reportClaimsEdits(changes: unknown): boolean {
+  if (typeof changes !== "string" || changes.trim().length === 0) return false;
+  return /(edit|modif|chang|writ|updat)/i.test(changes);
+}
+
 
 function toBailReport(original: ParsedReport, mismatchFiles: string[]): ParsedReport {
   // Preserve original fields but override taxonomy to bail (terminal, not retry)
@@ -136,6 +170,7 @@ function toBailReport(original: ParsedReport, mismatchFiles: string[]): ParsedRe
 }
 
 export interface ManifestCompleteCheck {
+  warning?: string;
   bail: boolean;
   report: ParsedReport;
   mismatchFiles?: string[];
@@ -167,8 +202,20 @@ export async function manifestOnComplete(opts: {
   if (!found) return { bail: false, report };
   const { bead } = found;
   const scopeSet = new Set(bead.scope.map(normalizeScopePath));
-  const touched = touchedFiles !== undefined ? [...new Set(touchedFiles.map(normalizeScopePath).filter(Boolean))] : extractTouchedFilesFromReport(report);
-  if (touched.length === 0) return { bail: false, report, row: bead };
+  const effectiveTouched = touchedFiles ?? await extractTouchedFilesFromRunLog(repoRoot, issueId);
+  const touchedSet: string[] = [];
+  const srcFiles = effectiveTouched !== undefined ? effectiveTouched : extractTouchedFilesFromReport(report);
+  for (const f2 of srcFiles) {
+    const nf = normalizeScopePath(f2);
+    if (nf && !touchedSet.includes(nf)) touchedSet.push(nf);
+  }
+  const touched = [...new Set(touchedSet)];
+  if (touched.length === 0) {
+    const warning = reportClaimsEdits(report!.fields.CHANGES) ?
+      "manifest onComplete: report claims changes but extracted zero touched files — cannot verify scope compliance (UNVERIFIABLE"
+      : undefined;
+    return { bail: false, report, row: bead, warning };
+  }
   const mismatch = touched.filter((f) => !scopeSet.has(f));
   if (mismatch.length === 0) return { bail: false, report, row: bead };
   const bailed = toBailReport(report, mismatch);
@@ -188,8 +235,19 @@ export function manifestOnCompleteSync(opts: {
   if (!found) return { bail: false, report };
   const { bead } = found;
   const scopeSet = new Set(bead.scope.map(normalizeScopePath));
-  const touched = touchedFiles !== undefined ? [...new Set(touchedFiles.map(normalizeScopePath).filter(Boolean))] : extractTouchedFilesFromReport(report);
-  if (touched.length === 0) return { bail: false, report, row: bead };
+  const touchedSet: string[] = [];
+  const srcFiles = touchedFiles !== undefined ? touchedFiles : extractTouchedFilesFromReport(report);
+  for (const f2 of srcFiles) {
+    const nf = normalizeScopePath(f2);
+    if (nf && !touchedSet.includes(nf)) touchedSet.push(nf);
+  }
+  const touched = [...new Set(touchedSet)];
+  if (touched.length === 0) {
+    const warning = reportClaimsEdits(report!.fields.CHANGES) ?
+      "manifest onComplete: report claims changes but extracted zero touched files — cannot verify scope compliance (UNVERIFIABLE"
+      : undefined;
+    return { bail: false, report, row: bead, warning };
+  }
   const mismatch = touched.filter((f) => !scopeSet.has(f));
   if (mismatch.length === 0) return { bail: false, report, row: bead };
   return { bail: true, report: toBailReport(report, mismatch), mismatchFiles: mismatch, row: bead };
@@ -200,6 +258,7 @@ export function manifestOnCompleteSync(opts: {
 // ---------------------------------------------------------------------------
 
 export interface ManifestFilterResult {
+  refused?: string;
   filtered: boolean;
   packet: Record<string, unknown>;
   stripped?: string[];
@@ -234,6 +293,10 @@ export async function manifestMessageFilter(opts: {
   const original = files.filter((f) => typeof f === "string") as string[];
   const kept = original.filter((f) => scopeSet.has(normalizeScopePath(f as string)));
   const stripped = original.filter((f) => !scopeSet.has(normalizeScopePath(f as string)));
+  if (original.length > 0 && kept.length === 0) {
+    return { filtered: false, packet,
+      refused: `manifest scope for ${issueId} excludes all listed files — refusing dispatch (plan error)` };
+  }
   if (stripped.length === 0) return { filtered: false, packet };
   const next = { ...packet, Files: kept };
   return { filtered: true, packet: next, stripped };
@@ -254,6 +317,10 @@ export function manifestMessageFilterSync(opts: {
   const original = files.filter((f) => typeof f === "string") as string[];
   const kept = original.filter((f) => scopeSet.has(normalizeScopePath(f)));
   const stripped = original.filter((f) => !scopeSet.has(normalizeScopePath(f)));
+  if (original.length > 0 && kept.length === 0) {
+    return { filtered: false, packet,
+      refused: `manifest scope for ${issueId} excludes all listed files — refusing dispatch (plan error)` };
+  }
   if (stripped.length === 0) return { filtered: false, packet };
   return { filtered: true, packet: { ...packet, Files: kept }, stripped };
 }

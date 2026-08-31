@@ -10,7 +10,7 @@ import { parseTaskReport } from "./report";
 import { SetupController } from "./setup";
 import { preapproveExternalDirectory, resolveWorktreeFamily } from "./permissions";
 import { DEPENDENCIES, installMissing, runShellCommand } from "./deps";
-import { applyPreset, readPresetNudge, resolveActivePreset } from "./presets";
+import { applyPreset, readPresetNudge, resolveActivePreset, resolveSeatModels } from "./presets";
 import { validateDelegationBoundary, validateDelegationPacket, verifyClaimObserved as verifyDelegationClaimObserved } from "./delegation";
 import { captureDelegationSession, probeSessionReuseCapability, persistAbortHandback, loadSessionMap } from "./session-reuse";
 import { ensureDefSnapshot, isValidBeadID, assertValidBeadID } from "./def-snapshot";
@@ -52,6 +52,13 @@ import { computeMetrics, writeMetrics, readMetrics } from "./metrics";
 // tgo-dw5: manifest + hooks — additive, clearly-named (crowded hook path)
 import { planManifest, MANIFEST_REL_PATH, ManifestScopeConflictError } from "./manifest";
 import { manifestOnDispatch, manifestOnComplete, manifestMessageFilter } from "./manifest-hooks";
+// tgo-wpl: spawn depth cap + cycle detection
+import { recordDispatch, onChildCreated, onSessionDeleted, checkSpawnAllowed } from "./recursion";
+// tgo-ccl: step replay — prose invocation, isolated step reconstruction
+import { replayStep, parseReplayIntent, formatReplayResult } from "./replay";
+// tgo-4wq: convoys — wave grouping + ordered landing
+import { landConvoy, markWaveComplete, initConvoy, CONVOY_STATE_REL } from "./convoy";
+import { checkCloseGate } from "./exitgate/close-gate";
 // No runtime function re-exports here: opencode's legacy plugin loader calls
 // EVERY exported function as a plugin factory (input, options), so an entry
 // re-export like evaluateClosure gets invoked as one and throws inside the
@@ -192,6 +199,17 @@ export const TgoPlugin: Plugin = async (
   });
 
   const reconciler = new SessionReconciler({ shim: board.shimState });
+
+  // tgo-5em: cost surface — active-preset seat→model mapping (advisory).
+  // Resolved once at load; a later preset nudge takes effect on next reload.
+  if (config.cost?.enabled !== false) {
+    try {
+      const costPreset = resolveActivePreset(config, await readPresetNudge(runBd, appLog));
+      board.setCostGetter(() => resolveSeatModels(costPreset, config.presets));
+    } catch (e) {
+      safeWarn(appLog, "tgo: cost surface init failed", { error: String(e) });
+    }
+  }
 
   const concision = new ConcisionController({
     enabled: config.concision?.enabled,
@@ -671,6 +689,87 @@ export const TgoPlugin: Plugin = async (
           }
         },
       }),
+      // tgo-4wq: landing entry point — validate state, run exit gates, merge wave worktrees in defined order.
+      tgo_land_convoy: tool({
+        description: "Land a convoy: validate .tgo/convoy/.state.json, run per-bead exit-gate checks, then merge wave worktrees in wave order. Primary-seat only. Pass completedIssueIds (comma-separated) to mark complete before landing.",
+        args: {
+          completedIssueIds: tool.schema.string().optional(),
+        },
+        async execute(args, context) {
+          const repoRoot = directory ?? worktree ?? (project as unknown as { worktree?: string })?.worktree ?? ".";
+          const authorized = await authorizeLifecycleSession(client, context.sessionID);
+          if (!authorized) throw new Error("tgo_land_convoy is primary-seat only — delegated seats cannot land convoys");
+          const rawIds = String((args as Record<string, unknown>).completedIssueIds ?? "").trim();
+          const ids = rawIds ? rawIds.split(",").map((s) => s.trim()).filter(Boolean) : [];
+          if (ids.length > 0) {
+            try { await markWaveComplete(repoRoot, ids); } catch (e) {
+              throw new Error(`mark complete failed: ${String(e)}`);
+            }
+          }
+          const mergeBranch = async (branch: string): Promise<{ ok: boolean; err?: string }> => {
+            try {
+              const proc = Bun.spawn(["git", "merge", "--no-ff", "-m", `tgo-convoy: land ${branch}`, branch], { cwd: repoRoot, stdout: "pipe", stderr: "pipe" });
+              const code = await proc.exited;
+              const stderr = await new Response(proc.stderr).text();
+              return { ok: code === 0, err: stderr.trim().slice(0, 400) };
+            } catch (e) {
+              return { ok: false, err: String(e) };
+            }
+          };
+          const result = await landConvoy(repoRoot, {
+            gateCheck: async (issueId) => {
+              let specText = "";
+              try { specText = await runBd(`bd show ${issueId} --json`); } catch {}
+              try {
+                const g = await checkCloseGate(repoRoot, issueId, specText);
+                if (!g.allowed) return { ok: false, reason: "exit gate blocked" };
+              } catch (e) {
+                return { ok: false, reason: `gate check failed: ${String(e)}` };
+              }
+              return { ok: true };
+            },
+            mergeWorktree: async (_wave, beadIssueIds) => {
+              for (const id of beadIssueIds) {
+                const m = await mergeBranch(worktreeBranchForIssue(id));
+                if (!m.ok) throw new Error(`merge failed for ${id} (${worktreeBranchForIssue(id)}): ${m.err ?? "unknown"}`);
+              }
+            },
+          });
+          try { board.invalidate(context.sessionID); } catch {}
+          if (!result.landed) return `convoy landing aborted: ${result.reason}`;
+          return `convoy landed (waves [${result.mergedWaves.join(", ")}])`;
+        },
+      }),
+      // tgo-4wq: convoy creation — write .tgo/convoy/.state.json (validated; scopeHash computed).
+      tgo_init_convoy: tool({
+        description: "Create/overwrite a convoy state file at .tgo/convoy/.state.json. Input convoyJson is {goal, remainingBudget, waves:[{wave,beads:[{issueId,scope:[...]}]}]}. Validated (max 3 waves, scopeHash computed from scopes). Primary-seat only.",
+        args: {
+          convoyJson: tool.schema.string(),
+        },
+        async execute(args, context) {
+          const repoRoot = directory ?? worktree ?? (project as unknown as { worktree?: string })?.worktree ?? ".";
+          const authorized = await authorizeLifecycleSession(client, context.sessionID);
+          if (!authorized) throw new Error("tgo_init_convoy is primary-seat only");
+          const raw = String((args as Record<string, unknown>).convoyJson ?? "").trim();
+          if (!raw) throw new Error("convoyJson is required and must be a valid JSON string");
+          let parsed: unknown;
+          try { parsed = JSON.parse(raw); } catch (e) {
+            throw new Error(`invalid JSON for convoyJson: ${String(e)}`);
+          }
+          const c = parsed as { goal?: unknown; remainingBudget?: unknown; waves?: unknown };
+          try {
+            const state = await initConvoy(repoRoot, {
+              goal: String(c.goal ?? ""),
+              remainingBudget: Number(c.remainingBudget),
+              waves: (c.waves ?? []) as never,
+            });
+            try { board.invalidate(context.sessionID); } catch {}
+            return `convoy written: ${CONVOY_STATE_REL} (${state.waves.length} waves, scope ${state.scopeHash})`;
+          } catch (e) {
+            throw new Error(`CONVOY_INVALID: ${String(e)}`);
+          }
+        },
+      }),
     },
     event: async ({ event }) => {
       if (event.type === "message.part.updated") {
@@ -733,6 +832,9 @@ export const TgoPlugin: Plugin = async (
         try {
           if (info.id) terminationParentIds.set(info.id, info.parentID ?? undefined);
         } catch {}
+        try {
+          if (info.id && info.parentID) onChildCreated(info.id, info.parentID);
+        } catch {}
         void handleSessionCreated(event.properties.info);
       } else if (event.type === "session.deleted") {
         const deletedInfo = (event.properties as { info?: { id?: string }; sessionID?: string; id?: string })?.info;
@@ -742,7 +844,10 @@ export const TgoPlugin: Plugin = async (
           try { completionSignals.delete(deletedId); } catch {}
           try { terminationParentIds.delete(deletedId); } catch {}
           try { worktreeLaneBySession.delete(deletedId); } catch {}
-          // Also remove any pending issue that was mapped to this session? (pending is by issue, not session, so keep)
+          // G3: also clear pending parent-session lane mapping so stale entries don't misbind later dispatches
+          try { pendingWorktreeLaneByParentSession.delete(deletedId); } catch {}
+          // tgo-wpl: release recursion depth/cycle maps
+          try { onSessionDeleted(deletedId); } catch {}
           // F3 cleanup mapping + heartbeat
           try {
             const runId = sessionToRunId.get(deletedId);
@@ -854,6 +959,25 @@ export const TgoPlugin: Plugin = async (
           .map((p) => (p as { text?: string }).text ?? "")
           .join("\n")
           .trim();
+        // --- tgo-ccl: step replay — prose invocation ("replay <runId> step <N>") ---
+        if (rawText.length > 0) {
+          try {
+            const intent = parseReplayIntent(rawText);
+            if (intent) {
+              const result = await replayStep(repoRoot, intent.runId, intent.stepIndex);
+              const summary = `tgo: ${formatReplayResult(result)}`;
+              appLog("info", `tgo: ${formatReplayResult(result)}`, { runId: intent.runId, stepIndex: intent.stepIndex });
+              try {
+                await client.session.prompt({
+                  path: { id: input.sessionID },
+                  body: { parts: [{ type: "text", text: summary, synthetic: true }] },
+                });
+              } catch {}
+            }
+          } catch (e) {
+            safeWarn(appLog, "tgo: step replay invocation failed", { error: String((e as Error)?.message ?? e) });
+          }
+        }
         if (rawText.length > 0) {
           // Gather candidates: session-specific if exists, else all suspended awaits for cross-session check
           let issueId: string | undefined;
@@ -1028,6 +1152,14 @@ export const TgoPlugin: Plugin = async (
           rememberWorktreeLaneForDelegation(pktDispatch, input.sessionID, rr);
         }
       } catch {}
+      // G3 reorder: worktree lane enforcement FIRST — lane blocks must win over the
+      // termination guard (a lane-violating call must be refused even if a completion
+      // signal is pending; otherwise the residual-call guard masks the violation).
+      try {
+        await enforceWorktreeLaneBeforeHook(input, output as { args: unknown });
+      } catch (e) {
+        throw e;
+      }
       // termination: residual waffle guard — abort the next tool after completion declared
       try {
         if (config.termination?.enabled !== false && delegatedSessionIds.has(input.sessionID)) {
@@ -1064,12 +1196,7 @@ export const TgoPlugin: Plugin = async (
           }
         }
       } catch {}
-      // ── Worktree lane auto-enforcement (tgo-bh0) — zero overhead when lane not set ──
-      try {
-        await enforceWorktreeLaneBeforeHook(input, output as { args: unknown });
-      } catch (e) {
-        throw e;
-      }
+      // ── Worktree lane enforcement moved ABOVE the termination guard (G3 reorder) ──
       const args = output?.args;
       const delegation = input.tool === "task" ? validateDelegationBoundary(args) : undefined;
       if (delegation && !delegation.valid) {
@@ -1083,6 +1210,7 @@ export const TgoPlugin: Plugin = async (
         }
       }
       // tgo-dw5: manifest onDispatch + messageFilter — additive, zero-overhead when missing (crowded hook path: clearly-named)
+      let manifestRefusal: string | undefined;
       if (delegation?.valid && input.tool === "task") {
         try {
           const rawArgs = output?.args as Record<string, unknown> | undefined;
@@ -1108,12 +1236,31 @@ export const TgoPlugin: Plugin = async (
                 (rawArgs as Record<string, unknown>).delegationPacket = filt.packet;
                 appLog("info", `manifest messageFilter stripped ${filt.stripped?.length} files for ${issueId}`, { issueId, stripped: filt.stripped });
               }
+              if (filt.refused) manifestRefusal = filt.refused;
             } catch (e) {
               safeWarn(appLog, `manifest messageFilter failed: ${String(e)}`);
             }
           }
         } catch (e) {
           safeWarn(appLog, `manifest hooks (dispatch/filter) failed: ${String(e)}`);
+        }
+      }
+      if (manifestRefusal) throw new Error(manifestRefusal);
+      // tgo-wpl: hard gate on spawn depth + cycle — AFTER soft shaping (rewrite/filter precedes deny).
+      // Host-side throw, not prompt-honor: a model cannot bypass depth/cycle refusal.
+      if (input.tool === "task" && config.recursion?.enabled !== false) {
+        try {
+          const rawRec = output?.args as Record<string, unknown> | undefined;
+          const pktRec = rawRec?.delegationPacket as Record<string, unknown> | undefined;
+          const issueIdRec = pktRec && typeof pktRec.issueId === "string" && isValidBeadID((pktRec.issueId as string).trim()) ? (pktRec.issueId as string).trim() : null;
+          const check = checkSpawnAllowed(input.sessionID, issueIdRec, config.recursion);
+          if (!check.allowed) {
+            appLog("warn", `tgo-wpl: spawn blocked — ${check.reason}`, { sessionID: input.sessionID, issueId: issueIdRec, depth: check.depth });
+            throw new Error(`Delegation blocked: ${check.reason}`);
+          }
+          recordDispatch(input.sessionID, issueIdRec);
+        } catch (e) {
+          throw e;
         }
       }
       // Host-code delegation snapshot at dispatch — immutable, atomic tmp+rename, write-once (conductor-oss pattern)
@@ -1475,6 +1622,7 @@ export const TgoPlugin: Plugin = async (
                 report = mc.report;
                 appLog("warn", `manifest scope mismatch → bail for ${issueIdForManifest}`, { issueId: issueIdForManifest, mismatch: mc.mismatchFiles });
               }
+              if (mc.warning) appLog("warn", mc.warning, { issueId: issueIdForManifest });
             }
           } catch (e) {
             safeWarn(appLog, `manifest onComplete failed: ${String(e)}`);

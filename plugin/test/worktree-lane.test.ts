@@ -2,7 +2,8 @@ import { describe, test, expect } from "bun:test";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as os from "node:os";
-import { mkdtempSync, rmSync, existsSync } from "node:fs";
+import * as fsSyncUtil from "node:fs";
+import { mkdtempSync, rmSync, existsSync, readdirSync } from "node:fs";
 import {
   worktreeBranchForIssue,
   worktreePathForIssue,
@@ -188,6 +189,10 @@ describe("ensureWorktreeExists idempotency with mocks", () => {
         await fs.writeFile(path.join(worktreePath, ".git"), "gitdir: /tmp/fake", "utf-8");
         return { exitCode: 0, stdout: "", stderr: "" };
       }
+      if (args[0] === "git" && args[1] === "worktree" && args[2] === "list") {
+        // G2: answer porcelain so post-create verification succeeds
+        return { exitCode: 0, stdout: `worktree ${worktreePath}\n`, stderr: "" };
+      }
       return { exitCode: 0, stdout: "", stderr: "" };
     };
     const exists = async (p: string) => {
@@ -217,6 +222,8 @@ describe("ensureWorktreeExists idempotency with mocks", () => {
     const issueId = "tgo-abc";
     const worktreePath = worktreePathForIssue(repoRoot, issueId);
     await fs.mkdir(worktreePath, { recursive: true });
+    // G2: a valid lane worktree has a .git FILE — bare mkdir is now REJECTED (not clobbered), so make this test's dir a real worktree-shaped dir
+    await fs.writeFile(path.join(worktreePath, ".git"), "gitdir: /tmp/fake", "utf-8");
     const runGit = async () => {
       throw new Error("should not be called when exists");
     };
@@ -244,10 +251,14 @@ describe("ensureWorktreeExists idempotency with mocks", () => {
     let lastArgs: string[] | undefined;
     const runGit = async (args: string[], cwd: string) => {
       if (args[1] === "show-ref") return { exitCode: 0, stdout: "exists", stderr: "" };
-      if (args[1] === "worktree" && args[2] === "add") {
+      if (args[0] === "git" && args[1] === "worktree" && args[2] === "add") {
         lastArgs = args;
         await fs.mkdir(worktreePath, { recursive: true });
         return { exitCode: 0, stdout: "", stderr: "" };
+      }
+      if (args[0] === "git" && args[1] === "worktree" && args[2] === "list") {
+        // G2: answer porcelain so post-create verification succeeds
+        return { exitCode: 0, stdout: `worktree ${worktreePath}\n`, stderr: "" };
       }
       return { exitCode: 0, stdout: "", stderr: "" };
     };
@@ -417,5 +428,78 @@ describe("worktree lane matrix — plugin hook enforcement", () => {
     // No worktree should have been created for arbitrary issue
     expect(existsSync(path.join(tmpParent, "tgo-123-lane"))).toBe(false);
     rmSync(tmpParent, { recursive: true, force: true });
+  });
+});
+
+describe("G2 worktree lane hardening", () => {
+  test("bare existing directory is NOT treated as a valid worktree — refuses without clobbering", async () => {
+    const dir = tmpDir();
+    const repoRoot = path.join(dir, "repo");
+    await fs.mkdir(repoRoot, { recursive: true });
+    const issueId = "tgo-bare";
+    const worktreePath = worktreePathForIssue(repoRoot, issueId);
+    await fs.mkdir(worktreePath, { recursive: true });
+    const runGit = async () => ({ exitCode: 1, stdout: "", stderr: "git not available" });
+    const exists = async (_p: string) => { try { await fs.stat(_p); return true; } catch { return false; } };
+    await expect(ensureWorktreeExists({ repoRoot, issueId, runGit, exists })).rejects.toThrow(/not a registered git worktree/);
+    // The stray directory must remain untouched
+    expect(existsSync(worktreePath)).toBe(true);
+    expect(readdirSync(worktreePath).length).toBe(0);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("realpath containment blocks symlink escape from worktree", async () => {
+    const dir = tmpDir();
+    const worktreePath = path.join(dir, "lane-wt");
+    const outsidePath = path.join(dir, "outside");
+    await fs.mkdir(worktreePath, { recursive: true });
+    await fs.mkdir(outsidePath, { recursive: true });
+    await fs.writeFile(path.join(outsidePath, "victim.txt"), "x");
+    // Symlink INSIDE the worktree pointing OUTSIDE it
+    try { await fs.symlink(outsidePath, path.join(worktreePath, "escape"), "dir"); } catch {}
+    expect(isPathInsideWorktree(path.join(worktreePath, "escape", "victim.txt"), worktreePath)).toBe(false);
+    expect(isPathInsideWorktree(path.join(worktreePath, "escape"), worktreePath)).toBe(false);
+    expect(isPathInsideWorktree(path.join(worktreePath, "normal.txt"), worktreePath)).toBe(true);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("multi-edit: EVERY edit's filePath must be inside the worktree", () => {
+    const dir = tmpDir();
+    const worktreePath = path.join(dir, "lane-wt");
+    fsSyncUtil.mkdirSync(worktreePath, { recursive: true });
+    const res = shouldBlockOutsideWorktree({
+      tool: "edit",
+      args: { filePath: path.join(worktreePath, "a.ts"), edits: [{ filePath: path.join(worktreePath, "b.ts") }, { filePath: path.join(dir, "OUTSIDE.ts") }] },
+      worktreePath,
+      repoRoot: dir,
+    });
+    expect(res.block).toBe(true);
+    expect(res.target).toContain("OUTSIDE.ts");
+    // All-inside passes
+    const ok = shouldBlockOutsideWorktree({
+      tool: "edit",
+      args: { filePath: path.join(worktreePath, "a.ts"), edits: [{ filePath: path.join(worktreePath, "b.ts") }] },
+      worktreePath,
+      repoRoot: dir,
+    });
+    expect(ok.block).toBe(false);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+
+  test("porcelain-driven idempotency: unregistered dir exists → throw; registered entry → created:false", async () => {
+    const dir = tmpDir();
+    const repoRoot = path.join(dir, "repo");
+    await fs.mkdir(repoRoot, { recursive: true });
+    const issueId = "tgo-reg";
+    const worktreePath = worktreePathForIssue(repoRoot, issueId);
+    await fs.mkdir(worktreePath, { recursive: true });
+    await fs.writeFile(path.join(worktreePath, ".git"), "gitdir: /tmp/fake", "utf-8");
+    const porcelain = `worktree ${worktreePath}\nHEAD abc123\nbranch refs/heads/tgo/tgo-reg-lane\n`;
+    const runGit = async (args: string[]) =>
+      args[1] === "worktree" && args[2] === "list" ? { exitCode: 0, stdout: porcelain, stderr: "" } : { exitCode: 0, stdout: "", stderr: "" };
+    const res = await ensureWorktreeExists({ repoRoot, issueId, runGit, exists: async () => true });
+    expect(res.created).toBe(false);
+    rmSync(dir, { recursive: true, force: true });
   });
 });

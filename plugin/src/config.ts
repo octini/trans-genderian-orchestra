@@ -112,6 +112,15 @@ const metricsConfig = z.object({
   enabled: z.boolean().default(true),
 });
 
+const recursionConfig = z.object({
+  enabled: z.boolean().default(true),
+  maxDepth: z.number().int().positive().default(4),
+});
+
+const costConfig = z.object({
+  enabled: z.boolean().default(true),
+});
+
 export const tgoConfigSchema = z.object({
   preset: z.enum(PRESET_NAMES).default("balanced"),
   presets: z
@@ -145,6 +154,8 @@ export const tgoConfigSchema = z.object({
     heartbeatThresholdMs: 5 * 60 * 1000,
   })),
   metrics: metricsConfig.optional().default(() => ({ enabled: true })),
+  recursion: recursionConfig.optional().default(() => ({ enabled: true, maxDepth: 4 })),
+  cost: costConfig.optional().default(() => ({ enabled: true })),
 });
 
 export type TgoConfig = z.infer<typeof tgoConfigSchema>;

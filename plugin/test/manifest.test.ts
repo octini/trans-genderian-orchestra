@@ -600,3 +600,47 @@ describe("delegation helpers — additive", () => {
     expect(stripped).toEqual(["src/b.ts", "src/c.ts"]);
   });
 });
+
+
+describe("G3 manifest cache", () => {
+  test("readManifest returns cached object across reads", async () => {
+    const dir = await mkTmpRepo();
+    const m = { waves: [{ wave: 1, beads: [{ issueId: "tgo-g3c", story: "s", scope: ["src/a.ts"], parallelSet: "1", deps: [] }] }] };
+    await planManifest(dir, m);
+    const first = await readManifest(dir);
+    const second = await readManifest(dir);
+    const same = (first === second);
+    if (!same) throw new Error("G3 cache: readManifest returned different objects");
+    await fs.rm(dir, { recursive: true, force: true });
+  });
+});
+
+describe("G3 manifest filter refusal", () => {
+  test("messageFilter refuses when scope excludes ALL files", async () => {
+    const dir = await mkTmpRepo();
+    const m = { waves: [{ wave: 1, beads: [{ issueId: "tgo-g3r", story: "s", scope: ["src/a.ts"], parallelSet: "2", deps: [] }] }] };
+    await planManifest(dir, m);
+    const filt = await manifestMessageFilter({ repoRoot: dir, issueId: "tgo-g3r", packet: { Files: ["src/x.ts", "lib/y.ts"] } });
+    if (!filt.refused) throw new Error("G3 refusal: expected refused flag");
+    if (!filt.refused.includes("tgo-g3r")) throw new Error("G3 refusal: message should interpolate issueId");
+    await fs.rm(dir, { recursive: true, force: true });
+  });
+});
+
+
+describe("G3 manifest run-log source", () => {
+  test("onComplete derives touched files from run log when present", async () => {
+    const dir = await mkTmpRepo();
+    const m = { waves: [{ wave: 1, beads: [{ issueId: "tgo-g3l", story: "s", scope: ["src/a.ts"], parallelSet: "3", deps: [] }] }] };
+    await planManifest(dir, m);
+    await fs.mkdir(path.join(dir, ".tgo", "runs"), { recursive: true });
+    await fs.writeFile(path.join(dir, ".tgo", "runs", "tgo-g3l.jsonl"), "{\"ts\":1,\"type\":\"step\",\"tool\":\"edit\",\"cmd\":\"src/a.ts\"}", "utf-8");
+    const r = parseTaskReport("STATUS: complete\nCHANGES:\n- src/out.txt");
+    const mc = await manifestOnComplete({ repoRoot: dir, issueId: "tgo-g3l", report: r });
+    if (mc.bail) throw new Error("G3 runlog: expected no bail for in-scope edit");
+    await fs.writeFile(path.join(dir, ".tgo", "runs", "tgo-g3l.jsonl"), "{\"ts\":3,\"type\":\"step\",\"tool\":\"write\",\"cmd\":\"lib/bad.ts\"}", "utf-8");
+    const mc2 = await manifestOnComplete({ repoRoot: dir, issueId: "tgo-g3l", report: r });
+    if (!mc2.bail) throw new Error("G3 runlog: expected bail for out-of-scope write");
+    await fs.rm(dir, { recursive: true, force: true });
+  });
+});

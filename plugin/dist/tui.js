@@ -14648,7 +14648,7 @@ function safeWarn(log, message, extra) {
     log("warn", message, extra);
   } catch {}
 }
-var BD_ENV, SEATS, PRESET_NAMES, modelRef, seatPreset, boardConfig, concisionConfig, setupConfig, watchdogConfig, sessionReuseConfig, terminationConfig, selfUpdateConfig, runsConfig, metricsConfig, tgoConfigSchema;
+var BD_ENV, SEATS, PRESET_NAMES, modelRef, seatPreset, boardConfig, concisionConfig, setupConfig, watchdogConfig, sessionReuseConfig, terminationConfig, selfUpdateConfig, runsConfig, metricsConfig, recursionConfig, costConfig, tgoConfigSchema;
 var init_config = __esm(() => {
   init_zod();
   BD_ENV = {
@@ -14716,6 +14716,13 @@ var init_config = __esm(() => {
   metricsConfig = exports_external.object({
     enabled: exports_external.boolean().default(true)
   });
+  recursionConfig = exports_external.object({
+    enabled: exports_external.boolean().default(true),
+    maxDepth: exports_external.number().int().positive().default(4)
+  });
+  costConfig = exports_external.object({
+    enabled: exports_external.boolean().default(true)
+  });
   tgoConfigSchema = exports_external.object({
     preset: exports_external.enum(PRESET_NAMES).default("balanced"),
     presets: exports_external.object({
@@ -14746,7 +14753,9 @@ var init_config = __esm(() => {
       maxFiles: 200,
       heartbeatThresholdMs: 5 * 60 * 1000
     })),
-    metrics: metricsConfig.optional().default(() => ({ enabled: true }))
+    metrics: metricsConfig.optional().default(() => ({ enabled: true })),
+    recursion: recursionConfig.optional().default(() => ({ enabled: true, maxDepth: 4 })),
+    cost: costConfig.optional().default(() => ({ enabled: true }))
   });
 });
 
