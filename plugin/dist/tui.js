@@ -14648,7 +14648,7 @@ function safeWarn(log, message, extra) {
     log("warn", message, extra);
   } catch {}
 }
-var BD_ENV, SEATS, PRESET_NAMES, modelRef, seatPreset, boardConfig, concisionConfig, setupConfig, watchdogConfig, sessionReuseConfig, terminationConfig, selfUpdateConfig, runsConfig, metricsConfig, recursionConfig, costConfig, tgoConfigSchema;
+var BD_ENV, SEATS, PRESET_NAMES, modelRef, seatPreset, boardConfig, styleConfig, setupConfig, watchdogConfig, sessionReuseConfig, terminationConfig, selfUpdateConfig, runsConfig, metricsConfig, recursionConfig, costConfig, tgoConfigSchema;
 var init_config = __esm(() => {
   init_zod();
   BD_ENV = {
@@ -14681,7 +14681,8 @@ var init_config = __esm(() => {
     enabled: exports_external.boolean().default(true),
     refreshMs: exports_external.number().int().positive().default(5000)
   });
-  concisionConfig = exports_external.object({
+  styleConfig = exports_external.object({
+    card: exports_external.enum(["default", "prose", "conversational"]).default("default"),
     enabled: exports_external.boolean().default(true),
     reinforcement: exports_external.boolean().default(false)
   });
@@ -14730,11 +14731,10 @@ var init_config = __esm(() => {
       cheap: seatPreset.optional(),
       frontier: seatPreset.optional()
     }).optional(),
-    register: exports_external.enum(["concise", "natural"]).default("concise"),
+    style: styleConfig.optional().default(() => ({ card: "default", enabled: true, reinforcement: false })),
     agentDir: exports_external.string().optional(),
     checkVersion: exports_external.boolean().default(true),
     board: boardConfig.optional().default(() => ({ enabled: true, refreshMs: 5000 })),
-    concision: concisionConfig.optional().default(() => ({ enabled: true, reinforcement: false })),
     setup: setupConfig.optional().default(() => ({ enabled: true, autoInstallBeads: true })),
     watchdog: watchdogConfig.optional().default(() => ({
       enabled: true,

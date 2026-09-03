@@ -14715,7 +14715,7 @@ async function validateAgentDir(agentDir, log) {
   }
   return checked;
 }
-var MAX_PROMPT_TOKENS = 1000, BD_ENV, SEATS, PRESET_NAMES, modelRef, seatPreset, boardConfig, concisionConfig, setupConfig, watchdogConfig, sessionReuseConfig, terminationConfig, selfUpdateConfig, runsConfig, metricsConfig, recursionConfig, costConfig, tgoConfigSchema;
+var MAX_PROMPT_TOKENS = 1000, BD_ENV, SEATS, PRESET_NAMES, modelRef, seatPreset, boardConfig, styleConfig, setupConfig, watchdogConfig, sessionReuseConfig, terminationConfig, selfUpdateConfig, runsConfig, metricsConfig, recursionConfig, costConfig, tgoConfigSchema;
 var init_config = __esm(() => {
   init_zod();
   BD_ENV = {
@@ -14748,7 +14748,8 @@ var init_config = __esm(() => {
     enabled: exports_external.boolean().default(true),
     refreshMs: exports_external.number().int().positive().default(5000)
   });
-  concisionConfig = exports_external.object({
+  styleConfig = exports_external.object({
+    card: exports_external.enum(["default", "prose", "conversational"]).default("default"),
     enabled: exports_external.boolean().default(true),
     reinforcement: exports_external.boolean().default(false)
   });
@@ -14797,11 +14798,10 @@ var init_config = __esm(() => {
       cheap: seatPreset.optional(),
       frontier: seatPreset.optional()
     }).optional(),
-    register: exports_external.enum(["concise", "natural"]).default("concise"),
+    style: styleConfig.optional().default(() => ({ card: "default", enabled: true, reinforcement: false })),
     agentDir: exports_external.string().optional(),
     checkVersion: exports_external.boolean().default(true),
     board: boardConfig.optional().default(() => ({ enabled: true, refreshMs: 5000 })),
-    concision: concisionConfig.optional().default(() => ({ enabled: true, reinforcement: false })),
     setup: setupConfig.optional().default(() => ({ enabled: true, autoInstallBeads: true })),
     watchdog: watchdogConfig.optional().default(() => ({
       enabled: true,
@@ -16298,6 +16298,22 @@ init_def_snapshot();
 init_progress();
 import * as fs5 from "node:fs/promises";
 import * as path5 from "node:path";
+var STYLE_VALUES = ["default", "prose", "conversational"];
+var styleQuestionSuspendSchema = {
+  type: "object",
+  properties: {
+    style: { type: "string", enum: [...STYLE_VALUES] },
+    reason: { type: "string" }
+  },
+  required: ["style", "reason"]
+};
+var styleQuestionResumeSchema = {
+  type: "object",
+  properties: {
+    style: { type: "string", enum: [...STYLE_VALUES] }
+  },
+  required: ["style"]
+};
 function awaitJsonPath(repoRoot, issueId) {
   assertValidBeadID(issueId);
   return path5.join(repoRoot, ".tgo", issueId, "await.json");
@@ -17927,99 +17943,335 @@ ${BOARD_SENTINEL_END}`;
 }
 
 // src/concision.ts
-import * as fs13 from "node:fs/promises";
-import * as path13 from "node:path";
-import { fileURLToPath as fileURLToPath3 } from "node:url";
-
-// src/build.ts
 init_config();
+
+// src/voices.ts
+init_zod();
 import * as fs12 from "node:fs/promises";
 import * as path12 from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
-var packageRoot = path12.resolve(path12.dirname(fileURLToPath2(import.meta.url)), "..");
-var HOUSE_STYLE_SLOT = "{{TGO_HOUSE_STYLE}}";
-var REGISTER_SLOT = "{{TGO_REGISTER}}";
-var AGENTS_MARKER_BEGIN = "<!-- TGO: thin always-on advice layer";
-var AGENTS_MARKER_END = "<!-- END TGO advice layer -->";
-async function loadHouseStyle() {
-  const file2 = path12.join(packageRoot, "assets", "house-style.md");
-  return fs12.readFile(file2, "utf-8");
+var voiceCardIdSchema = exports_external.enum(["tgo-default", "tgo-prose", "tgo-conversational"]);
+var metaSchema = exports_external.object({
+  display_name: exports_external.string().min(1),
+  attribution: exports_external.string().min(1),
+  exemplar_source: exports_external.string().optional(),
+  notes: exports_external.string().optional()
+});
+var sentenceBucketsSchema = exports_external.object({
+  short_1_10w: exports_external.number().int().min(0).max(100).optional(),
+  medium_11_24w: exports_external.number().int().min(0).max(100).optional(),
+  long_25w_plus: exports_external.number().int().min(0).max(100).optional()
+});
+var steThresholdsSchema = exports_external.object({
+  instruction: exports_external.number().int().positive().optional(),
+  descriptive: exports_external.number().int().positive().optional()
+});
+var syntaxTargetsSchema = exports_external.object({
+  sentence_buckets_by_count: sentenceBucketsSchema.optional(),
+  mean_words: exports_external.number().optional(),
+  median_words: exports_external.number().optional(),
+  p90_words: exports_external.number().optional(),
+  max_words: exports_external.number().int().positive().optional(),
+  long_formation: exports_external.string().optional(),
+  ste_thresholds: steThresholdsSchema.optional()
+});
+var punctuationBudgetsSchema = exports_external.object({
+  em_dash_per_100w_max: exports_external.number().optional(),
+  em_dash_cluster_flag: exports_external.number().int().optional(),
+  sentence_initial_transitions_per_paragraph_max: exports_external.number().int().optional(),
+  transitions_exempt_from_flagging: exports_external.array(exports_external.string()).optional(),
+  one_device_per_sentence: exports_external.boolean().optional()
+});
+var rhythmRulesSchema = exports_external.object({
+  paragraph_head_discipline: exports_external.string().optional(),
+  length_bias: exports_external.enum(["short", "medium", "long"]).optional(),
+  variance_follows_emphasis: exports_external.boolean().optional(),
+  no_metronome_alternation: exports_external.boolean().optional(),
+  linked_clause_requires_verb: exports_external.boolean().optional(),
+  fragments: exports_external.string().optional()
+});
+var antiPatternsThresholdsSchema = exports_external.object({
+  hedge_stack_max: exports_external.number().int().optional(),
+  hidden_actor_flag: exports_external.string().optional(),
+  rule_of_three_cluster: exports_external.number().int().optional(),
+  synonym_cycle_window_sentences: exports_external.number().int().optional(),
+  novelty_inflation_flag: exports_external.string().optional(),
+  false_balance_flag: exports_external.string().optional()
+}).passthrough();
+var antiPatternsSchema = exports_external.object({
+  refs: exports_external.array(exports_external.string()).optional(),
+  strictness: exports_external.enum(["low", "medium", "high"]).optional(),
+  thresholds: antiPatternsThresholdsSchema.optional()
+});
+var controlsSchema = exports_external.object({
+  off_switch: exports_external.string().optional(),
+  exemplar_injection_max: exports_external.number().int().min(0).optional(),
+  exemplar_selection: exports_external.string().optional(),
+  closer: exports_external.string().optional()
+});
+var voiceInvariantsSchema = exports_external.object({
+  tone: exports_external.string().optional(),
+  diction: exports_external.string().optional(),
+  syntax_targets: syntaxTargetsSchema.optional(),
+  punctuation_budgets: punctuationBudgetsSchema.optional(),
+  rhythm_rules: rhythmRulesSchema.optional(),
+  perspective: exports_external.string().optional(),
+  anti_patterns: antiPatternsSchema.optional(),
+  controls: controlsSchema.optional()
+});
+var templateSchema = exports_external.object({
+  shape: exports_external.string().min(1),
+  moves: exports_external.array(exports_external.string()),
+  constraints: exports_external.array(exports_external.string()).optional()
+});
+var arcRepertoireSchema = exports_external.object({
+  templates: exports_external.array(templateSchema).optional()
+});
+var exemplarSchema = exports_external.object({
+  shape: exports_external.string().min(1),
+  person: exports_external.enum(["first", "second", "third"]),
+  first_line: exports_external.string().min(1),
+  last_line: exports_external.string().min(1),
+  text: exports_external.string().min(1)
+});
+function estimateVoiceTokens(text) {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  const words = normalized.length === 0 ? 0 : normalized.split(" ").length;
+  const punctuation = (normalized.match(/[^\w\s]/g) ?? []).length;
+  return Math.ceil(words + punctuation * 0.25);
 }
-async function loadAgentsFragment() {
-  const file2 = path12.join(packageRoot, "assets", "AGENTS.fragment.md");
-  return fs12.readFile(file2, "utf-8");
-}
-function foldHouseStyle(template, houseStyle, register = "concise") {
-  if (!template.includes(HOUSE_STYLE_SLOT))
-    return template;
-  return template.replace(HOUSE_STYLE_SLOT, houseStyle.trim()).replace(new RegExp(REGISTER_SLOT, "g"), register);
-}
-async function renderSeats(sourceDir, register = "concise") {
-  const houseStyle = await loadHouseStyle();
-  const files = await fs12.readdir(sourceDir).catch((err) => {
-    console.warn(`tgo: renderSeats readdir failed: ${String(err)}`, { sourceDir });
-    return [];
-  });
-  const seats = [];
-  for (const file2 of files) {
-    if (!file2.endsWith(".md"))
-      continue;
-    const template = await fs12.readFile(path12.join(sourceDir, file2), "utf-8");
-    const content = foldHouseStyle(template, houseStyle, register);
-    assertPromptUnderBudget(content, file2);
-    seats.push({ fileName: file2, content });
+function renderFold(card) {
+  const v = card.voice_invariants;
+  const parts = [];
+  parts.push("## TGO house style — active every turn");
+  parts.push("");
+  const structure = v.perspective ?? "use active voice. Put condition before command. Use one action per numbered step and complete instructional sentences. Start with the action; restate the state; use no preamble or closer.";
+  parts.push(`- Structure — ${structure}`);
+  const proseCore = "compress style, never substance. Drop articles only in scan-oriented fragments, not instructional sentences. Preserve qualifiers, negations, numbers, units, identifiers, commands, errors, and explanations needed for correctness, safety, or ambiguity handling. Keep code verbatim. Never invent facts. Use project's own language (ubiquitous language).";
+  parts.push(`- Prose — ${proseCore}`);
+  if (card.id === "tgo-default" && !v.diction?.includes("judge by clusters")) {
+    throw new Error(`renderFold: card ${card.id} diction missing "judge by clusters" — refusing degraded fallback; expected full banned-tell vocabulary`);
   }
-  return seats;
-}
-async function mergeAgentsFragment(configDir) {
-  const fragment = await loadAgentsFragment();
-  const dest = path12.join(configDir, "AGENTS.md");
-  let existing = "";
-  try {
-    existing = await fs12.readFile(dest, "utf-8");
-  } catch {}
-  if (existing.includes(AGENTS_MARKER_BEGIN)) {
-    return { action: "unchanged" };
+  const bannedShort = "Banned tells (judge by clusters, not isolated instances — one however is fine, a run of AI-isms is not): filler, AI-vocab (utilize, leverage, delve, showcase, landscape, testament), marketing adjectives (seamless, robust, cutting-edge, effortless, world-class), pomposities (commence, initiate, furthermore, moreover), adverbs (really, just, literally, truly), modal hedges (it is important to note), rule-of-three, not X, it's Y, synonym-cycling, passive voice, em-dash spam, throat-clearing, chatbot closers (Hope this helps), diff-anchored narration.";
+  parts.push(`- ${bannedShort}`);
+  const code = v.controls?.closer ?? "smallest working change; never cut tests or errors; report code first.";
+  const codeSnippet = code.split(";")[0] ?? code;
+  parts.push(`- Code — ${codeSnippet.trim()}; never cut tests, error handling, or security checks to save space; report code first.`);
+  parts.push(`- Self-audit — re-read before delivering; cut or rewrite any banned tell without dropping information.`);
+  parts.push(`- Off-switch: ${v.controls?.off_switch ?? "stop X / normal mode"} turns this layer off. Break these only when following them breaks correctness.`);
+  parts.push(`- Plain-english: abstract-noun subjects banned; circumlocution swaps due to the fact that→because, at this point in time→now, in order to→to; modal ladder should is hedge — use must or state as fact; no sycophancy; priors: Plain Language (ISO 24495-1), Strunk & White, The Elements of Style.`);
+  const text = parts.join(`
+`);
+  if (estimateVoiceTokens(text) > 250) {
+    let candidate = parts.slice(0, -1).join(`
+`);
+    if (estimateVoiceTokens(candidate) <= 250)
+      return candidate;
+    const words = text.split(/\s+/);
+    return words.slice(0, 190).join(" ");
   }
-  const wrapped = `${fragment.trim()}
-${AGENTS_MARKER_END}
-`;
-  const next = existing.trimEnd() ? `${existing.trimEnd()}
+  return text;
+}
+function renderStyleOverride(card) {
+  if (card.id === "tgo-default")
+    return "";
+  const v = card.voice_invariants;
+  const parts = [];
+  parts.push(`## TGO voice delta — ${card.id} (layered on default; default spine still applies)`);
+  parts.push("");
+  if (v.tone)
+    parts.push(`- Tone delta: ${v.tone}.`);
+  if (v.diction) {
+    const snippet = v.diction.length > 160 ? v.diction.slice(0, 160).trim() + "…" : v.diction;
+    parts.push(`- Diction delta: ${snippet}`);
+  }
+  if (v.perspective)
+    parts.push(`- Perspective: ${v.perspective}`);
+  const r = v.rhythm_rules;
+  if (r) {
+    const bits = [];
+    if (r.paragraph_head_discipline)
+      bits.push(r.paragraph_head_discipline);
+    if (r.length_bias)
+      bits.push(`length bias ${r.length_bias}`);
+    if (r.fragments)
+      bits.push(r.fragments);
+    if (bits.length)
+      parts.push(`- Rhythm: ${bits.join("; ")}.`);
+  }
+  const st = v.syntax_targets;
+  if (st?.sentence_buckets_by_count) {
+    const b = st.sentence_buckets_by_count;
+    parts.push(`- Syntax targets: buckets ${b.short_1_10w}/${b.medium_11_24w}/${b.long_25w_plus}, mean ${st.mean_words} median ${st.median_words} p90 ${st.p90_words} max ${st.max_words} (${st.long_formation ?? "paratactic addition"}).`);
+  }
+  const pb = v.punctuation_budgets;
+  if (pb) {
+    parts.push(`- Punctuation: em-dash ${pb.em_dash_per_100w_max ?? "n/a"}/100w cluster ${pb.em_dash_cluster_flag ?? "n/a"}, transitions ${pb.sentence_initial_transitions_per_paragraph_max ?? "n/a"}/para, one device per sentence ${pb.one_device_per_sentence ?? true}.`);
+  }
+  const arc = card.arc_repertoire?.templates;
+  if (arc?.length) {
+    const shapes = arc.map((t) => t.shape).join(", ");
+    parts.push(`- Arc repertoire (shape-tagged, 1–2 only): ${shapes}.`);
+  }
+  const ap = v.anti_patterns;
+  if (ap) {
+    const refs = (ap.refs ?? []).join(", ");
+    parts.push(`- Anti-patterns: strictness ${ap.strictness ?? "medium"}; refs [${refs}].`);
+  }
+  if (v.controls?.closer)
+    parts.push(`- Closer: ${v.controls.closer}`);
+  const text = parts.join(`
+`);
+  const tokens = estimateVoiceTokens(text);
+  if (tokens > 200) {
+    let candidate = text;
+    while (estimateVoiceTokens(candidate) > 200 && candidate.split(/\s+/).length > 20) {
+      const w = candidate.split(/\s+/);
+      candidate = w.slice(0, w.length - 6).join(" ");
+    }
+    return candidate;
+  }
+  return text;
+}
+function renderInstruction(card) {
+  const v = card.voice_invariants;
+  const parts = [];
+  parts.push("## TGO house style — active every turn");
+  parts.push("");
+  parts.push("This is the amalgamated always-on style layer. It applies to every response in this session, every turn. Follow it unless following it would break correctness (a security warning, an irreversible confirmation, an ambiguity-prone sequence must stay full and clear).");
+  parts.push("");
+  const perspective = v.perspective ?? "use active voice. Put a controlling condition before its command. Use one action per numbered step and complete instructional sentences. Start with the action; restate the current state; use no preamble, closer, or throat-clearing.";
+  parts.push(`- Structure — ${perspective}`);
+  const diction = v.diction ?? "";
+  parts.push(`- Prose — ${diction}`);
+  const controls = v.controls?.closer ?? "smallest working change (YAGNI); never cut tests, error handling, or security checks to save space; code-first reporting (show the change, then the one-line why).";
+  parts.push(`- Code (inert if you produce none) — ${controls}`);
+  parts.push("");
+  const off = v.controls?.off_switch ?? "stop X / normal mode";
+  parts.push(`Off-switch: "${off}" turns this whole layer off. Break these rules when following them breaks correctness.`);
+  const ste = v.syntax_targets?.ste_thresholds ? `STE thresholds: instruction ${v.syntax_targets.ste_thresholds.instruction}, descriptive ${v.syntax_targets.ste_thresholds.descriptive}.` : "";
+  const rhythm = v.rhythm_rules?.paragraph_head_discipline ? `Rhythm: ${v.rhythm_rules.paragraph_head_discipline}; ${v.rhythm_rules.fragments ?? ""}` : "";
+  const punct = v.punctuation_budgets?.em_dash_per_100w_max !== undefined ? `Punctuation budgets: em-dash max ${v.punctuation_budgets.em_dash_per_100w_max}/100w, cluster flag ${v.punctuation_budgets.em_dash_cluster_flag}, one device per sentence ${v.punctuation_budgets.one_device_per_sentence}.` : "";
+  if (ste || rhythm || punct) {
+    parts.push("");
+    if (ste)
+      parts.push(ste);
+    if (rhythm)
+      parts.push(rhythm);
+    if (punct)
+      parts.push(punct);
+  }
+  const text = parts.join(`
+`);
+  const tokens = estimateVoiceTokens(text);
+  if (tokens < 300) {
+    return text + `
 
-${wrapped}` : wrapped;
-  await fs12.mkdir(configDir, { recursive: true });
-  await fs12.writeFile(dest, next, "utf-8");
-  return { action: existing ? "appended" : "created" };
+Priors reaffirmed: Plain Language (ISO 24495-1) demands concrete subjects, short sentences, and defined terms; Strunk & White, The Elements of Style demands active verbs, concise diction, and omission of needless words.`;
+  }
+  if (tokens > 500) {
+    const words = text.split(/\s+/);
+    return words.slice(0, Math.max(0, words.length - 20)).join(" ");
+  }
+  return text;
 }
-if (false) {}
+async function loadVoiceCard(cardId = "tgo-default") {
+  const id = cardId.startsWith("tgo-") ? cardId : `tgo-${cardId}`;
+  const packageRoot = path12.resolve(path12.dirname(fileURLToPath2(import.meta.url)), "..");
+  const file2 = path12.join(packageRoot, "assets", "voices", `${id}.json`);
+  const raw = JSON.parse(await fs12.readFile(file2, "utf-8"));
+  return voiceCardSchema.parse(raw);
+}
+var voiceCardSchema = exports_external.object({
+  $schema: exports_external.string().optional(),
+  id: voiceCardIdSchema,
+  version: exports_external.string().regex(/^\d+\.\d+\.\d+$/),
+  meta: metaSchema,
+  voice_invariants: voiceInvariantsSchema,
+  arc_repertoire: arcRepertoireSchema,
+  exemplars: exports_external.array(exemplarSchema)
+});
+var rulePatternSchema = exports_external.object({
+  kind: exports_external.enum(["regex"]),
+  value: exports_external.string().min(1),
+  flags: exports_external.string().optional()
+});
+var ruleFamilySchema = exports_external.object({
+  name: exports_external.string().min(1),
+  patterns: exports_external.array(rulePatternSchema),
+  severity: exports_external.enum(["low", "medium", "high", "none"]).optional(),
+  basis: exports_external.enum(["cluster", "repeated-signal", "strong-evidence"]).optional(),
+  thresholds: exports_external.record(exports_external.string(), exports_external.unknown()).optional()
+});
+var rulePackSchema = exports_external.object({
+  $schema: exports_external.string().optional(),
+  id: exports_external.string().min(1),
+  tier: exports_external.number().int().min(1).max(3),
+  false_positive_risk: exports_external.enum(["low", "medium", "high"]),
+  gating: exports_external.enum(["always-on", "whitelist", "cluster"]),
+  families: exports_external.array(ruleFamilySchema)
+});
 
 // src/concision.ts
-init_config();
-var packageRoot2 = path13.resolve(path13.dirname(fileURLToPath3(import.meta.url)), "..");
-async function loadConcisionInstruction() {
-  const file2 = path13.join(packageRoot2, "assets", "concision-instruction.md");
-  return fs13.readFile(file2, "utf-8");
+async function loadVoiceCard2(cardId = "default") {
+  return loadVoiceCard(cardId);
 }
-async function buildConcisionInstruction(register = "concise") {
-  const template = await loadConcisionInstruction();
-  return template.replace(new RegExp(REGISTER_SLOT, "g"), register);
+async function buildVoiceInstruction(cardId = "default") {
+  const card = await loadVoiceCard2(cardId);
+  return renderInstruction(card);
+}
+async function buildVoiceOverride(cardId) {
+  const card = await loadVoiceCard2(cardId);
+  const override = renderStyleOverride(card);
+  if (override) {
+    const tokens = estimateVoiceTokens(override);
+    if (tokens > 200)
+      throw new Error(`voice override for ${cardId} exceeds 200 tokens: ${tokens}`);
+  }
+  return override;
 }
 var DEFAULT_CONCISION_ENABLED = true;
 
 class ConcisionController {
   enabled;
-  register;
+  cardId;
   primaryCache = new Map;
   instruction;
+  defaultInstruction;
+  overrideInstruction;
+  overrideCardId;
   log;
   constructor(opts) {
     this.enabled = opts.enabled ?? DEFAULT_CONCISION_ENABLED;
-    this.register = opts.register ?? "concise";
+    const legacy = opts.register;
+    if (opts.cardId !== undefined)
+      this.cardId = opts.cardId;
+    else if (typeof legacy === "string" && ["default", "prose", "conversational"].includes(legacy))
+      this.cardId = legacy;
+    else if (typeof legacy === "string")
+      this.cardId = "default";
+    else
+      this.cardId = "default";
     this.log = opts.log;
   }
   async buildInstruction() {
-    this.instruction ??= await buildConcisionInstruction(this.register);
+    this.instruction ??= await buildVoiceInstruction(this.cardId);
     return this.instruction;
+  }
+  async buildDefaultInstruction() {
+    this.defaultInstruction ??= await buildVoiceInstruction("default");
+    return this.defaultInstruction;
+  }
+  async buildOverrideInstruction() {
+    const normalized = this.cardId.startsWith("tgo-") ? this.cardId : `tgo-${this.cardId}`;
+    if (normalized === "tgo-default")
+      return;
+    if (this.overrideCardId === this.cardId && this.overrideInstruction !== undefined)
+      return this.overrideInstruction;
+    const ov = await buildVoiceOverride(this.cardId);
+    this.overrideCardId = this.cardId;
+    this.overrideInstruction = ov || undefined;
+    return this.overrideInstruction;
   }
   async isPrimary(client, sessionID) {
     const cached2 = this.primaryCache.get(sessionID);
@@ -18041,6 +18293,9 @@ class ConcisionController {
   reset() {
     this.primaryCache.clear();
     this.instruction = undefined;
+    this.defaultInstruction = undefined;
+    this.overrideInstruction = undefined;
+    this.overrideCardId = undefined;
   }
   async transform(client, input, output) {
     if (!this.enabled)
@@ -18049,33 +18304,26 @@ class ConcisionController {
       return false;
     if (!await this.isPrimary(client, input.sessionID))
       return false;
-    const instruction = await this.buildInstruction();
-    if (instruction)
-      output.system.push(instruction);
+    const defaultInstruction = await this.buildDefaultInstruction();
+    if (defaultInstruction)
+      output.system.push(defaultInstruction);
+    const override = await this.buildOverrideInstruction();
+    if (override)
+      output.system.push(override);
     return true;
   }
 }
 
 // src/drift.ts
-var families = {
-  "AI-vocabulary": [/\b(?:utilize|leverage|delve|showcase|landscape)\b/gi],
-  marketing: [/\b(?:seamless|robust|world-class|cutting-edge)\b/gi],
-  filler: [/\b(?:basically|actually|simply|in order to)\b/gi, /\b(?:it is important to note|here(?:'|’)s the thing)\b/gi],
-  adverb: [/\b(?:really|very|just|literally|truly|clearly|obviously)\b/gi],
-  "modal-hedge": [/\b(?:might|may|perhaps|arguably)\b/gi, /\b(?:I think|in my opinion|it seems)\b/gi],
-  pompous: [/\b(?:commence|furthermore|moreover)\b/gi],
-  closer: [/Hope this helps/gi, /Let me know if you need anything/gi],
-  "rule-of-three": [/(?:(?:first|second|third)\b)/gi, /\b\w+\s*,\s*\w+\s*,\s*(?:and|or)\s+\w+/gi],
-  "not-x-it-is-y": [/(?:^|[.!?]\s+)Not\s+(?!(?:only|just|sure|certain|clear|necessarily|really|today|tomorrow)\b)[^.!?,\n]+,\s*it(?:'|’)s\s+[^.!?,\n]+/g],
-  "synonym-cycling": [/\b(?:fix|resolve|address|solve|correct)\b/gi],
-  "hidden-actor": [/\b(?:is|are|was|were|be|been|being)\s+(?:\w+ly\s+)?\w+ed(?:\s+by)?\b/gi],
-  "em-dash-spam": [/—/g],
-  "diff-anchored-narration": [/\b(?:line|lines)\s+\d+\b/gi, /\b(?:hunk|diff|patch)\b/gi]
-};
+import * as fs13 from "node:fs";
+import * as path13 from "node:path";
+import { fileURLToPath as fileURLToPath3 } from "node:url";
 var STE_INSTRUCTION_THRESHOLD = 20;
 var STE_DESCRIPTIVE_THRESHOLD = 25;
 var instructionPrefix = /^\s*(?:\d+[\.)]\s*|(?:Run|Restart|Set|Check|Verify|Use|Install|Retry|Changed|Ran|Result|Do not|Never|Keep|Clear|If|When|Create|Dispatch|Verify)\b)/i;
-function countSteViolations(candidate, mode) {
+function countSteViolations(candidate, mode, thresholds) {
+  const instr = thresholds?.instruction ?? STE_INSTRUCTION_THRESHOLD;
+  const desc = thresholds?.descriptive ?? STE_DESCRIPTIVE_THRESHOLD;
   const words = candidate.trim() ? candidate.trim().split(/\s+/).filter(Boolean).length : 0;
   const applicable = mode === "tool-heavy";
   if (!applicable || words === 0)
@@ -18085,7 +18333,7 @@ function countSteViolations(candidate, mode) {
   let violations = 0;
   for (const sentence of sentenceList.length ? sentenceList : candidate.trim() ? [candidate.trim()] : []) {
     const sentenceWords = sentence.split(/\s+/).filter(Boolean).length;
-    const threshold = instructionPrefix.test(sentence) ? STE_INSTRUCTION_THRESHOLD : STE_DESCRIPTIVE_THRESHOLD;
+    const threshold = instructionPrefix.test(sentence) ? instr : desc;
     if (sentenceWords > threshold)
       violations++;
   }
@@ -18103,6 +18351,186 @@ var masked = (text, spans) => {
         chars[i] = " ";
   return chars.join("");
 };
+var packageRoot = path13.resolve(path13.dirname(fileURLToPath3(import.meta.url)), "..");
+var loadedPacks = [];
+var loadedFamilies = [];
+var packLoadError = null;
+function loadPacksSync() {
+  const ids = ["mechanics", "concision", "voice-cadence"];
+  const packs = [];
+  const families = [];
+  for (const id of ids) {
+    const file2 = path13.join(packageRoot, "assets", "rule-packs", `${id}.json`);
+    let raw;
+    try {
+      raw = JSON.parse(fs13.readFileSync(file2, "utf-8"));
+    } catch (e) {
+      throw new Error(`drift: failed to read pack ${id}: ${String(e)}`);
+    }
+    const parsed = rulePackSchema.parse(raw);
+    const fam = parsed.families.map((f) => ({
+      name: f.name,
+      packId: parsed.id,
+      tier: parsed.tier,
+      gating: parsed.gating,
+      severity: f.severity ?? "low",
+      basis: f.basis ?? (parsed.gating === "always-on" ? "strong-evidence" : "cluster"),
+      patterns: f.patterns.map((p) => new RegExp(p.value, p.flags ?? "")),
+      thresholds: f.thresholds ?? {}
+    }));
+    packs.push({ id: parsed.id, tier: parsed.tier, gating: parsed.gating, families: fam });
+    families.push(...fam);
+  }
+  loadedPacks = packs;
+  loadedFamilies = families;
+}
+try {
+  loadPacksSync();
+} catch (e) {
+  packLoadError = String(e);
+  console.warn(`drift: pack load failed: ${packLoadError}`);
+}
+var voiceCardCache = new Map;
+function normalizeCardId(id) {
+  const withPrefix = id.startsWith("tgo-") ? id : `tgo-${id}`;
+  if (withPrefix.startsWith("tgo-test-"))
+    return withPrefix;
+  if (["tgo-default", "tgo-prose", "tgo-conversational"].includes(withPrefix))
+    return withPrefix;
+  return "tgo-default";
+}
+function getVoiceCardSync(cardId) {
+  const normalized = normalizeCardId(cardId);
+  const cached2 = voiceCardCache.get(normalized);
+  if (cached2)
+    return cached2;
+  const file2 = path13.join(packageRoot, "assets", "voices", `${normalized}.json`);
+  const raw = JSON.parse(fs13.readFileSync(file2, "utf-8"));
+  const parsed = voiceCardSchema.parse(raw);
+  voiceCardCache.set(normalized, parsed);
+  return parsed;
+}
+function resolveCardId(input) {
+  if (input.cardId)
+    return normalizeCardId(input.cardId);
+  const legacy = input.register;
+  if (legacy === "concise" || legacy === "natural") {
+    return "tgo-default";
+  }
+  return "tgo-default";
+}
+function getSteThresholds(card) {
+  const st = card?.voice_invariants.syntax_targets?.ste_thresholds;
+  return {
+    instruction: st?.instruction ?? STE_INSTRUCTION_THRESHOLD,
+    descriptive: st?.descriptive ?? STE_DESCRIPTIVE_THRESHOLD
+  };
+}
+function isFamilyIncluded(card, family) {
+  const refs = card.voice_invariants.anti_patterns?.refs ?? [];
+  if (refs.length === 0)
+    return false;
+  if (refs.includes(family.packId))
+    return true;
+  if (refs.includes(family.name))
+    return true;
+  return false;
+}
+function parseThresholdNumber(value) {
+  if (typeof value === "number")
+    return value;
+  if (typeof value === "string") {
+    const m = value.match(/(\d+(?:\.\d+)?)/);
+    if (m)
+      return parseFloat(m[1]);
+  }
+  return;
+}
+function getThresholdValue(family, card, key) {
+  const cardThresholds = card.voice_invariants.anti_patterns?.thresholds ?? {};
+  if (key === "em_dash_per_100w_max") {
+    const v = card.voice_invariants.punctuation_budgets?.em_dash_per_100w_max;
+    if (v !== undefined)
+      return v;
+  }
+  if (key in cardThresholds)
+    return cardThresholds[key];
+  if (family.thresholds && key in family.thresholds)
+    return family.thresholds[key];
+  return;
+}
+function getRequiredCount(family, card) {
+  const map2 = {
+    "hedge-stacks": "hedge_stack_max",
+    "passive-hidden-actor": "hidden_actor_flag",
+    "rule-of-three": "rule_of_three_cluster",
+    "synonym-cycling": "synonym_cycle_window_sentences",
+    "novelty-inflation": "novelty_inflation_flag",
+    "false-balance": "false_balance_flag",
+    "em-dash-budgets": "em_dash_per_100w_max"
+  };
+  const key = map2[family.name];
+  if (key) {
+    const val = getThresholdValue(family, card, key);
+    if (val !== undefined) {
+      if (key === "hedge_stack_max") {
+        const n3 = parseThresholdNumber(val);
+        if (n3 !== undefined)
+          return n3 + 1;
+      }
+      const n2 = parseThresholdNumber(val);
+      if (n2 !== undefined) {
+        if (key === "em_dash_per_100w_max")
+          return -1;
+        return n2;
+      }
+    }
+  }
+  const clusterMin = getThresholdValue(family, card, "cluster_min") ?? family.thresholds.cluster_min;
+  const n = parseThresholdNumber(clusterMin);
+  if (n !== undefined)
+    return n;
+  return family.tier === 3 ? 2 : 1;
+}
+function thresholdsNotMet(family, basis, spans, card, candidateWords) {
+  if (family.name === "em-dash-budgets") {
+    const rawMax = getThresholdValue(family, card, "em_dash_per_100w_max") ?? 0.5;
+    const max = typeof rawMax === "number" ? rawMax : parseThresholdNumber(rawMax) ?? 0.5;
+    const count = spans.length;
+    const words = candidateWords || 1;
+    const per100w = count / words * 100;
+    if (per100w <= max) {
+      const clusterFlag2 = getThresholdValue(family, card, "em_dash_cluster_flag") ?? family.thresholds.em_dash_cluster_flag ?? 2;
+      const flag2 = parseThresholdNumber(clusterFlag2) ?? 2;
+      if (count < flag2)
+        return true;
+      return true;
+    }
+    const clusterFlag = getThresholdValue(family, card, "em_dash_cluster_flag") ?? family.thresholds.em_dash_cluster_flag ?? 2;
+    const flag = parseThresholdNumber(clusterFlag) ?? 2;
+    if (count < flag)
+      return true;
+    return false;
+  }
+  const required2 = getRequiredCount(family, card);
+  if (required2 === -1)
+    return false;
+  return spans.length < required2;
+}
+function getCardSuppression(family, basis, spans, input, card, candidateWords) {
+  if (family.tier === 1)
+    return { suppressed: false };
+  if (!isFamilyIncluded(card, family))
+    return { suppressed: true, reason: "card marks family non-applicable" };
+  const strictness = card.voice_invariants.anti_patterns?.strictness;
+  if (strictness === "low" && family.tier === 3 && basis !== "strong-evidence") {
+    return { suppressed: true, reason: "card strictness low suppresses voice-cadence without strong evidence" };
+  }
+  if (thresholdsNotMet(family, basis, spans, card, candidateWords)) {
+    return { suppressed: true, reason: "below card threshold" };
+  }
+  return { suppressed: false };
+}
 function protectedSpans(input) {
   const spans = (input.taskContext?.protectedSpans ?? []).filter((s) => Number.isInteger(s.start) && Number.isInteger(s.end) && s.start >= 0 && s.end > s.start && s.end <= input.candidate.length).map((s) => ({ ...s }));
   const add = (start, end) => spans.push({ start, end });
@@ -18121,12 +18549,22 @@ function protectedSpans(input) {
     /\b[A-Za-z0-9_-]+@[A-Za-z0-9._-]+\b/g,
     /\b(?:API|APIs|SDK|OAuth|OIDC|JWT|TLS|SSL|SSH|HTTPS|CORS|CSRF|XSS|SQL)\b/g,
     /\b(?:security|authentication|authorization|credentials?|secrets?|tokens?)\b[^.!?\n]*/gi,
-    /\b(?:[a-z][A-Za-z0-9]*[A-Z][A-Za-z0-9]*|[A-Z][A-Za-z0-9_]*[A-Z][A-Za-z0-9_]*|[A-Za-z_$][\w$]*_[A-Za-z_$][\w$]*|config)\b/g
+    /(?<!\[)\b(?!(?:TODO|PLACEHOLDER|oai_citation|citeturn)\b)(?:[a-z][A-Za-z0-9]*[A-Z][A-Za-z0-9]*|[A-Z][A-Za-z0-9_]*[A-Z][A-Za-z0-9_]*|[A-Za-z_$][\w$]*_[A-Za-z_$][\w$]*|config)\b/g
   ];
   for (const pattern of patterns)
     for (const match of input.candidate.matchAll(pattern))
       add(match.index, match.index + match[0].length);
-  return spans.sort((a, b) => a.start - b.start || a.end - b.end).filter((s, i, all) => i === 0 || s.start !== all[i - 1].start || s.end !== all[i - 1].end);
+  const placeholderRanges = [];
+  for (const m of input.candidate.matchAll(/\[[^\]]+\]/g))
+    placeholderRanges.push({ start: m.index, end: m.index + m[0].length });
+  for (const m of input.candidate.matchAll(/\{\{[^}]+\}\}/g))
+    placeholderRanges.push({ start: m.index, end: m.index + m[0].length });
+  for (const m of input.candidate.matchAll(/<<[^>]+>>/g))
+    placeholderRanges.push({ start: m.index, end: m.index + m[0].length });
+  for (const m of input.candidate.matchAll(/20\d\d-XX-XX/g))
+    placeholderRanges.push({ start: m.index, end: m.index + m[0].length });
+  const withoutPlaceholderCode = spans.filter((s) => !placeholderRanges.some((r) => s.start >= r.start && s.end <= r.end));
+  return withoutPlaceholderCode.sort((a, b) => a.start - b.start || a.end - b.end).filter((s, i, all) => i === 0 || s.start !== all[i - 1].start || s.end !== all[i - 1].end);
 }
 function unprotectedSpans(text, regex, protectedList, offset = 0) {
   const localProtected = protectedList.map((span) => ({ start: span.start - offset, end: span.end - offset }));
@@ -18138,10 +18576,44 @@ function unprotectedSpans(text, regex, protectedList, offset = 0) {
     return [whole];
   });
 }
-function finding(axis, severity, evidence, spans, basis, input, reason, uncertainty = emptyUncertainty()) {
-  const naturalCadence = input.register === "natural" && axis === "readability";
-  const suppressed = !input.enabled || !!reason || naturalCadence || uncertainty.codes.length > 0;
-  const suppressionReason = !input.enabled ? "analyzer disabled" : reason ?? (uncertainty.codes.length ? "preservation or correctness concern" : naturalCadence ? "natural register suppresses cadence/readability" : undefined);
+function spansForFamily(family, text, protectedList, offset = 0) {
+  let effectiveProtected = protectedList;
+  if (family.name === "ai-tracking-params") {
+    const urlRegex = /\b(?:https?:\/\/|www\.)[^\s)]+/gi;
+    const urlSpans = [];
+    for (const m of text.matchAll(urlRegex))
+      urlSpans.push({ start: m.index + offset, end: m.index + m[0].length });
+    effectiveProtected = protectedList.filter((p) => !urlSpans.some((u) => p.start >= u.start && p.end <= u.end));
+  }
+  return family.patterns.flatMap((p) => unprotectedSpans(text, p, effectiveProtected, offset)).sort((a, b) => a.start - b.start);
+}
+function finding(axis, severity, evidence, spans, basis, input, reason, uncertainty = emptyUncertainty(), family, card, candidateWords) {
+  let suppressed = false;
+  let suppressionReason;
+  if (!input.enabled) {
+    suppressed = true;
+    suppressionReason = "analyzer disabled";
+  } else if (reason) {
+    suppressed = true;
+    suppressionReason = reason;
+  } else if (uncertainty.codes.length > 0) {
+    suppressed = true;
+    suppressionReason = "preservation or correctness concern";
+  } else if (family && card) {
+    const cs = getCardSuppression(family, basis, spans, input, card, candidateWords ?? 0);
+    if (cs.suppressed) {
+      suppressed = true;
+      suppressionReason = cs.reason;
+    }
+  } else if (family && !card) {
+    suppressed = false;
+  } else if (!family && axis === "readability" && card) {
+    const strictness = card.voice_invariants.anti_patterns?.strictness;
+    if (strictness === "low" && basis !== "strong-evidence") {
+      suppressed = true;
+      suppressionReason = "card strictness low suppresses voice-cadence without strong evidence";
+    }
+  }
   return { axis, severity: suppressed ? "none" : severity, evidence, spans, basis, uncertainty, suppressed, ...suppressionReason ? { suppressionReason } : {} };
 }
 function rank(s) {
@@ -18151,35 +18623,81 @@ function same(a, b) {
   return a.toLowerCase().replace(/\s+/g, " ").trim() === b.toLowerCase().replace(/\s+/g, " ").trim();
 }
 function analyzeStyleDrift(input) {
+  if (packLoadError) {
+    throw new Error(`drift packs failed to load: ${packLoadError}`);
+  }
+  const cardId = resolveCardId(input);
+  let card;
+  try {
+    card = getVoiceCardSync(cardId);
+  } catch {
+    card = getVoiceCardSync("tgo-default");
+  }
+  const steThresholds = getSteThresholds(card);
   const protectedContent = protectedSpans(input);
   const suppliedProtected = input.taskContext?.protectedSpans ?? [];
   const invalidProtected = suppliedProtected.filter((s) => !Number.isInteger(s.start) || !Number.isInteger(s.end) || s.start < 0 || s.end <= s.start || s.end > input.candidate.length);
   const sentences = [...input.candidate.matchAll(/[^.!?\n]+[.!?]+/g)].map((m) => ({ text: m[0].trim(), span: { start: m.index, end: m.index + m[0].length } })).filter((x) => x.text.length > 0);
   const findings = [];
   const preservationUncertainty = /\b(?:uncertain|unknown|not sure|cannot verify|can't verify|unable to verify|remains unclear)\b/i.test(input.candidate) ? { codes: ["preservation"], message: "Candidate states that preservation or production behavior remains uncertain.", spans: [] } : emptyUncertainty();
+  const candidateWords = input.candidate.trim() ? input.candidate.trim().split(/\s+/).filter(Boolean).length : 0;
   for (let i = 1;i < sentences.length; i++)
     if (same(sentences[i - 1].text, sentences[i].text) && !protectedContent.some((span) => overlap(sentences[i - 1].span, span) || overlap(sentences[i].span, span))) {
       findings.push(finding("response-length", "high", `Consecutive repeated sentence: ${sentences[i].text}`, [sentences[i - 1].span, sentences[i].span], "strong-evidence", input, undefined, preservationUncertainty));
     }
   const familyEvidence = [];
-  for (const [family, patterns] of Object.entries(families)) {
-    const spans = patterns.flatMap((p) => unprotectedSpans(input.candidate, p, protectedContent)).sort((a, b) => a.start - b.start);
-    if (family === "closer" && spans.length && (input.taskContext?.answerComplete ?? true))
-      findings.push(finding("anti-style-cluster", "medium", "Chatbot closer after the answer is complete", spans, "strong-evidence", input, undefined, preservationUncertainty));
-    if (family !== "closer")
-      familyEvidence.push(...spans);
+  for (const family of loadedFamilies) {
+    const spans = spansForFamily(family, input.candidate, protectedContent, 0).sort((a, b) => a.start - b.start);
+    if (spans.length === 0)
+      continue;
+    if (family.name === "closer") {
+      if (input.taskContext?.answerComplete ?? true) {
+        findings.push(finding("anti-style-cluster", "medium", "Chatbot closer after the answer is complete", spans, "strong-evidence", input, undefined, preservationUncertainty, family, card, candidateWords));
+      }
+      continue;
+    }
+    familyEvidence.push(...spans);
   }
   const sections = [...input.candidate.matchAll(/(?:^|\n\s*\n)([\s\S]*?)(?=\n\s*\n|$)/g)];
   for (const section of sections) {
     const start = section.index + (section[0].length - section[1].length);
-    const sectionFamilies = Object.entries(families).filter(([name]) => name !== "closer").map(([name, ps]) => [name, ps.flatMap((p) => unprotectedSpans(section[1], p, protectedContent, start)).sort((a, b) => a.start - b.start)]).filter(([, spans]) => spans.length > 0);
-    for (const [family, spans] of sectionFamilies)
-      if (spans.length >= 2)
-        findings.push(finding("anti-style-cluster", spans.length >= 3 ? "medium" : "low", `${family} tell cluster`, spans, "cluster", input, undefined, preservationUncertainty));
-    const sectionSpans = sectionFamilies.map(([name, spans]) => [name, spans.length]);
-    if (sectionSpans.length >= 2 && !sectionSpans.some(([, count]) => count >= 2) && !/(?:^|[.!?]\s+)Not\s+(?!(?:only|just|sure|certain|clear|necessarily|really|today|tomorrow)\b)[^.!?,\n]+,\s*it(?:'|’)s\s+[^.!?,\n]+/.test(section[1])) {
-      const spans = Object.entries(families).filter(([name]) => name !== "closer").flatMap(([, ps]) => ps.flatMap((p) => unprotectedSpans(section[1], p, protectedContent, start))).sort((a, b) => a.start - b.start);
-      findings.push(finding("anti-style-cluster", "medium", "Cross-family anti-style cluster", spans, "cluster", input, undefined, preservationUncertainty));
+    const sectionText = section[1];
+    const sectionFamilies = loadedFamilies.filter((f) => f.name !== "closer").map((f) => {
+      const spans = spansForFamily(f, sectionText, protectedContent, start).sort((a, b) => a.start - b.start);
+      return { family: f, spans };
+    }).filter((x) => x.spans.length > 0);
+    for (const { family, spans } of sectionFamilies) {
+      const packRequired = (() => {
+        const v = family.thresholds.cluster_min;
+        const n = parseThresholdNumber(v);
+        if (n !== undefined)
+          return n;
+        return family.tier === 3 ? 2 : 1;
+      })();
+      if (spans.length >= packRequired) {
+        let severity;
+        if (family.tier === 1)
+          severity = family.severity;
+        else
+          severity = spans.length >= 3 ? "medium" : "low";
+        findings.push(finding("anti-style-cluster", severity, `${family.name} tell cluster`, spans, "cluster", input, undefined, preservationUncertainty, family, card, candidateWords));
+      }
+    }
+    const sectionSpans = sectionFamilies.map(({ family, spans }) => [family.name, spans.length]);
+    if (sectionSpans.length >= 2 && !sectionSpans.some(([, count]) => count >= 2) && !/(?:^|[.!?]\s+)Not\s+(?!(?:only|just|sure|certain|clear|necessarily|really|today|tomorrow)\b)[^.!?,\n]+,\s*it(?:'|’)s\s+[^.!?,\n]+/.test(sectionText)) {
+      const spans = loadedFamilies.filter((f) => f.name !== "closer").flatMap((f) => spansForFamily(f, sectionText, protectedContent, start)).sort((a, b) => a.start - b.start);
+      const crossFamilyTier = 3;
+      const syntheticFamily = {
+        name: "cross-family",
+        packId: "voice-cadence",
+        tier: crossFamilyTier,
+        gating: "cluster",
+        severity: "medium",
+        basis: "cluster",
+        patterns: [],
+        thresholds: { cluster_min: 2 }
+      };
+      findings.push(finding("anti-style-cluster", "medium", "Cross-family anti-style cluster", spans, "cluster", input, undefined, preservationUncertainty, syntheticFamily, card, candidateWords));
     }
   }
   const progressRegex = /\b(?:I|we)\s+(?:changed|updated|implemented|modified|added|removed|ran|verified|checked)\b[^.!?\n]*[.!?]?/gi;
@@ -18209,7 +18727,7 @@ function analyzeStyleDrift(input) {
       findings.push(finding("response-length", "high", `Consecutive repeated paragraph: ${currentText}`, [previousSpan, currentSpan], "strong-evidence", input, undefined, preservationUncertainty));
     }
   }
-  const words = input.candidate.trim() ? input.candidate.trim().split(/\s+/).length : 0;
+  const words = candidateWords;
   const baseline = input.taskContext?.baselineTokens ?? null;
   const ratio = baseline && baseline > 0 ? words / baseline : null;
   const repeated = sentences.filter((s, i) => i > 0 && same(sentences[i - 1].text, s.text)).length;
@@ -18217,7 +18735,7 @@ function analyzeStyleDrift(input) {
     findings.push(finding("response-length", ratio >= 1.5 ? "medium" : "low", "Unnecessary material exceeds the matched contract baseline", [{ start: 0, end: input.candidate.length }], "repeated-signal", input, undefined, preservationUncertainty));
   const long = sentences.filter((s) => s.text.split(/\s+/).length > 40);
   if (long.length >= 2)
-    findings.push(finding("readability", "low", "Multiple overloaded sentences", long.map((x) => x.span), "cluster", input, undefined, preservationUncertainty));
+    findings.push(finding("readability", "low", "Multiple overloaded sentences", long.map((x) => x.span), "cluster", input, undefined, preservationUncertainty, undefined, card, words));
   const required2 = input.taskContext?.requiredPhrases ?? [];
   const retainedRequired = required2.filter((phrase) => input.candidate.includes(phrase)).length;
   const preserved = required2.length ? retainedRequired / required2.length : 1;
@@ -18229,7 +18747,7 @@ function analyzeStyleDrift(input) {
   const actionable = input.enabled && findings.some((f) => !f.suppressed && rank(f.severity) >= 2 && !f.uncertainty.codes.length);
   const aggregateSeverity = input.enabled ? findings.reduce((max, f) => !f.suppressed && !f.uncertainty.codes.length && rank(f.severity) >= 2 && rank(f.severity) > rank(max) ? f.severity : max, "none") : "none";
   const allProtected = input.candidate.trim().length > 0 && Array.from({ length: input.candidate.length }, (_, index) => index).every((index) => /\s/.test(input.candidate[index]) || protectedContent.some((span) => index >= span.start && index < span.end));
-  const ste = countSteViolations(input.candidate, input.mode);
+  const ste = countSteViolations(input.candidate, input.mode, steThresholds);
   const steLength = {
     value: ste.violationsPer100w,
     violations: ste.violations,
@@ -18237,11 +18755,11 @@ function analyzeStyleDrift(input) {
     applicable: ste.applicable,
     unit: "violations-per-100w",
     baseline: null,
-    basis: ste.applicable ? `STE soft length: ${STE_INSTRUCTION_THRESHOLD}-word instruction / ${STE_DESCRIPTIVE_THRESHOLD}-word descriptive guidance counted as violations per 100 words (metric only, no gate)` : "STE soft length inert for non-tool-heavy outputs",
+    basis: ste.applicable ? `STE soft length: ${steThresholds.instruction}-word instruction / ${steThresholds.descriptive}-word descriptive guidance counted as violations per 100 words (metric only, no gate)` : "STE soft length inert for non-tool-heavy outputs",
     provenance: "proxy"
   };
   const result = {
-    input: { attemptID: input.attemptID, register: input.register, outputClass: input.outputClass, mode: input.mode, enabled: input.enabled, reinforced: input.reinforced },
+    input: { attemptID: input.attemptID, cardId, outputClass: input.outputClass, mode: input.mode, enabled: input.enabled, reinforced: input.reinforced },
     findings,
     aggregate: { severity: aggregateSeverity, actionable, reinforcementEligible: actionable && !input.reinforced && findings.every((f) => f.uncertainty.codes.length === 0) },
     metrics: { concision: { value: ratio === null ? 0 : Math.max(0, 1 - ratio), unit: "ratio", baseline, basis: ratio === null ? "no matched baseline" : "candidate token count versus matched baseline" }, readability: { value: sentences.length ? Math.max(0, 1 - long.length / sentences.length) : 1, unit: "score-0-to-1", baseline: null, basis: "sentence-length distribution" }, correctness: { value: preserved, unit: "score-0-to-1", baseline: null, basis: "no rewrite; protected and required content retained" }, preservation: { value: preserved, unit: "score-0-to-1", baseline: null, basis: protectedContent.length ? "protected spans detected and excluded or discounted" : "no protected spans detected" }, steLength },
@@ -18255,146 +18773,6 @@ function analyzeStyleDrift(input) {
 
 // src/style-reinforcement.ts
 init_config();
-var STYLE_NUDGE = "Self-audit the next response for correctness-neutral style drift; preserve all technical content and required caveats.";
-
-class StyleReinforcementController {
-  sessions = new Map;
-  register;
-  enabled;
-  productionEnabled;
-  primaryCache = new Map;
-  log;
-  constructor(opts) {
-    this.enabled = opts.enabled ?? true;
-    this.productionEnabled = opts.productionEnabled ?? false;
-    this.register = opts.register ?? "concise";
-    this.log = opts.log;
-  }
-  state(sessionID) {
-    let state = this.sessions.get(sessionID);
-    if (!state) {
-      state = { reinforced: false, disabled: false, pending: false };
-      this.sessions.set(sessionID, state);
-    }
-    return state;
-  }
-  noteUserMessage(sessionID, text, responseLineageID, taskContext) {
-    const state = this.state(sessionID);
-    if (/\b(?:stop\s+\w+|normal\s+mode)\b/i.test(text))
-      state.disabled = true;
-    if (responseLineageID && state.responseLineageID === responseLineageID)
-      return;
-    if (state.attemptID || state.pending || state.reinforced) {
-      state.attemptID = undefined;
-      state.reinforced = false;
-      state.pending = false;
-    }
-    state.responseLineageID = responseLineageID;
-    state.taskContext = taskContext;
-  }
-  async isPrimary(client, sessionID) {
-    const cached2 = this.primaryCache.get(sessionID);
-    if (cached2 !== undefined)
-      return cached2;
-    const result = await client.session.get({ path: { id: sessionID } }).catch((err) => {
-      const msg = "tgo: style-reinforcement isPrimary session.get failed";
-      if (this.log)
-        safeWarn(this.log, msg, { sessionID, error: String(err) });
-      else
-        console.warn(`${msg}: ${String(err)}`, { sessionID });
-      return;
-    });
-    const data = result?.data;
-    const primary = Boolean(data && Object.prototype.hasOwnProperty.call(data, "parentID") && data.parentID === null);
-    this.primaryCache.set(sessionID, primary);
-    return primary;
-  }
-  async noteCompletion(client, input) {
-    const { sessionID, messageID, candidate, outputClass = "technical-steps-code", mode = "chat" } = input;
-    const state = this.state(sessionID);
-    if (!this.productionEnabled || !this.enabled || state.disabled || state.reinforced || state.pending || !await this.isPrimary(client, sessionID))
-      return false;
-    const lineage = input.responseLineageID ?? state.responseLineageID;
-    if (!lineage)
-      return false;
-    state.attemptID ??= `${sessionID}:${lineage}`;
-    if (state.responseLineageID && state.responseLineageID !== lineage)
-      return false;
-    const context = input.taskContext ?? state.taskContext;
-    if (!context || context.preservation !== "known")
-      return false;
-    const result = analyzeStyleDrift({ attemptID: state.attemptID, register: this.register, outputClass, mode, enabled: true, reinforced: false, candidate, taskContext: context });
-    if (!result.aggregate.reinforcementEligible)
-      return false;
-    state.pending = true;
-    return true;
-  }
-  async appendPending(client, sessionID, system) {
-    const state = this.state(sessionID);
-    if (!state.pending || state.reinforced || state.disabled || !this.enabled || !await this.isPrimary(client, sessionID))
-      return false;
-    system.push(STYLE_NUDGE);
-    state.pending = false;
-    state.reinforced = true;
-    return true;
-  }
-  reset(sessionID) {
-    if (sessionID) {
-      this.sessions.delete(sessionID);
-      this.primaryCache.delete(sessionID);
-    } else {
-      this.sessions.clear();
-      this.primaryCache.clear();
-    }
-  }
-}
-
-// src/session.ts
-class SessionReconciler {
-  shim;
-  busy = new Set;
-  constructor(opts = {}) {
-    this.shim = opts.shim ?? createShim();
-  }
-  get shimState() {
-    return this.shim;
-  }
-  noteAgent(sessionID, agent) {
-    this.shim.agents.set(sessionID, agent);
-  }
-  onStatus(sessionID, status) {
-    if (status === "busy" || status === "retry") {
-      this.busy.add(sessionID);
-      this.markStreaming(sessionID);
-    } else {
-      this.busy.delete(sessionID);
-      this.shim.streaming.delete(sessionID);
-    }
-  }
-  onIdle(sessionID) {
-    this.busy.delete(sessionID);
-    this.shim.streaming.delete(sessionID);
-  }
-  onCompact(sessionID) {
-    this.shim.agents.delete(sessionID);
-    this.busy.delete(sessionID);
-    this.shim.streaming.delete(sessionID);
-  }
-  isBusy(sessionID) {
-    return this.busy.has(sessionID);
-  }
-  markStreaming(sessionID) {
-    const target = this.shim.agents.get(sessionID) ?? "subagent";
-    const existing = this.shim.streaming.get(sessionID);
-    this.shim.streaming.set(sessionID, {
-      target,
-      startedAt: existing?.startedAt ?? Date.now()
-    });
-  }
-}
-function isPrimarySessionData(data) {
-  return Boolean(data && typeof data === "object" && Object.prototype.hasOwnProperty.call(data, "parentID") && data.parentID === null);
-}
 
 // src/fit.ts
 var REROUTE_NOT_RETRY = "REROUTE-NOT-RETRY";
@@ -18464,6 +18842,434 @@ class TaskFitController {
 ${rerouteSignal(seat)}`;
     return true;
   }
+}
+
+// src/delegation.ts
+init_def_snapshot();
+var DELEGATION_STYLES = ["default", "prose", "conversational"];
+function isDelegationStyle(value) {
+  return typeof value === "string" && DELEGATION_STYLES.includes(value);
+}
+function delegationStyleToVoiceCardId(style) {
+  if (style === "prose")
+    return "tgo-prose";
+  if (style === "conversational")
+    return "tgo-conversational";
+  return "tgo-default";
+}
+var ROUTES = ["tiny", "standard", "heavy"];
+var FULL_FIELDS = ["Objective", "Files", "Interfaces", "Constraints", "Verification"];
+var MINIMAL_FIELDS = ["Objective", "Files", "Verification"];
+var LIFECYCLE_FIELDS = ["issueId", "issueStatusObserved", "issueAssigneeObserved", "claimExitCode", "delegationId", "beadsOperator"];
+function presentText(value) {
+  return typeof value === "string" && value.trim().length > 0;
+}
+function presentFiles(value) {
+  return Array.isArray(value) && value.length > 0 && value.every((file2) => presentText(file2));
+}
+function fieldValid(field, value) {
+  if (field === "Files")
+    return presentFiles(value);
+  return presentText(value);
+}
+function verifyClaimObserved(packet) {
+  return packet.issueStatusObserved === "in_progress" && typeof packet.issueAssigneeObserved === "string" && packet.issueAssigneeObserved.trim().length > 0 && packet.claimExitCode === 0;
+}
+function validateDelegationPacket(routing, packet, routedTouchSet) {
+  const candidate = routing && typeof routing === "object" ? routing : {};
+  const route = candidate.route;
+  const value = packet && typeof packet === "object" ? packet : {};
+  const routeValid = ROUTES.includes(route);
+  const tinyConsistent = typeof candidate.tiny === "boolean" && candidate.tiny === (route === "tiny");
+  const fields = route === "tiny" ? MINIMAL_FIELDS : FULL_FIELDS;
+  const missing = fields.filter((field) => !(field in value));
+  const malformed = fields.filter((field) => (field in value) && !fieldValid(field, value[field]));
+  const diagnostics = [];
+  if (!routeValid)
+    diagnostics.push("route must be exactly tiny, standard, or heavy.");
+  if (routeValid && !tinyConsistent)
+    diagnostics.push("tiny must be true only for route tiny and false otherwise.");
+  if (missing.length > 0)
+    diagnostics.push(`Add required field(s): ${missing.join(", ")}.`);
+  if (malformed.includes("Files"))
+    diagnostics.push("Files must be a non-empty array of named, non-empty paths.");
+  for (const field of malformed.filter((name) => name !== "Files")) {
+    diagnostics.push(`${field} must be a non-empty structured text field.`);
+  }
+  if (typeof value.exitGate !== "boolean") {
+    if ("exitGate" in value)
+      malformed.push("exitGate");
+    else
+      missing.push("exitGate");
+    diagnostics.push("Add exitGate as an explicit boolean; prose claims of success do not count.");
+  } else if (value.exitGate !== true) {
+    diagnostics.push("Set exitGate to true only when the deterministic verification checks pass.");
+  }
+  if (route === "tiny" && value.minimal !== true) {
+    if ("minimal" in value)
+      malformed.push("minimal");
+    diagnostics.push("Tiny packets must declare minimal: true to use the proportional minimal path.");
+  }
+  if (route !== "tiny") {
+    for (const field of LIFECYCLE_FIELDS) {
+      if (!(field in value)) {
+        missing.push(field);
+        diagnostics.push(`Add required Beads lifecycle field: ${field}.`);
+      } else if (field === "issueStatusObserved") {
+        if (value[field] !== "in_progress") {
+          malformed.push(field);
+          diagnostics.push(`issueStatusObserved must be "in_progress" (observed claim status); got ${JSON.stringify(value[field])}.`);
+        }
+      } else if (field === "issueAssigneeObserved") {
+        if (!presentText(value[field])) {
+          malformed.push(field);
+          diagnostics.push("issueAssigneeObserved must be a non-empty assignee from observed claim.");
+        }
+      } else if (field === "claimExitCode") {
+        if (value[field] !== 0) {
+          malformed.push(field);
+          diagnostics.push(`claimExitCode must be 0 (observed claim exit code); got ${JSON.stringify(value[field])}.`);
+        }
+      } else if (field === "beadsOperator") {
+        if (value[field] !== "Bernstein") {
+          malformed.push(field);
+          diagnostics.push("beadsOperator must be Bernstein; specialists cannot operate Beads.");
+        }
+      } else if (!presentText(value[field])) {
+        malformed.push(field);
+        diagnostics.push(`${field} must be non-empty linkage metadata.`);
+      }
+    }
+    if ("issueClaimed" in value && !verifyClaimObserved(value)) {
+      diagnostics.push("issueClaimed is forgeable asserted metadata; observed claim fields (issueStatusObserved, issueAssigneeObserved, claimExitCode) are required and must reflect live bd state.");
+      if (!malformed.includes("issueStatusObserved") && !missing.includes("issueStatusObserved")) {}
+    }
+  }
+  if ("issueId" in value && typeof value.issueId === "string") {
+    const id = value.issueId.trim();
+    if (id.length > 0 && !isValidBeadID(id)) {
+      if (!malformed.includes("issueId"))
+        malformed.push("issueId");
+      diagnostics.push(`issueId must match VALID_BEAD_ID ${VALID_BEAD_ID.source} — got ${JSON.stringify(value.issueId)}.`);
+    }
+  }
+  if ("taskId" in value) {
+    const taskId = value.taskId;
+    if (typeof taskId !== "string" || taskId.trim().length === 0 || !/^ses_[A-Za-z0-9]+$/.test(taskId.trim())) {
+      malformed.push("taskId");
+      diagnostics.push("taskId must be a session identifier matching ses_<alphanumeric>.");
+    }
+  }
+  if ("progressPath" in value) {
+    const progressPath2 = value.progressPath;
+    if (typeof progressPath2 !== "string" || progressPath2.trim().length === 0 || !/^\.tgo\/[A-Za-z0-9][A-Za-z0-9._-]*\/progress\.md$/.test(progressPath2.trim())) {
+      malformed.push("progressPath");
+      diagnostics.push("progressPath must match .tgo/<issueId>/progress.md where <issueId> matches [A-Za-z0-9][A-Za-z0-9._-]*");
+    }
+  }
+  if ("useLatestDefinitions" in value) {
+    const v = value.useLatestDefinitions;
+    if (typeof v !== "boolean") {
+      malformed.push("useLatestDefinitions");
+      diagnostics.push("useLatestDefinitions must be a boolean when present (default false = pinned).");
+    }
+  }
+  if ("lane" in value) {
+    const lane = value.lane;
+    if (lane !== "worktree" && lane !== "inline") {
+      malformed.push("lane");
+      diagnostics.push('lane must be "worktree" | "inline" when present (default inline).');
+    }
+  }
+  if ("style" in value) {
+    const style = value.style;
+    if (typeof style !== "string" || !DELEGATION_STYLES.includes(style)) {
+      malformed.push("style");
+      diagnostics.push(`style must be one of ${DELEGATION_STYLES.join(", ")} when present — got ${JSON.stringify(style)}.`);
+    }
+  }
+  if ("styleSource" in value) {
+    const src = value.styleSource;
+    if (src !== "explicit" && src !== "packet") {
+      malformed.push("styleSource");
+      diagnostics.push(`styleSource must be "explicit" | "packet" when present — got ${JSON.stringify(src)}.`);
+    }
+  }
+  if (routedTouchSet !== undefined && "Files" in value && Array.isArray(value.Files)) {
+    const allowed = new Set(routedTouchSet ?? []);
+    const outside = value.Files.filter((file2) => typeof file2 === "string" && !allowed.has(file2));
+    if (outside.length > 0) {
+      diagnostics.push("Files must be contained in the routed named touch set.");
+      malformed.push("Files");
+    }
+  }
+  return {
+    route,
+    valid: routeValid && tinyConsistent && missing.length === 0 && malformed.length === 0 && value.exitGate === true && (route !== "tiny" || value.minimal === true),
+    missing,
+    malformed,
+    diagnostics
+  };
+}
+function validateDelegationBoundary(args) {
+  if (!args || typeof args !== "object")
+    return;
+  const value = args;
+  if (!("delegationPacket" in value))
+    return;
+  const routing = classifyRouting(value);
+  return validateDelegationPacket(routing, value.delegationPacket, value.touchSet);
+}
+
+// src/style-reinforcement.ts
+function buildFindingsNudge(findings) {
+  const header = "Style pass — fix only the flagged spans; preserve all protected content.";
+  const footer = "Override a flag with a one-word reason if it serves rhythm/emphasis/picture/idiom/joke — otherwise apply the fix.";
+  if (!findings || findings.length === 0) {
+    return `${header}
+${footer}`;
+  }
+  const sorted = [...findings].sort((a, b) => {
+    const aStart = a.spans[0]?.start ?? Number.MAX_SAFE_INTEGER;
+    const bStart = b.spans[0]?.start ?? Number.MAX_SAFE_INTEGER;
+    if (aStart !== bStart)
+      return aStart - bStart;
+    const axisCmp = a.axis.localeCompare(b.axis);
+    if (axisCmp !== 0)
+      return axisCmp;
+    const rank2 = (s) => ["none", "low", "medium", "high"].indexOf(s);
+    return rank2(b.severity) - rank2(a.severity);
+  });
+  const lines = [];
+  lines.push(header);
+  for (const f of sorted) {
+    const rawFamily = f.family;
+    let family;
+    if (rawFamily) {
+      family = rawFamily;
+    } else {
+      const m = f.evidence.match(/^(.+?) tell cluster$/);
+      if (m)
+        family = m[1];
+      else if (f.evidence === "Chatbot closer after the answer is complete")
+        family = "closer";
+      else if (f.evidence === "Cross-family anti-style cluster")
+        family = "cross-family";
+      else
+        family = f.axis;
+    }
+    const severity = f.severity;
+    const basis = f.basis;
+    const evidence = f.evidence.replace(/'/g, "\\'");
+    lines.push(`- [${family}] (severity ${severity}, basis ${basis}): evidence '${evidence}'`);
+    const spansStr = f.spans.map((s) => `${s.start}:${s.end}`).join(", ");
+    lines.push(`  spans: [${spansStr}] — rewrite only these spans; keep code/commands/negations/numbers/explanations verbatim.`);
+  }
+  lines.push(footer);
+  return lines.join(`
+`);
+}
+function detectExplicitStyle(text) {
+  const patterns = [
+    { re: /\bnormal\s+mode\b/gi, value: "clear" },
+    { re: /\buse\s+default\b/gi, value: "clear" },
+    { re: /\bin\s+default(?:\s+voice)?\b/gi, value: "clear" },
+    { re: /\bdefault\s+voice\b/gi, value: "clear" },
+    { re: /\buse\s+prose\b/gi, value: "tgo-prose" },
+    { re: /\bin\s+prose(?:\s+voice)?\b/gi, value: "tgo-prose" },
+    { re: /\bprose\s+voice\b/gi, value: "tgo-prose" },
+    { re: /\bswitch\s+to\s+prose\b/gi, value: "tgo-prose" },
+    { re: /\bwrite\b[^.!?\n]*\bin\s+prose\b/gi, value: "tgo-prose" },
+    { re: /\buse\s+conversational\b/gi, value: "tgo-conversational" },
+    { re: /\bin\s+conversational(?:\s+voice)?\b/gi, value: "tgo-conversational" },
+    { re: /\bconversational\s+voice\b/gi, value: "tgo-conversational" },
+    { re: /\bswitch\s+to\s+conversational\b/gi, value: "tgo-conversational" },
+    { re: /\bwrite\b[^.!?\n]*\bin\s+conversational\b/gi, value: "tgo-conversational" }
+  ];
+  let lastIdx = -1;
+  let lastVal = null;
+  for (const { re, value } of patterns) {
+    re.lastIndex = 0;
+    let m;
+    while ((m = re.exec(text)) !== null) {
+      const idx = m.index;
+      if (idx >= lastIdx) {
+        lastIdx = idx;
+        lastVal = value;
+      }
+    }
+  }
+  return lastVal;
+}
+class StyleReinforcementController {
+  sessions = new Map;
+  cardId;
+  enabled;
+  productionEnabled;
+  primaryCache = new Map;
+  log;
+  constructor(opts) {
+    this.enabled = opts.enabled ?? true;
+    this.productionEnabled = opts.productionEnabled ?? false;
+    const legacy = opts.register;
+    if (opts.cardId)
+      this.cardId = opts.cardId;
+    else if (typeof legacy === "string" && (legacy === "prose" || legacy === "conversational"))
+      this.cardId = legacy === "prose" ? "tgo-prose" : "tgo-conversational";
+    else if (typeof legacy === "string" && legacy === "natural")
+      this.cardId = "tgo-default";
+    else
+      this.cardId = "tgo-default";
+    this.log = opts.log;
+  }
+  state(sessionID) {
+    let state = this.sessions.get(sessionID);
+    if (!state) {
+      state = { reinforced: false, disabled: false, pending: null };
+      this.sessions.set(sessionID, state);
+    }
+    return state;
+  }
+  noteUserMessage(sessionID, text, responseLineageID, taskContext) {
+    const state = this.state(sessionID);
+    if (/\b(?:stop\s+\w+|normal\s+mode)\b/i.test(text))
+      state.disabled = true;
+    const explicit = detectExplicitStyle(text);
+    if (explicit === "clear") {
+      state.styleOverride = undefined;
+    } else if (explicit) {
+      state.styleOverride = explicit;
+    }
+    if (responseLineageID && state.responseLineageID === responseLineageID)
+      return;
+    if (state.attemptID || state.pending || state.reinforced) {
+      state.attemptID = undefined;
+      state.reinforced = false;
+      state.pending = null;
+    }
+    state.responseLineageID = responseLineageID;
+    state.taskContext = taskContext;
+  }
+  getStyleOverride(sessionID) {
+    return this.state(sessionID).styleOverride;
+  }
+  getEffectiveStyle(sessionID, packetStyle) {
+    const state = this.state(sessionID);
+    if (state.styleOverride)
+      return state.styleOverride;
+    if (typeof packetStyle === "string" && DELEGATION_STYLES.includes(packetStyle)) {
+      return delegationStyleToVoiceCardId(packetStyle);
+    }
+    return this.cardId;
+  }
+  async isPrimary(client, sessionID) {
+    const cached2 = this.primaryCache.get(sessionID);
+    if (cached2 !== undefined)
+      return cached2;
+    const result = await client.session.get({ path: { id: sessionID } }).catch((err) => {
+      const msg = "tgo: style-reinforcement isPrimary session.get failed";
+      if (this.log)
+        safeWarn(this.log, msg, { sessionID, error: String(err) });
+      else
+        console.warn(`${msg}: ${String(err)}`, { sessionID });
+      return;
+    });
+    const data = result?.data;
+    const primary = Boolean(data && Object.prototype.hasOwnProperty.call(data, "parentID") && data.parentID === null);
+    this.primaryCache.set(sessionID, primary);
+    return primary;
+  }
+  async noteCompletion(client, input) {
+    const { sessionID, messageID, candidate, outputClass = "technical-steps-code", mode = "chat" } = input;
+    const state = this.state(sessionID);
+    if (!this.productionEnabled || !this.enabled || state.disabled || state.reinforced || state.pending || !await this.isPrimary(client, sessionID))
+      return false;
+    const lineage = input.responseLineageID ?? state.responseLineageID;
+    if (!lineage)
+      return false;
+    state.attemptID ??= `${sessionID}:${lineage}`;
+    if (state.responseLineageID && state.responseLineageID !== lineage)
+      return false;
+    const context = input.taskContext ?? state.taskContext;
+    if (!context || context.preservation !== "known")
+      return false;
+    const packetStyle = input.packetStyle;
+    const cardId = this.getEffectiveStyle(sessionID, packetStyle) ?? this.cardId;
+    const result = analyzeStyleDrift({ attemptID: state.attemptID, cardId, outputClass, mode, enabled: true, reinforced: false, candidate, taskContext: context });
+    if (!result.aggregate.reinforcementEligible)
+      return false;
+    const actionable = result.findings.filter((f) => !f.suppressed && (f.severity === "medium" || f.severity === "high") && f.uncertainty.codes.length === 0);
+    if (actionable.length === 0)
+      return false;
+    state.pending = { findings: actionable };
+    return true;
+  }
+  async appendPending(client, sessionID, system) {
+    const state = this.state(sessionID);
+    if (!state.pending || state.reinforced || state.disabled || !this.enabled || !await this.isPrimary(client, sessionID))
+      return false;
+    const nudge = buildFindingsNudge(state.pending.findings);
+    system.push(nudge);
+    state.pending = null;
+    state.reinforced = true;
+    return true;
+  }
+  reset(sessionID) {
+    if (sessionID) {
+      this.sessions.delete(sessionID);
+      this.primaryCache.delete(sessionID);
+    } else {
+      this.sessions.clear();
+      this.primaryCache.clear();
+    }
+  }
+}
+
+// src/session.ts
+class SessionReconciler {
+  shim;
+  busy = new Set;
+  constructor(opts = {}) {
+    this.shim = opts.shim ?? createShim();
+  }
+  get shimState() {
+    return this.shim;
+  }
+  noteAgent(sessionID, agent) {
+    this.shim.agents.set(sessionID, agent);
+  }
+  onStatus(sessionID, status) {
+    if (status === "busy" || status === "retry") {
+      this.busy.add(sessionID);
+      this.markStreaming(sessionID);
+    } else {
+      this.busy.delete(sessionID);
+      this.shim.streaming.delete(sessionID);
+    }
+  }
+  onIdle(sessionID) {
+    this.busy.delete(sessionID);
+    this.shim.streaming.delete(sessionID);
+  }
+  onCompact(sessionID) {
+    this.shim.agents.delete(sessionID);
+    this.busy.delete(sessionID);
+    this.shim.streaming.delete(sessionID);
+  }
+  isBusy(sessionID) {
+    return this.busy.has(sessionID);
+  }
+  markStreaming(sessionID) {
+    const target = this.shim.agents.get(sessionID) ?? "subagent";
+    const existing = this.shim.streaming.get(sessionID);
+    this.shim.streaming.set(sessionID, {
+      target,
+      startedAt: existing?.startedAt ?? Date.now()
+    });
+  }
+}
+function isPrimarySessionData(data) {
+  return Boolean(data && typeof data === "object" && Object.prototype.hasOwnProperty.call(data, "parentID") && data.parentID === null);
 }
 
 // src/watchdog.ts
@@ -19025,8 +19831,76 @@ function parseTaskReport(raw) {
 }
 
 // src/setup.ts
+import * as fs15 from "node:fs/promises";
+import * as path15 from "node:path";
+
+// src/build.ts
+init_config();
 import * as fs14 from "node:fs/promises";
 import * as path14 from "node:path";
+import { fileURLToPath as fileURLToPath4 } from "node:url";
+var packageRoot2 = path14.resolve(path14.dirname(fileURLToPath4(import.meta.url)), "..");
+var HOUSE_STYLE_SLOT = "{{TGO_HOUSE_STYLE}}";
+var AGENTS_MARKER_BEGIN = "<!-- TGO: thin always-on advice layer";
+var AGENTS_MARKER_END = "<!-- END TGO advice layer -->";
+var VOICE_CARDS = ["default", "prose", "conversational"];
+async function loadVoiceCard3(cardId = "default") {
+  const normalized = cardId.startsWith("tgo-") ? cardId : `tgo-${cardId}`;
+  const file2 = path14.join(packageRoot2, "assets", "voices", `${normalized}.json`);
+  const raw = JSON.parse(await fs14.readFile(file2, "utf-8"));
+  return voiceCardSchema.parse(raw);
+}
+async function loadAgentsFragment() {
+  const file2 = path14.join(packageRoot2, "assets", "AGENTS.fragment.md");
+  return fs14.readFile(file2, "utf-8");
+}
+function foldHouseStyle(template, voiceCard) {
+  if (!template.includes(HOUSE_STYLE_SLOT))
+    return template;
+  return template.replace(HOUSE_STYLE_SLOT, voiceCard.trim());
+}
+async function renderSeats(sourceDir, voiceCardId = "default") {
+  const effectiveId = VOICE_CARDS.includes(voiceCardId) ? voiceCardId : "default";
+  const card = await loadVoiceCard3(effectiveId);
+  const fold = renderFold(card);
+  const files = await fs14.readdir(sourceDir).catch((err) => {
+    console.warn(`tgo: renderSeats readdir failed: ${String(err)}`, { sourceDir });
+    return [];
+  });
+  const seats = [];
+  for (const file2 of files) {
+    if (!file2.endsWith(".md"))
+      continue;
+    const template = await fs14.readFile(path14.join(sourceDir, file2), "utf-8");
+    const content = foldHouseStyle(template, fold);
+    assertPromptUnderBudget(content, file2);
+    seats.push({ fileName: file2, content });
+  }
+  return seats;
+}
+async function mergeAgentsFragment(configDir) {
+  const fragment = await loadAgentsFragment();
+  const dest = path14.join(configDir, "AGENTS.md");
+  let existing = "";
+  try {
+    existing = await fs14.readFile(dest, "utf-8");
+  } catch {}
+  if (existing.includes(AGENTS_MARKER_BEGIN)) {
+    return { action: "unchanged" };
+  }
+  const wrapped = `${fragment.trim()}
+${AGENTS_MARKER_END}
+`;
+  const next = existing.trimEnd() ? `${existing.trimEnd()}
+
+${wrapped}` : wrapped;
+  await fs14.mkdir(configDir, { recursive: true });
+  await fs14.writeFile(dest, next, "utf-8");
+  return { action: existing ? "appended" : "created" };
+}
+if (false) {}
+
+// src/setup.ts
 class SetupController {
   run;
   hasBd;
@@ -19042,7 +19916,7 @@ class SetupController {
   }
   async readAgents(directory) {
     try {
-      return await fs14.readFile(path14.join(directory, "AGENTS.md"), "utf-8");
+      return await fs15.readFile(path15.join(directory, "AGENTS.md"), "utf-8");
     } catch {
       return "";
     }
@@ -19050,7 +19924,7 @@ class SetupController {
   async missingSteps(directory) {
     const steps = [];
     try {
-      await fs14.access(path14.join(directory, ".beads"));
+      await fs15.access(path15.join(directory, ".beads"));
     } catch {
       steps.push("bd init");
     }
@@ -19148,12 +20022,12 @@ class SetupController {
 }
 
 // src/permissions.ts
-import * as path15 from "node:path";
+import * as path16 from "node:path";
 function resolveWorktreeFamily(...candidates) {
   for (const candidate of candidates) {
     if (!candidate)
       continue;
-    const parent = path15.dirname(candidate);
+    const parent = path16.dirname(candidate);
     if (!parent || parent === "/" || parent === ".")
       continue;
     return candidate;
@@ -19163,7 +20037,7 @@ function resolveWorktreeFamily(...candidates) {
 function preapproveExternalDirectory(permission, worktree) {
   if (!worktree)
     return permission ?? {};
-  const parent = path15.dirname(worktree);
+  const parent = path16.dirname(worktree);
   if (!parent || parent === "/" || parent === ".")
     return permission ?? {};
   const existingExternal = permission?.external_directory ?? {};
@@ -19315,167 +20189,15 @@ function resolveSeatModels(preset, presets) {
   return out;
 }
 
-// src/delegation.ts
-init_def_snapshot();
-var ROUTES = ["tiny", "standard", "heavy"];
-var FULL_FIELDS = ["Objective", "Files", "Interfaces", "Constraints", "Verification"];
-var MINIMAL_FIELDS = ["Objective", "Files", "Verification"];
-var LIFECYCLE_FIELDS = ["issueId", "issueStatusObserved", "issueAssigneeObserved", "claimExitCode", "delegationId", "beadsOperator"];
-function presentText(value) {
-  return typeof value === "string" && value.trim().length > 0;
-}
-function presentFiles(value) {
-  return Array.isArray(value) && value.length > 0 && value.every((file2) => presentText(file2));
-}
-function fieldValid(field, value) {
-  if (field === "Files")
-    return presentFiles(value);
-  return presentText(value);
-}
-function verifyClaimObserved(packet) {
-  return packet.issueStatusObserved === "in_progress" && typeof packet.issueAssigneeObserved === "string" && packet.issueAssigneeObserved.trim().length > 0 && packet.claimExitCode === 0;
-}
-function validateDelegationPacket(routing, packet, routedTouchSet) {
-  const candidate = routing && typeof routing === "object" ? routing : {};
-  const route = candidate.route;
-  const value = packet && typeof packet === "object" ? packet : {};
-  const routeValid = ROUTES.includes(route);
-  const tinyConsistent = typeof candidate.tiny === "boolean" && candidate.tiny === (route === "tiny");
-  const fields = route === "tiny" ? MINIMAL_FIELDS : FULL_FIELDS;
-  const missing = fields.filter((field) => !(field in value));
-  const malformed = fields.filter((field) => (field in value) && !fieldValid(field, value[field]));
-  const diagnostics = [];
-  if (!routeValid)
-    diagnostics.push("route must be exactly tiny, standard, or heavy.");
-  if (routeValid && !tinyConsistent)
-    diagnostics.push("tiny must be true only for route tiny and false otherwise.");
-  if (missing.length > 0)
-    diagnostics.push(`Add required field(s): ${missing.join(", ")}.`);
-  if (malformed.includes("Files"))
-    diagnostics.push("Files must be a non-empty array of named, non-empty paths.");
-  for (const field of malformed.filter((name) => name !== "Files")) {
-    diagnostics.push(`${field} must be a non-empty structured text field.`);
-  }
-  if (typeof value.exitGate !== "boolean") {
-    if ("exitGate" in value)
-      malformed.push("exitGate");
-    else
-      missing.push("exitGate");
-    diagnostics.push("Add exitGate as an explicit boolean; prose claims of success do not count.");
-  } else if (value.exitGate !== true) {
-    diagnostics.push("Set exitGate to true only when the deterministic verification checks pass.");
-  }
-  if (route === "tiny" && value.minimal !== true) {
-    if ("minimal" in value)
-      malformed.push("minimal");
-    diagnostics.push("Tiny packets must declare minimal: true to use the proportional minimal path.");
-  }
-  if (route !== "tiny") {
-    for (const field of LIFECYCLE_FIELDS) {
-      if (!(field in value)) {
-        missing.push(field);
-        diagnostics.push(`Add required Beads lifecycle field: ${field}.`);
-      } else if (field === "issueStatusObserved") {
-        if (value[field] !== "in_progress") {
-          malformed.push(field);
-          diagnostics.push(`issueStatusObserved must be "in_progress" (observed claim status); got ${JSON.stringify(value[field])}.`);
-        }
-      } else if (field === "issueAssigneeObserved") {
-        if (!presentText(value[field])) {
-          malformed.push(field);
-          diagnostics.push("issueAssigneeObserved must be a non-empty assignee from observed claim.");
-        }
-      } else if (field === "claimExitCode") {
-        if (value[field] !== 0) {
-          malformed.push(field);
-          diagnostics.push(`claimExitCode must be 0 (observed claim exit code); got ${JSON.stringify(value[field])}.`);
-        }
-      } else if (field === "beadsOperator") {
-        if (value[field] !== "Bernstein") {
-          malformed.push(field);
-          diagnostics.push("beadsOperator must be Bernstein; specialists cannot operate Beads.");
-        }
-      } else if (!presentText(value[field])) {
-        malformed.push(field);
-        diagnostics.push(`${field} must be non-empty linkage metadata.`);
-      }
-    }
-    if ("issueClaimed" in value && !verifyClaimObserved(value)) {
-      diagnostics.push("issueClaimed is forgeable asserted metadata; observed claim fields (issueStatusObserved, issueAssigneeObserved, claimExitCode) are required and must reflect live bd state.");
-      if (!malformed.includes("issueStatusObserved") && !missing.includes("issueStatusObserved")) {}
-    }
-  }
-  if ("issueId" in value && typeof value.issueId === "string") {
-    const id = value.issueId.trim();
-    if (id.length > 0 && !isValidBeadID(id)) {
-      if (!malformed.includes("issueId"))
-        malformed.push("issueId");
-      diagnostics.push(`issueId must match VALID_BEAD_ID ${VALID_BEAD_ID.source} — got ${JSON.stringify(value.issueId)}.`);
-    }
-  }
-  if ("taskId" in value) {
-    const taskId = value.taskId;
-    if (typeof taskId !== "string" || taskId.trim().length === 0 || !/^ses_[A-Za-z0-9]+$/.test(taskId.trim())) {
-      malformed.push("taskId");
-      diagnostics.push("taskId must be a session identifier matching ses_<alphanumeric>.");
-    }
-  }
-  if ("progressPath" in value) {
-    const progressPath2 = value.progressPath;
-    if (typeof progressPath2 !== "string" || progressPath2.trim().length === 0 || !/^\.tgo\/[A-Za-z0-9][A-Za-z0-9._-]*\/progress\.md$/.test(progressPath2.trim())) {
-      malformed.push("progressPath");
-      diagnostics.push("progressPath must match .tgo/<issueId>/progress.md where <issueId> matches [A-Za-z0-9][A-Za-z0-9._-]*");
-    }
-  }
-  if ("useLatestDefinitions" in value) {
-    const v = value.useLatestDefinitions;
-    if (typeof v !== "boolean") {
-      malformed.push("useLatestDefinitions");
-      diagnostics.push("useLatestDefinitions must be a boolean when present (default false = pinned).");
-    }
-  }
-  if ("lane" in value) {
-    const lane = value.lane;
-    if (lane !== "worktree" && lane !== "inline") {
-      malformed.push("lane");
-      diagnostics.push('lane must be "worktree" | "inline" when present (default inline).');
-    }
-  }
-  if (routedTouchSet !== undefined && "Files" in value && Array.isArray(value.Files)) {
-    const allowed = new Set(routedTouchSet ?? []);
-    const outside = value.Files.filter((file2) => typeof file2 === "string" && !allowed.has(file2));
-    if (outside.length > 0) {
-      diagnostics.push("Files must be contained in the routed named touch set.");
-      malformed.push("Files");
-    }
-  }
-  return {
-    route,
-    valid: routeValid && tinyConsistent && missing.length === 0 && malformed.length === 0 && value.exitGate === true && (route !== "tiny" || value.minimal === true),
-    missing,
-    malformed,
-    diagnostics
-  };
-}
-function validateDelegationBoundary(args) {
-  if (!args || typeof args !== "object")
-    return;
-  const value = args;
-  if (!("delegationPacket" in value))
-    return;
-  const routing = classifyRouting(value);
-  return validateDelegationPacket(routing, value.delegationPacket, value.touchSet);
-}
-
 // src/plugin.ts
 init_session_reuse();
 init_def_snapshot();
 
 // src/worktree-lane.ts
 init_def_snapshot();
-import * as fs15 from "node:fs/promises";
+import * as fs16 from "node:fs/promises";
 import * as fsSync from "node:fs";
-import * as path16 from "node:path";
+import * as path17 from "node:path";
 import * as os2 from "node:os";
 function worktreeBranchForIssue(issueId) {
   assertValidBeadID(issueId);
@@ -19483,28 +20205,28 @@ function worktreeBranchForIssue(issueId) {
 }
 function worktreePathForIssue(repoRoot, issueId) {
   assertValidBeadID(issueId);
-  const resolved = path16.resolve(repoRoot);
-  const parent = path16.dirname(resolved);
+  const resolved = path17.resolve(repoRoot);
+  const parent = path17.dirname(resolved);
   if (!parent || parent === "/" || parent === "." || parent === resolved) {
-    return path16.join(resolved, `${issueId}-lane`);
+    return path17.join(resolved, `${issueId}-lane`);
   }
-  return path16.join(parent, `${issueId}-lane`);
+  return path17.join(parent, `${issueId}-lane`);
 }
 function realpathTargetSafe(resolved) {
   try {
     return fsSync.realpathSync(resolved);
   } catch {}
-  let cur = path16.dirname(resolved);
-  const tail = [path16.basename(resolved)];
+  let cur = path17.dirname(resolved);
+  const tail = [path17.basename(resolved)];
   for (let i = 0;i < 64; i++) {
     try {
       const real = fsSync.realpathSync(cur);
-      return tail.length === 0 ? real : path16.join(real, ...tail);
+      return tail.length === 0 ? real : path17.join(real, ...tail);
     } catch {}
-    const parent = path16.dirname(cur);
+    const parent = path17.dirname(cur);
     if (parent === cur)
       return;
-    tail.unshift(path16.basename(cur));
+    tail.unshift(path17.basename(cur));
     cur = parent;
   }
   return;
@@ -19512,16 +20234,16 @@ function realpathTargetSafe(resolved) {
 function isPathInsideWorktree(targetPath, worktreePath, repoRoot) {
   if (!targetPath || !worktreePath)
     return false;
-  const resolvedWorktree = path16.resolve(worktreePath);
+  const resolvedWorktree = path17.resolve(worktreePath);
   let resolvedTarget;
-  if (path16.isAbsolute(targetPath)) {
-    resolvedTarget = path16.resolve(targetPath);
+  if (path17.isAbsolute(targetPath)) {
+    resolvedTarget = path17.resolve(targetPath);
   } else if (targetPath.startsWith("~/")) {
     const home = process.env.HOME ?? os2.homedir();
-    resolvedTarget = path16.resolve(home, targetPath.slice(2));
+    resolvedTarget = path17.resolve(home, targetPath.slice(2));
   } else {
-    const base = repoRoot ? path16.resolve(repoRoot) : resolvedWorktree;
-    resolvedTarget = path16.resolve(base, targetPath);
+    const base = repoRoot ? path17.resolve(repoRoot) : resolvedWorktree;
+    resolvedTarget = path17.resolve(base, targetPath);
   }
   if (resolvedTarget === resolvedWorktree)
     return true;
@@ -19533,7 +20255,7 @@ function isPathInsideWorktree(targetPath, worktreePath, repoRoot) {
     return false;
   if (realTarget === realWorktree)
     return true;
-  const prefix = realWorktree.endsWith(path16.sep) ? realWorktree : realWorktree + path16.sep;
+  const prefix = realWorktree.endsWith(path17.sep) ? realWorktree : realWorktree + path17.sep;
   return realTarget.startsWith(prefix);
 }
 function extractAllFilePathsFromArgs(tool, args) {
@@ -19585,8 +20307,8 @@ function isMutationCommand(command) {
 function isBashCommandOutsideWorktree(command, worktreePath, repoRoot) {
   if (!command || !worktreePath || !repoRoot)
     return false;
-  const resolvedWorktree = path16.resolve(worktreePath);
-  const resolvedRepo = path16.resolve(repoRoot);
+  const resolvedWorktree = path17.resolve(worktreePath);
+  const resolvedRepo = path17.resolve(repoRoot);
   const lowerCommand = command.toLowerCase();
   const hasMutationVerb = isMutationCommand(lowerCommand);
   const cwdBase = resolvedRepo;
@@ -19604,16 +20326,16 @@ function isBashCommandOutsideWorktree(command, worktreePath, repoRoot) {
     let resolved;
     if (raw.startsWith("~/")) {
       const home = process.env.HOME ?? os2.homedir();
-      resolved = path16.resolve(home, raw.slice(2));
-    } else if (path16.isAbsolute(raw)) {
-      resolved = path16.resolve(raw);
+      resolved = path17.resolve(home, raw.slice(2));
+    } else if (path17.isAbsolute(raw)) {
+      resolved = path17.resolve(raw);
     } else {
-      resolved = path16.resolve(cwdBase, raw);
+      resolved = path17.resolve(cwdBase, raw);
     }
     const insideWorktree = isPathInsideWorktree(resolved, worktreePath, repoRoot);
     if (insideWorktree)
       continue;
-    const insideRepo = resolved === resolvedRepo || resolved.startsWith(resolvedRepo + path16.sep);
+    const insideRepo = resolved === resolvedRepo || resolved.startsWith(resolvedRepo + path17.sep);
     if (insideRepo)
       return true;
     if (/\bcd\b/.test(lowerCommand))
@@ -19667,7 +20389,7 @@ async function defaultRunGit(args, cwd) {
     }
   } catch {}
   const { spawn } = await import("node:child_process");
-  return await new Promise((resolve7) => {
+  return await new Promise((resolve8) => {
     const child = spawn(args[0], args.slice(1), { cwd });
     let stdout = "";
     let stderr = "";
@@ -19677,13 +20399,13 @@ async function defaultRunGit(args, cwd) {
     child.stderr?.on("data", (d) => {
       stderr += d.toString();
     });
-    child.on("close", (code) => resolve7({ exitCode: code ?? 1, stdout, stderr }));
-    child.on("error", (err) => resolve7({ exitCode: 1, stdout: "", stderr: String(err) }));
+    child.on("close", (code) => resolve8({ exitCode: code ?? 1, stdout, stderr }));
+    child.on("error", (err) => resolve8({ exitCode: 1, stdout: "", stderr: String(err) }));
   });
 }
 async function defaultExists(p) {
   try {
-    await fs15.stat(p);
+    await fs16.stat(p);
     return true;
   } catch {
     return false;
@@ -19714,9 +20436,9 @@ async function ensureWorktreeExists(opts) {
     if (e instanceof Error && e.message.includes("not a registered git worktree"))
       throw e;
   }
-  const parent = path16.dirname(worktreePath);
+  const parent = path17.dirname(worktreePath);
   try {
-    await fs15.mkdir(parent, { recursive: true });
+    await fs16.mkdir(parent, { recursive: true });
   } catch {}
   let branchExists = false;
   try {
@@ -19777,19 +20499,19 @@ async function isRegisteredWorktree(worktreePath, runGit, repoRoot) {
     const res = await runGit(["git", "worktree", "list", "--porcelain"], repoRoot);
     if (res.exitCode !== 0)
       return false;
-    const resolvedTarget = path16.resolve(worktreePath);
+    const resolvedTarget = path17.resolve(worktreePath);
     for (const line2 of res.stdout.split(`
 `)) {
       if (line2.startsWith("worktree ")) {
         const wtPath = line2.slice("worktree ".length).trim();
-        if (wtPath && path16.resolve(wtPath) === resolvedTarget)
+        if (wtPath && path17.resolve(wtPath) === resolvedTarget)
           return true;
       }
     }
     return false;
   } catch {
     try {
-      const st = await fs15.stat(path16.join(worktreePath, ".git"));
+      const st = await fs16.stat(path17.join(worktreePath, ".git"));
       return st.isFile();
     } catch {
       return false;
@@ -19800,7 +20522,7 @@ function buildWorktreeViolationMessage(opts) {
   const { sessionID, tool, target, worktreePath, issueId } = opts;
   const issuePart = issueId ? ` for ${issueId}` : "";
   const targetPart = target ? ` Target: ${target}.` : "";
-  const isRelativeTarget = Boolean(target && !path16.isAbsolute(target) && !target.startsWith("~/") && !target.startsWith("/"));
+  const isRelativeTarget = Boolean(target && !path17.isAbsolute(target) && !target.startsWith("~/") && !target.startsWith("/"));
   if (isRelativeTarget) {
     return `Worktree lane violation: session ${sessionID}${issuePart} with lane=worktree attempted ${tool} outside worktree.${targetPart} your lane requires worktree ${worktreePath} — ask the orchestrator to re-dispatch with the worktree. Run inside your worktree at ${worktreePath}.`;
   }
@@ -19960,8 +20682,8 @@ function evaluateClosure(route, lifecycle, report) {
 }
 
 // src/exitgate/profile.ts
-import * as fs16 from "node:fs/promises";
-import * as path17 from "node:path";
+import * as fs17 from "node:fs/promises";
+import * as path18 from "node:path";
 var DEFAULT_BLACKLIST = [
   "rm\\s+-rf\\s+/(\\s|$)",
   "rm\\s+-rf\\s+\\*",
@@ -20033,12 +20755,12 @@ function toGateProfile(raw) {
   };
 }
 function gateProfilePath(repoRoot) {
-  return path17.join(repoRoot, ".tgo", "gate.json");
+  return path18.join(repoRoot, ".tgo", "gate.json");
 }
 async function loadGateProfile(repoRoot) {
   const target = gateProfilePath(repoRoot);
   try {
-    const raw = await fs16.readFile(target, "utf-8");
+    const raw = await fs17.readFile(target, "utf-8");
     const parsed = JSON.parse(raw);
     const profile = toGateProfile(parsed);
     if (profile)
@@ -20204,8 +20926,8 @@ function parseDeltaSpec(specText) {
 
 // src/exitgate/trajectory.ts
 init_def_snapshot();
-import * as fs17 from "node:fs/promises";
-import * as path18 from "node:path";
+import * as fs18 from "node:fs/promises";
+import * as path19 from "node:path";
 function isRecord(v) {
   return typeof v === "object" && v !== null;
 }
@@ -20285,14 +21007,14 @@ function parseEntry(line2, lineNo) {
 }
 function runLogPath(repoRoot, runId) {
   assertValidBeadID(runId);
-  return path18.join(repoRoot, ".tgo", "runs", `${runId}.jsonl`);
+  return path19.join(repoRoot, ".tgo", "runs", `${runId}.jsonl`);
 }
 async function scoreTrajectory(repoRoot, runId, profile = DEFAULT_GATE_PROFILE) {
   const findings = [];
   const target = runLogPath(repoRoot, runId);
   let raw;
   try {
-    raw = await fs17.readFile(target, "utf-8");
+    raw = await fs18.readFile(target, "utf-8");
   } catch (e) {
     const code = e?.code;
     if (code === "ENOENT") {
@@ -20743,9 +21465,9 @@ No ready, open, pending, in_progress, or blocked work.`;
 }
 
 // src/version.ts
-import * as fs18 from "node:fs/promises";
-import * as path19 from "node:path";
-import { fileURLToPath as fileURLToPath4 } from "node:url";
+import * as fs19 from "node:fs/promises";
+import * as path20 from "node:path";
+import { fileURLToPath as fileURLToPath5 } from "node:url";
 var PLUGIN_NPM_NAME = "trans-genderian-orchestra";
 var REGISTRY_URL = `https://registry.npmjs.org/${PLUGIN_NPM_NAME}/latest`;
 function compareVersions(a, b) {
@@ -20779,9 +21501,9 @@ function compareVersions(a, b) {
   return pa.pre < pb.pre ? -1 : pa.pre > pb.pre ? 1 : 0;
 }
 async function readLocalVersion(packageRoot3) {
-  const root = packageRoot3 ?? path19.resolve(path19.dirname(fileURLToPath4(import.meta.url)), "..");
+  const root = packageRoot3 ?? path20.resolve(path20.dirname(fileURLToPath5(import.meta.url)), "..");
   try {
-    const raw = await fs18.readFile(path19.join(root, "package.json"), "utf-8");
+    const raw = await fs19.readFile(path20.join(root, "package.json"), "utf-8");
     const json2 = JSON.parse(raw);
     return typeof json2.version === "string" && json2.version.length > 0 ? json2.version : null;
   } catch {
@@ -20861,20 +21583,20 @@ var and = (...cs) => (i) => cs.every((c) => c(i));
 var terminationDecision = and((i) => i.signal.complete, (i) => !i.exitGateRequired || i.signal.exitGate === true, (i) => i.toolCallsAfterCompletion >= 1);
 
 // src/self-update.ts
-import * as fs19 from "node:fs/promises";
+import * as fs20 from "node:fs/promises";
 import * as fsSync2 from "node:fs";
-import * as path20 from "node:path";
+import * as path21 from "node:path";
 import * as os3 from "node:os";
 var LOCK_STALE_MS = 120000;
 var LOCK_FILE = ".tgo-selfupdate.lock";
 function resolveCacheRoot(homeDir) {
-  const base = process.env.OPENCODE_TEST_HOME ?? process.env.XDG_CACHE_HOME ?? path20.join(homeDir ?? os3.homedir(), ".cache");
-  return path20.join(base, "opencode");
+  const base = process.env.OPENCODE_TEST_HOME ?? process.env.XDG_CACHE_HOME ?? path21.join(homeDir ?? os3.homedir(), ".cache");
+  return path21.join(base, "opencode");
 }
 function slotDirs(cacheRoot, pkgName) {
   const candidates = [
-    path20.join(cacheRoot, "packages", `${pkgName}@latest`),
-    path20.join(cacheRoot, "packages", pkgName)
+    path21.join(cacheRoot, "packages", `${pkgName}@latest`),
+    path21.join(cacheRoot, "packages", pkgName)
   ];
   return candidates.filter((dir) => {
     try {
@@ -20983,14 +21705,14 @@ function buildInstallArgs(dir, pkgName) {
 }
 async function recoverOrphans(dir) {
   try {
-    const dirExists = await fs19.stat(dir).then(() => true).catch(() => false);
+    const dirExists = await fs20.stat(dir).then(() => true).catch(() => false);
     const backup = `${dir}.tgo-backup`;
     const staging = `${dir}.tgo-staging`;
     if (!dirExists) {
-      const backupExists = await fs19.stat(backup).then(() => true).catch(() => false);
+      const backupExists = await fs20.stat(backup).then(() => true).catch(() => false);
       if (backupExists) {
         try {
-          await fs19.rename(backup, dir);
+          await fs20.rename(backup, dir);
         } catch {}
       }
       return;
@@ -21001,27 +21723,27 @@ async function recoverOrphans(dir) {
 }
 async function rmRf(p) {
   try {
-    await fs19.rm(p, { recursive: true, force: true });
+    await fs20.rm(p, { recursive: true, force: true });
   } catch {}
 }
 async function copyDir(src, dest) {
-  const cp2 = fs19.cp;
+  const cp2 = fs20.cp;
   if (typeof cp2 === "function") {
-    await cp2.call(fs19, src, dest, { recursive: true, force: true });
+    await cp2.call(fs20, src, dest, { recursive: true, force: true });
     return;
   }
-  await fs19.mkdir(dest, { recursive: true });
-  const entries = await fs19.readdir(src, { withFileTypes: true });
+  await fs20.mkdir(dest, { recursive: true });
+  const entries = await fs20.readdir(src, { withFileTypes: true });
   for (const e of entries) {
-    const s = path20.join(src, e.name);
-    const d = path20.join(dest, e.name);
+    const s = path21.join(src, e.name);
+    const d = path21.join(dest, e.name);
     if (e.isDirectory()) {
       await copyDir(s, d);
     } else if (e.isSymbolicLink()) {
-      const target = await fs19.readlink(s);
-      await fs19.symlink(target, d);
+      const target = await fs20.readlink(s);
+      await fs20.symlink(target, d);
     } else {
-      await fs19.copyFile(s, d);
+      await fs20.copyFile(s, d);
     }
   }
 }
@@ -21048,20 +21770,20 @@ async function selfUpdate(deps) {
       try {
         await recoverOrphans(dir);
       } catch {}
-      const lockPath = path20.join(dir, LOCK_FILE);
+      const lockPath = path21.join(dir, LOCK_FILE);
       const staging = `${dir}.tgo-staging`;
       const backup = `${dir}.tgo-backup`;
       let ownerToken = null;
       let acquired = false;
       try {
         try {
-          await fs19.mkdir(dir, { recursive: true });
+          await fs20.mkdir(dir, { recursive: true });
         } catch {}
         const token = `${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}`;
         const tryAcquire = async () => {
           let handle;
           try {
-            handle = await fs19.open(lockPath, "wx");
+            handle = await fs20.open(lockPath, "wx");
             try {
               await handle.writeFile(token, "utf-8");
             } catch {}
@@ -21084,11 +21806,11 @@ async function selfUpdate(deps) {
         let ok = await tryAcquire();
         if (!ok) {
           try {
-            const stat6 = await fs19.stat(lockPath);
+            const stat6 = await fs20.stat(lockPath);
             const age = nowMs - stat6.mtimeMs;
             if (age > LOCK_STALE_MS) {
               try {
-                await fs19.unlink(lockPath);
+                await fs20.unlink(lockPath);
               } catch {}
               ok = await tryAcquire();
               if (!ok)
@@ -21123,8 +21845,8 @@ async function selfUpdate(deps) {
           }
           let newVersion = "";
           try {
-            const pkgJsonPath = path20.join(staging, "node_modules", deps.pkgName, "package.json");
-            const raw = await fs19.readFile(pkgJsonPath, "utf-8");
+            const pkgJsonPath = path21.join(staging, "node_modules", deps.pkgName, "package.json");
+            const raw = await fs20.readFile(pkgJsonPath, "utf-8");
             const json2 = JSON.parse(raw);
             newVersion = typeof json2.version === "string" ? json2.version : "";
           } catch (e) {
@@ -21139,16 +21861,16 @@ async function selfUpdate(deps) {
           newVersionForLog = newVersion;
           try {
             await rmRf(backup);
-            await fs19.rename(dir, backup);
-            await fs19.rename(staging, dir);
+            await fs20.rename(dir, backup);
+            await fs20.rename(staging, dir);
             await rmRf(backup);
           } catch (e) {
             try {
-              const backupExists = await fs19.stat(backup).then(() => true).catch(() => false);
-              const dirExists = await fs19.stat(dir).then(() => true).catch(() => false);
+              const backupExists = await fs20.stat(backup).then(() => true).catch(() => false);
+              const dirExists = await fs20.stat(dir).then(() => true).catch(() => false);
               if (backupExists && !dirExists) {
                 try {
-                  await fs19.rename(backup, dir);
+                  await fs20.rename(backup, dir);
                 } catch {}
               }
               await rmRf(staging);
@@ -21161,11 +21883,11 @@ async function selfUpdate(deps) {
         } catch (e) {
           innerError = e;
           try {
-            const backupExists = await fs19.stat(backup).then(() => true).catch(() => false);
-            const dirExists = await fs19.stat(dir).then(() => true).catch(() => false);
+            const backupExists = await fs20.stat(backup).then(() => true).catch(() => false);
+            const dirExists = await fs20.stat(dir).then(() => true).catch(() => false);
             if (backupExists && !dirExists) {
               try {
-                await fs19.rename(backup, dir);
+                await fs20.rename(backup, dir);
               } catch {}
             }
             await rmRf(staging);
@@ -21182,9 +21904,9 @@ async function selfUpdate(deps) {
       } finally {
         try {
           if (ownerToken) {
-            const cur = await fs19.readFile(lockPath, "utf-8").catch(() => "");
+            const cur = await fs20.readFile(lockPath, "utf-8").catch(() => "");
             if (cur === ownerToken) {
-              await fs19.unlink(lockPath).catch(() => {});
+              await fs20.unlink(lockPath).catch(() => {});
             }
           }
         } catch {}
@@ -21197,24 +21919,24 @@ async function selfUpdate(deps) {
 
 // src/seat-sync.ts
 init_config();
-import * as fs20 from "node:fs/promises";
-import * as path21 from "node:path";
+import * as fs21 from "node:fs/promises";
+import * as path22 from "node:path";
 function parseSteps(content) {
   const m = content.match(/^\s*steps:\s*(\d+)/m);
   return m ? m[1] : null;
 }
-async function reconcileSeats(assetsAgentsDir, installedAgentsDir, log, register = "concise") {
+async function reconcileSeats(assetsAgentsDir, installedAgentsDir, log, _card = "default") {
   const summary = [];
   let renderedSeats;
   try {
-    renderedSeats = await renderSeats(assetsAgentsDir, register);
+    renderedSeats = await renderSeats(assetsAgentsDir, "default");
   } catch (err) {
     safeWarn(log, "tgo: seat sync render failed", { assetsAgentsDir, error: String(err) });
     return summary;
   }
   if (renderedSeats.length === 0) {
     try {
-      await fs20.readdir(assetsAgentsDir);
+      await fs21.readdir(assetsAgentsDir);
     } catch (err) {
       safeWarn(log, "tgo: seat sync readdir failed", { assetsAgentsDir, error: String(err) });
     }
@@ -21224,12 +21946,12 @@ async function reconcileSeats(assetsAgentsDir, installedAgentsDir, log, register
   for (const seat of renderedSeats) {
     const file2 = seat.fileName;
     const expectedContent = seat.content;
-    const seatName = path21.basename(file2, ".md");
-    const installedPath = path21.join(installedAgentsDir, file2);
+    const seatName = path22.basename(file2, ".md");
+    const installedPath = path22.join(installedAgentsDir, file2);
     let installedContent;
     let installedExists = false;
     try {
-      installedContent = await fs20.readFile(installedPath, "utf-8");
+      installedContent = await fs21.readFile(installedPath, "utf-8");
       installedExists = true;
     } catch (err) {
       const code = err?.code;
@@ -21245,27 +21967,27 @@ async function reconcileSeats(assetsAgentsDir, installedAgentsDir, log, register
       continue;
     }
     try {
-      await fs20.mkdir(installedAgentsDir, { recursive: true });
+      await fs21.mkdir(installedAgentsDir, { recursive: true });
     } catch (err) {
       safeWarn(log, "tgo: seat sync mkdir failed", { installedAgentsDir, error: String(err) });
       continue;
     }
     if (installedExists && installedContent !== undefined) {
       try {
-        await fs20.writeFile(`${installedPath}.bak`, installedContent, "utf-8");
+        await fs21.writeFile(`${installedPath}.bak`, installedContent, "utf-8");
       } catch (err) {
         safeWarn(log, "tgo: seat sync backup failed", { file: file2, error: String(err) });
         continue;
       }
     }
-    const tmp = path21.join(installedAgentsDir, `.${file2}.${process.pid}.${Date.now()}.tmp`);
+    const tmp = path22.join(installedAgentsDir, `.${file2}.${process.pid}.${Date.now()}.tmp`);
     try {
-      await fs20.writeFile(tmp, expectedContent, "utf-8");
-      await fs20.rename(tmp, installedPath);
+      await fs21.writeFile(tmp, expectedContent, "utf-8");
+      await fs21.rename(tmp, installedPath);
     } catch (err) {
       safeWarn(log, "tgo: seat sync write failed", { file: file2, error: String(err) });
       try {
-        await fs20.rm(tmp, { force: true });
+        await fs21.rm(tmp, { force: true });
       } catch {}
       continue;
     }
@@ -21294,8 +22016,8 @@ init_runs();
 
 // src/manifest-hooks.ts
 init_def_snapshot();
-import * as fs21 from "node:fs/promises";
-import * as path22 from "node:path";
+import * as fs22 from "node:fs/promises";
+import * as path23 from "node:path";
 async function manifestOnDispatch(opts) {
   const { repoRoot, issueId, packet } = opts;
   if (!isValidBeadID(issueId))
@@ -21357,8 +22079,8 @@ function extractTouchedFilesFromReport(report) {
 }
 async function extractTouchedFilesFromRunLog(repoRoot, issueId) {
   try {
-    const target = path22.join(repoRoot, ".tgo", "runs", issueId + ".jsonl");
-    const raw = await fs21.readFile(target, "utf-8");
+    const target = path23.join(repoRoot, ".tgo", "runs", issueId + ".jsonl");
+    const raw = await fs22.readFile(target, "utf-8");
     const touched = [];
     for (const line2 of raw.split(`
 `)) {
@@ -21609,9 +22331,9 @@ GAPS: none`);
 }
 
 // src/plugin.ts
-import * as path23 from "node:path";
+import * as path24 from "node:path";
 import * as os4 from "node:os";
-import { fileURLToPath as fileURLToPath5 } from "node:url";
+import { fileURLToPath as fileURLToPath6 } from "node:url";
 var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => {
   const config2 = await loadTgoConfig(options);
   const appLog = (level, message, extra) => {
@@ -21667,9 +22389,9 @@ var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => 
   const seatDir = resolveAgentsDir({ agentDir: config2.agentDir });
   (async () => {
     try {
-      const packageRoot3 = path23.resolve(path23.dirname(fileURLToPath5(import.meta.url)), "..");
-      const assetsAgentsDir = path23.join(packageRoot3, "assets", "agents");
-      const summary = await reconcileSeats(assetsAgentsDir, seatDir, appLog, config2.register);
+      const packageRoot3 = path24.resolve(path24.dirname(fileURLToPath6(import.meta.url)), "..");
+      const assetsAgentsDir = path24.join(packageRoot3, "assets", "agents");
+      const summary = await reconcileSeats(assetsAgentsDir, seatDir, appLog, "default");
       if (summary.length > 0) {
         let version2 = "unknown";
         try {
@@ -21721,14 +22443,14 @@ var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => 
     }
   }
   const concision = new ConcisionController({
-    enabled: config2.concision?.enabled,
-    register: config2.register,
+    enabled: config2.style?.enabled ?? true,
+    cardId: config2.style?.card ? delegationStyleToVoiceCardId(config2.style.card) : "tgo-default",
     log: appLog
   });
   const styleReinforcement = new StyleReinforcementController({
-    enabled: config2.concision?.enabled,
-    productionEnabled: config2.concision?.reinforcement,
-    register: config2.register,
+    enabled: config2.style?.enabled ?? true,
+    productionEnabled: config2.style?.reinforcement ?? false,
+    cardId: config2.style?.card ? delegationStyleToVoiceCardId(config2.style.card) : "tgo-default",
     log: appLog
   });
   const fit = new TaskFitController;
@@ -21878,6 +22600,17 @@ var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => 
   const delegatedSessionIds = new Set;
   const completionSignals = new Map;
   const terminationParentIds = new Map;
+  const delegationStyleBySession = new Map;
+  const resolvedVoiceCardBySession = new Map;
+  const pendingDelegationStyleByParentSession = new Map;
+  function rememberDelegationStyleForSession(sessionID, packet) {
+    const raw = packet.style;
+    if (typeof raw === "string" && isDelegationStyle(raw)) {
+      delegationStyleBySession.set(sessionID, raw);
+      resolvedVoiceCardBySession.set(sessionID, delegationStyleToVoiceCardId(raw));
+      pendingDelegationStyleByParentSession.set(sessionID, raw);
+    }
+  }
   const worktreeLaneBySession = new Map;
   const pendingWorktreeLaneByParentSession = new Map;
   const pendingWorktreeLaneByIssue = new Map;
@@ -22314,6 +23047,15 @@ var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => 
         } catch {}
         try {
           if (info.id && info.parentID) {
+            const pendingStyle = pendingDelegationStyleByParentSession.get(info.parentID);
+            if (pendingStyle) {
+              delegationStyleBySession.set(info.id, pendingStyle);
+              resolvedVoiceCardBySession.set(info.id, delegationStyleToVoiceCardId(pendingStyle));
+            }
+          }
+        } catch {}
+        try {
+          if (info.id && info.parentID) {
             const parentRunId = sessionToRunId.get(info.parentID);
             if (parentRunId)
               sessionToRunId.set(info.id, parentRunId);
@@ -22349,7 +23091,16 @@ var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => 
             worktreeLaneBySession.delete(deletedId);
           } catch {}
           try {
+            delegationStyleBySession.delete(deletedId);
+          } catch {}
+          try {
+            resolvedVoiceCardBySession.delete(deletedId);
+          } catch {}
+          try {
             pendingWorktreeLaneByParentSession.delete(deletedId);
+          } catch {}
+          try {
+            pendingDelegationStyleByParentSession.delete(deletedId);
           } catch {}
           try {
             onSessionDeleted(deletedId);
@@ -22417,7 +23168,7 @@ var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => 
       const nextPermission = preapproveExternalDirectory(input.permission, worktreeRoot);
       if (nextPermission && Object.keys(nextPermission).length > 0) {
         input.permission = nextPermission;
-        const parent = worktreeRoot ? path23.dirname(worktreeRoot) : undefined;
+        const parent = worktreeRoot ? path24.dirname(worktreeRoot) : undefined;
         appLog("info", `pre-approved external_directory for worktree family ${parent}/*`, {
           worktreeRoot,
           projectWorktree: project?.worktree ?? null,
@@ -22620,6 +23371,12 @@ var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => 
         }
       } catch {}
       try {
+        const rawStyle = output?.args;
+        const pktStyle = rawStyle?.delegationPacket;
+        if (pktStyle)
+          rememberDelegationStyleForSession(input.sessionID, pktStyle);
+      } catch {}
+      try {
         await enforceWorktreeLaneBeforeHook(input, output);
       } catch (e) {
         throw e;
@@ -22778,7 +23535,7 @@ ${truncated}`, synthetic: true }] }
             let seatFileFound = false;
             try {
               const seatDir2 = resolveAgentsDir({ agentDir: config2.agentDir });
-              const p = path23.join(seatDir2, `${seatName}.md`);
+              const p = path24.join(seatDir2, `${seatName}.md`);
               try {
                 const fsMod = await import("node:fs/promises");
                 seatFrontmatter = await fsMod.readFile(p, "utf-8");
@@ -23054,6 +23811,27 @@ ${truncated}`, synthetic: true }] }
           }
         }
       } catch {}
+      try {
+        if (input.tool === "task") {
+          const pendingStyleAfter = pendingDelegationStyleByParentSession.get(input.sessionID);
+          if (pendingStyleAfter) {
+            const metaAfter = output?.metadata;
+            let childSidAfter;
+            if (metaAfter && typeof metaAfter.sessionId === "string" && metaAfter.sessionId.trim())
+              childSidAfter = metaAfter.sessionId.trim();
+            if (!childSidAfter) {
+              const outTextAfter = typeof output?.output === "string" ? output.output : "";
+              const mAfter = outTextAfter.match(/ses_[A-Za-z0-9]+/);
+              if (mAfter)
+                childSidAfter = mAfter[0];
+            }
+            if (childSidAfter && /^ses_[A-Za-z0-9]+$/.test(childSidAfter)) {
+              delegationStyleBySession.set(childSidAfter, pendingStyleAfter);
+              resolvedVoiceCardBySession.set(childSidAfter, delegationStyleToVoiceCardId(pendingStyleAfter));
+            }
+          }
+        }
+      } catch {}
       if (input.tool === "task" && typeof output?.output === "string") {
         let report = parseTaskReport(output.output);
         if (output && typeof output === "object") {
@@ -23199,21 +23977,35 @@ ${truncated}`, synthetic: true }] }
       await board.transform(output.messages);
     },
     "experimental.chat.system.transform": async (input, output) => {
+      let effective = config2.style?.card ? delegationStyleToVoiceCardId(config2.style.card) : "tgo-default";
+      try {
+        if (input.sessionID) {
+          const packetStyle = delegationStyleBySession.get(input.sessionID);
+          const explicit = styleReinforcement.getStyleOverride?.(input.sessionID);
+          effective = explicit ?? (packetStyle ? delegationStyleToVoiceCardId(packetStyle) : config2.style?.card ? delegationStyleToVoiceCardId(config2.style.card) : "tgo-default");
+          resolvedVoiceCardBySession.set(input.sessionID, effective);
+          concision.cardId = effective;
+          concision.instruction = undefined;
+          styleReinforcement.cardId = config2.style?.card ? delegationStyleToVoiceCardId(config2.style.card) : "tgo-default";
+        }
+      } catch {}
       const appended = await concision.transform(client, input, output);
       const reinforced = input.sessionID ? await styleReinforcement.appendPending(client, input.sessionID, output.system) : false;
       if (appended) {
         logEvent("concision.appended", input.sessionID ?? "?", {
-          register: config2.register
+          style: effective
         });
       }
       if (reinforced)
-        logEvent("style_reinforcement.appended", input.sessionID ?? "?", { register: config2.register });
+        logEvent("style_reinforcement.appended", input.sessionID ?? "?", { style: effective });
     },
     "experimental.text.complete": async (input, output) => {
+      const packetStyle = input.sessionID ? delegationStyleBySession.get(input.sessionID) : undefined;
       await styleReinforcement.noteCompletion(client, {
         sessionID: input.sessionID,
         messageID: input.messageID,
-        candidate: output.text
+        candidate: output.text,
+        packetStyle
       });
     },
     dispose: async () => {
@@ -23234,6 +24026,15 @@ ${truncated}`, synthetic: true }] }
       } catch {}
       try {
         pendingWorktreeLaneByParentSession.clear();
+      } catch {}
+      try {
+        delegationStyleBySession.clear();
+      } catch {}
+      try {
+        resolvedVoiceCardBySession.clear();
+      } catch {}
+      try {
+        pendingDelegationStyleByParentSession.clear();
       } catch {}
     }
   };
