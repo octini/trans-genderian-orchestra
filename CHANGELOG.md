@@ -2,6 +2,10 @@
 
 All notable changes to TGO, in reverse chronological order. Versions track `plugin/package.json`.
 
+## [0.4.1] - 2026-09-03
+
+- **Docs-only release published to refresh the npm package page — no source changes (`plugin/src/**` and `plugin/dist/**` unchanged from 0.4.0):** living docs refreshed to the voice-cards model (README + plugin mirror, CONTEXT, CONCISION, ARCHITECTURE, ROSTER, SETUP, CONTRIBUTING now describe `style.card` / always-on default card / rule packs / findings-targeted nudges); four-voice README validation PoC added at `docs/validation/voice-cards/` (normal/default/conversational/prose, generated under byte-exact renderer payloads); npm version badge now dynamic (`img.shields.io/npm/v/...`) instead of hand-bumped.
+
 ## [0.4.0] - 2026-09-03
 
 - **Factory writing styles (default / conversational / prose) replace the concise/natural register dial — default always-on, cards assigned by delegation packet, explicit request, or ask-when-ambiguous:** `tgo-default` always-on for every seat; named cards override when assigned via `DelegationPacket.style`, explicit user request (`use prose` / `use conversational` / `use default` + `stop X` / `normal mode` off-switch), or orchestrator suspend question when ambiguous. Precedence: explicit request > packet assignment > default. Dylan self-classify demoted to fallback for unassigned creative-writing tasks only. Config `register` → `style.card` (old key safely ignored).
