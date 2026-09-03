@@ -2,7 +2,7 @@
 
 > Mirrored byte-for-byte in `plugin/README.md` (the npm readme) — edit one, copy to the other.
 
-[![npm version](https://img.shields.io/badge/npm-0.3.0-ba0ce9e)](https://www.npmjs.com/package/trans-genderian-orchestra)
+[![npm version](https://img.shields.io/npm/v/trans-genderian-orchestra)](https://www.npmjs.com/package/trans-genderian-orchestra)
 [![License: MIT](https://img.shields.io/badge/license-MIT-6a4c93)](LICENSE)
 [![OpenCode 1.18.13](https://img.shields.io/badge/OpenCode-1.18.13-6a4c93)](https://opencode.ai)
 
@@ -36,7 +36,7 @@ One npm package exposes both via dual-package exports since v0.1.5 (`exports "./
 If you prefer to wire it by hand, this also works in `opencode.jsonc`:
 
 ```json
-{ "plugin": ["trans-genderian-orchestra@0.3.0"] }
+{ "plugin": ["trans-genderian-orchestra@0.4.0"] }
 ```
 
 Restart opencode after it installs. That’s the global layer done.
@@ -106,16 +106,16 @@ The Background Job Board is the view that follows you through all of this. Each 
 - **Progress files** — per-issue `.tgo/<issueId>/progress.md` (Objective / Touch set / Decisions / Blockers / Status) written by Dylan, read by Bernstein/Horowitz; survives session end.
 - **Termination conditions** — composable completion detection stops post-completion waffle and hands the report back.
 
-## What 0.3.0 added
+## What's new in 0.4.0
 
-TGO 0.3.0 is the governance release — twelve additions that close the loop between “work handed out” and “work actually correct,” grouped by shape:
+TGO 0.4.0 is the voice-cards release — it replaces the concise/natural register dial with selectable voice cards and card-aware style enforcement, grouped by shape:
 
-- **Trust the handoff.** **Version pinning** snapshots each delegation’s definition (prompt/preset/frontmatter hash) at dispatch and badges work whose instructions outlived a change; **worktree lanes** lock each delegated writer into an isolated git worktree and block symlink-escapes, `cd ../` tricks, and multi-file escapes.
-- **Check the work.** **Exit gates** run deterministic checks (delta-spec, trajectory, blacklist) before a task closes — a critical finding blocks the close and suggests a compensation ticket; a **status taxonomy** (`complete`/`bail`/`failed`/`tripwire`) maps each outcome to a recovery action.
-- **Wait correctly.** The **wait gate** lets a task suspend with a typed request, then validates the human’s prose reply against that shape before waking it.
-- **See the system.** The **problems view** surfaces stuck/dead/awaiting sessions with a per-seat queue gauge; the **cost surface** shows each seat’s model budget vs. spend and recommends a cheaper preset when the queue backs up.
-- **Plan and land.** **Typed manifests** reject scope overlaps at plan time and verify touch-sets at completion; **convoys** group work into waves and land them in defined order, gate-checked per task.
-- **Contain the chaos.** **Recursion blocking** caps delegation depth and detects spawn cycles; **step replay** lets Horowitz re-watch a recorded step without re-running the pipeline.
+- **Factory voices.** `tgo-default` is always-on for every seat; named cards `tgo-prose` (measured, image-led, 29/44/27 buckets, mean 19 median 16 p90 37) and `tgo-conversational` (casual, frank, 26/42/32 buckets, mean 20 median 19 p90 34) override when assigned via delegation packet `style`, explicit request (`use prose` / `use conversational` / `use default`), or orchestrator ask-when-ambiguous. Precedence: explicit request > packet assignment > default (`tgo-default`). Dylan self-classify survives only as fallback for unassigned creative-writing tasks. Off-switch is `style.enabled: false` or `stop X` / `normal mode`. Long sentences form via paratactic and-chains, not subordination depth; paragraph-head discipline and one-device-per-sentence still apply; shipped exemplars are embedded verbatim by shape (loader injects 1–2, never all); `tgo-default` stays exemplar-free. Old `register` is safely ignored; config is `style.card` (`default` | `prose` | `conversational`).
+- **Rule packs.** Drift families moved from hard-coded `drift.ts` into three JSON packs: `mechanics` (low-FP, always-on: spelling/caps/repetition + mechanical paste-tells — unfilled placeholders, chat-citation markup, AI tracking params), `concision` (medium-FP, whitelist-gated: verbal false limbs, unnamed-authority, circumlocution swaps, corporate speak), `voice-cadence` (high-FP, cluster-judged: passive/hidden-actor, hedge stacks, novelty inflation, false balance, em-dash budgets, rule-of-three, synonym cycling). Cards declare `anti_patterns.refs` + `strictness` + numeric thresholds; cadence suppression by `register=natural` is gone.
+- **Findings-targeted nudges.** The generic `STYLE_NUDGE` is replaced by a revision instruction built from `DriftFinding` spans/evidence/family — it flags only the spans to fix and preserves code, numbers, and protected content. Flag-then-override applies: keep a flag only if no one-word override fits (`rhythm` / `emphasis` / `picture` / `idiom` / `joke`); otherwise apply the fix. Active on all cards (same spine, card-tuned selection).
+- **Benchmark gates.** `plugin/benchmark/style-quality.ts` now checks card-aware regression gates against D9–D11 targets (sentence buckets ±5, mean/median/p90 ±2, max ≤60, em-dash, device-per-sentence, hedge, passive rate); `bun run benchmark/style-quality.ts --check` fails on drift. `byCard` aggregates sit alongside `byMode` / `byTaskClass`.
+
+0.3.1 (2026-08-31) moved Horowitz from `gpt-5.6-luna` (4× quota multiplier) to `qwen3.8-flash` (durable 2×, stronger practical coder, ~3× quota savings) with no behavior change; 0.3.0 was the governance release (version pinning, worktree lanes, exit gates, status taxonomy, wait gate, problems view, cost surface, typed manifests, convoys, recursion blocking, step replay).
 
 ## The roster
 
@@ -136,11 +136,11 @@ Put options in the second element of the plugin tuple: `["trans-genderian-orches
 | Option | What it does | Default |
 |---|---|---|
 | `preset` | Which seat→model map to use. `balanced` / `cheap` / `frontier`. | `balanced` |
-| `register` | Bernstein’s dial for Dylan’s voice. `concise` is terse and scannable; `natural` is warmer and a little more expansive. Only Dylan ever toggles — the other seats stay in the house style. | `concise` |
+| `style.card` | Voice card for Dylan’s output. `default` (always-on) is terse and scannable; `prose` and `conversational` are assigned via delegation packet, explicit request (`use prose` / `use conversational`), or ask-when-ambiguous. Precedence: explicit request > packet > default. Old `register` is ignored. | `default` |
 | `presets` | Partial per-seat overrides on top of any preset. Data, not code — it tolerates model-name drift. | built-ins |
 | `agentDir` | Where rendered seat prompts live. | `~/.config/opencode/agent` |
 | `board` | `{ enabled, refreshMs }` — the read-only beads board and how often it re-derives. | `true`, `5000` |
-| `concision` | `{ enabled, reinforcement }` — the always-on house-style switch and an opt-in, once-per-attempt reinforcement nudge. Inert by default without explicit context. | `true`, `false` |
+| `style` | `{ card, enabled, reinforcement }` — the always-on style layer (default card + optional named-card override) and an opt-in, once-per-attempt findings-targeted nudge. Inert by default without explicit context. Card `default` omits the id. | `default`, `true`, `false` |
 | `setup` | `{ enabled, autoInstallBeads }` — the auto-init described above; disable it or ask it to report a missing `bd` instead of installing. | `true`, `true` |
 | `checkVersion` | Whether to do that gentle npm drift check on startup. | `true` |
 | `sessionReuse` | `{ enabled, maxContextTokens }` — continues prior delegation sessions via task_id when the stored session is under the token budget. | `true`, 100000 |
@@ -155,7 +155,7 @@ Put options in the second element of the plugin tuple: `["trans-genderian-orches
 
 The JSON schema is at `plugin/schema/tgo.config.schema.json`.
 
-There’s also a human voice for the docs themselves. When you see `register: "natural"` in the humanized toggle (`tgo-h` / `humanized` in `docs/spec/concision-enforcement.md:§4`), that’s Dylan writing in long-form — contractions are fine, examples are welcome, empathy leads — versus the 720-token `tgo-current` house style (about 480 tokens at runtime plus ~240 folded into seat prompts) that’s built for scanning. The toggle only affects Dylan’s prose; the other seats present the same either way.
+There’s also a human voice for the docs themselves. The shipped `tgo-prose` and `tgo-conversational` cards are the humanized voices — contractions are fine, examples are welcome, empathy leads — versus the `tgo-default` style (about 300–500 tokens at runtime plus ≤250 folded into seat prompts, built for scanning). Assign a card via `style.card: "prose"` / `"conversational"` or say `use prose` / `use conversational` in session; `use default` or `normal mode` clears it. The card only affects Dylan’s voice; the other seats stay on default.
 
 ## What the engine behind it actually needs
 
@@ -188,7 +188,7 @@ TGO ships thirteen advisory skills with fifteen per-seat grants — wayfinder, g
 
 ## The house style, in plain language
 
-Every seat shares one house style: start with the action, keep steps numbered and self-contained, never drop a negation or a number or an exact string, keep code changes small (YAGNI), and lead with the change rather than the story of making it. The primary loop gets that instruction injected every turn; subagent seats have it folded into their prompts at build. There’s a simple two-position dial — `concise` or `natural` — that only Dylan ever turns, and a single off-switch that covers everything: `concision.enabled: false`, or just saying “stop X” / “normal mode.” A deterministic drift analyzer reports without rewriting, and an opt-in reinforcement path is surrogate-only unless you give it explicit context and lineage. The mechanics and the tell list are in `docs/CONCISION.md`.
+Every seat shares one house style — the default card (`tgo-default`), always-on: start with the action, keep steps numbered and self-contained, never drop a negation, number, or exact string, keep code changes small (YAGNI), and lead with the change rather than the story of making it. It enforces a plain-language spine (ISO 24495-1 + Strunk & White), the banned-tell list judged by clusters (filler, AI-vocab, marketing adjectives, pomposities, adverbs, modal hedges, rule-of-three, `not X, it's Y`, synonym-cycling, passive with hidden actor, em-dash spam, chatbot closers, diff-anchored narration), STE thresholds (20 instruction / 25 descriptive), and preservation-first (never invent facts; code, numbers, and necessary explanations are protected). The primary loop gets the default card injected every turn (300–500 tokens via `plugin/src/voices.ts` + `plugin/src/concision.ts` single-sourced from `plugin/assets/voices/tgo-default.json`); subagent seats have it folded at build (≤250 tokens). Named voices are separate cards with shipped exemplars — `tgo-prose` (measured, image-led) and `tgo-conversational` (casual, frank) — layered on default when assigned (packet, explicit request, or ask-when-ambiguous; explicit > packet > default; `stop X` / `normal mode` off-switch; Dylan self-classify only for unassigned creative tasks). Drift is card-aware via three rule packs (`mechanics` always-on, `concision` whitelist-gated, `voice-cadence` cluster-judged), and the findings-targeted nudge flags only the spans to fix with a one-word override (`rhythm`/`emphasis`/`picture`/`idiom`/`joke`). The mechanics and the tell list are in `docs/CONCISION.md`.
 
 ## Deepwork when you ask for it
 

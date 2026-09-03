@@ -12,12 +12,12 @@ You don’t need to install two things or wire two configs. A single `opencode p
 opencode plugin trans-genderian-orchestra -g
 ```
 
-Under the hood that’s one npm package (`trans-genderian-orchestra@0.3.0`) with dual-package exports since v0.1.5 — `"./server" → "./dist/server.js"` for the board that lives in chat, and `"./tui" → "./dist/tui.js"` for the sidebar you see on the right. The host-resolved peers (`solid-js`, `@opentui/solid`, `@opentui/core`) are shared, not bundled twice. On the server the plugin hooks `experimental.chat.messages.transform` and `experimental.chat.system.transform` in `dist/server.js`; in the TUI it calls `slots.register` at `order 450` in `tui.jsonc` (right between the built-in Todo at `400` and Modified Files at `500`) in `dist/tui.js`. The interactive sidebar itself arrived in 0.1.6 — 0.1.5 shipped the dual exports and the renderer-only `tgo_beads_snapshot` tool, not the live sidebar.
+Under the hood that’s one npm package (`trans-genderian-orchestra@0.4.0`) with dual-package exports since v0.1.5 — `"./server" → "./dist/server.js"` for the board that lives in chat, and `"./tui" → "./dist/tui.js"` for the sidebar you see on the right. The host-resolved peers (`solid-js`, `@opentui/solid`, `@opentui/core`) are shared, not bundled twice. On the server the plugin hooks `experimental.chat.messages.transform` and `experimental.chat.system.transform` in `dist/server.js`; in the TUI it calls `slots.register` at `order 450` in `tui.jsonc` (right between the built-in Todo at `400` and Modified Files at `500`) in `dist/tui.js`. The interactive sidebar itself arrived in 0.1.6 — 0.1.5 shipped the dual exports and the renderer-only `tgo_beads_snapshot` tool, not the live sidebar.
 
 If you’d rather declare it explicitly, the manual `opencode.jsonc` form works just as well:
 
 ```json
-{ "plugin": ["trans-genderian-orchestra@0.3.0"] }
+{ "plugin": ["trans-genderian-orchestra@0.4.0"] }
 ```
 
 OpenCode installs the package and its peers. Restart opencode and you’re globally ready. That’s the whole manual step — everything else is lazy.
@@ -64,7 +64,7 @@ grep -c experimental.chat plugin/dist/tui.js  # → 0 — TUI never touches chat
 
 ### What the installer writes, concretely
 
-- **Seats** — rendered `.md` files in `~/.config/opencode/agent/` (the house-style fragment and the `present in … mode by default` register line are folded in — see `docs/CONCISION.md`).
+- **Seats** — rendered `.md` files in `~/.config/opencode/agent/` (the default-card fragment is folded in via `plugin/src/voices.ts:renderFold`; named-card deltas layer at runtime — see `docs/CONCISION.md` and `docs/spec/voice-cards.md`).
 - **Global config fragment** in `opencode.jsonc` — the last file opencode loads (`config.json → opencode.json → opencode.jsonc`), which is why TGO writes there. It carries `subagent_depth: 2`, `permission.todowrite: "deny"`, `default_agent: "bernstein"`, `sessionReuse {enabled:true, maxContextTokens:100000}`, `termination {enabled:true}` — installer-managed defaults (`sessionReuse {enabled:true, maxContextTokens:100000}`, `termination {enabled:true}`) — and compaction off when magic-context is present (magic-context quietly disables itself while opencode’s built-in compaction is on).
 - **Dependencies** — beads (`bd` CLI), AFT, magic-context, context7. Magic-context lands on both surfaces (`ctx_*` server tools plus the TUI sidebar, with its historian on the active preset’s Dylan model); context7 registers as a hosted remote MCP (`mcp.context7 = { type: "remote", url: "https://mcp.context7.com/mcp" }`) because its own `npx ctx7 setup --opencode` is an interactive TUI that can’t run non-interactively.
 - **Shell profile** — an idempotent marker block exporting `OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true` (the Nirvana band’s parallel lenses need it at process start; opencode has no `env` config key) and `OPENCODE_ENABLE_EXA=true` so `websearch` uses Exa. Opt out with `--no-bg`, and it’s skipped automatically when the variable is already set. Restart opencode after install.
@@ -148,8 +148,8 @@ The sidebar appends `refresh` / `pin` / `signature` lines with ISO timestamps to
 
 Two other checks people find useful:
 
-- **Register + concision are live:** peek at `~/.config/opencode/agent/dylan.md` for the house-style block and the `present in *register* mode by default` line — that’s the register that took effect at install (`register` in `plugin/src/config.ts:78`, default `"concise"`).
-- **The runtime concision hook is firing:** start opencode with `TGO_DEBUG_EVENTS=1`; the line `event concision.appended <session-id> {"register":"concise"}` appears each time the instruction is injected. No line means the hook isn’t firing.
+- **Style cards are live:** peek at `~/.config/opencode/agent/dylan.md` for the house-style block — it is the rendered default card (`tgo-default`) via `plugin/src/voices.ts:renderFold`; named deltas (`tgo-prose` / `tgo-conversational`) layer at runtime when `style.card` is set (`style.card` in `plugin/src/config.ts`, default `"default"`; old `register` ignored).
+- **The runtime style hook is firing:** start opencode with `TGO_DEBUG_EVENTS=1`; the line `event concision.appended <session-id> {"cardId":"default"}` (or `prose` / `conversational` when a card is active) appears each time the default instruction + optional override are injected. No line means the hook isn’t firing.
 - **The version check ran:** look for `TGO update available: installed < npm — self-update will refresh cache on restart; if slot stuck: rm -rf ~/.cache/opencode/packages/trans-genderian-orchestra* and restart (opencode plugin --force is a no-op against exact-pinned slots tgo-6m6)` in the structured `tgo` log stream. The check itself is `plugin/src/version.ts:checkVersionDrift` (3 s timeout, behind `config.checkVersion` defaulting to `true`).
 
 Plugin diagnostics, by the way, go through `client.app.log({ service: "tgo" })` — never `console.log`, which in opencode 1.18.15 leaked into the TUI’s input box. `TGO_DEBUG_EVENTS=1` traces events through the same structured log.

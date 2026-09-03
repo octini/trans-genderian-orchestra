@@ -66,10 +66,10 @@ His future Beads operating rules (single-writer: create before delegating, claim
 
 ## Structured output contracts
 
-- Delegation in: the **Five-part Spec** (Objective / Files / Interfaces / Constraints / Verification, plus an optional Register field).
+- Delegation in: the **Five-part Spec** (Objective / Files / Interfaces / Constraints / Verification, plus an optional `style` field for voice cards).
 - Reports out: **STATUS** (complete / partial / blocked / escalate) · **CHANGES** · **VERIFIED** · **GAPS**.
 
-The optional Register field (concise/natural) is Bernstein's way of mandating the register when the deliverable's audience makes it matter — docs, copy, prose. Omitted, Dylan self-classifies by output class: technical steps/code → concise; voice-forward prose → natural. See `docs/CONCISION.md`.
+The optional `style` field (`default` | `prose` | `conversational`) is Bernstein's way of assigning a voice card when the deliverable's audience makes it matter — docs, copy, prose — via `DelegationPacket.style`. Omitted, Dylan stays on `tgo-default`; self-classify is fallback for unassigned creative tasks only (selects a shape hint, never the card). Explicit user request (`use prose` / `use conversational` / `use default` or `stop X` / `normal mode`) overrides the packet; precedence is explicit > packet > default. See `docs/CONCISION.md` and `docs/spec/voice-cards.md` §6.
 
 ## Delegation depth and step caps
 
