@@ -1,0 +1,108 @@
+{
+  "$schema": "../../schema/rule-pack.schema.json",
+  "id": "voice-cadence",
+  "tier": 3,
+  "false_positive_risk": "high",
+  "gating": "cluster",
+  "families": [
+    {
+      "name": "hedge-stacks",
+      "patterns": [
+        { "kind": "regex", "value": "\\b(?:really|very|just|literally|truly|clearly|obviously)\\b", "flags": "gi" },
+        { "kind": "regex", "value": "\\b(?:might|may|perhaps|arguably)\\b", "flags": "gi" },
+        { "kind": "regex", "value": "\\b(?:I think|in my opinion|it seems)\\b", "flags": "gi" }
+      ],
+      "severity": "low",
+      "basis": "cluster",
+      "thresholds": { "cluster_min": 2, "hedge_stack_max": 1 }
+    },
+    {
+      "name": "passive-hidden-actor",
+      "patterns": [
+        { "kind": "regex", "value": "\\b(?:is|are|was|were|be|been|being)\\s+(?:\\w+ly\\s+)?\\w+ed(?:\\s+by)?\\b", "flags": "gi" }
+      ],
+      "severity": "low",
+      "basis": "cluster",
+      "thresholds": { "cluster_min": 2, "hidden_actor_flag": "cluster >= 2" }
+    },
+    {
+      "name": "em-dash-budgets",
+      "patterns": [
+        { "kind": "regex", "value": "—", "flags": "g" }
+      ],
+      "severity": "low",
+      "basis": "cluster",
+      "thresholds": { "cluster_min": 2, "em_dash_per_100w_max": 0.5, "em_dash_cluster_flag": 2 }
+    },
+    {
+      "name": "rule-of-three",
+      "patterns": [
+        { "kind": "regex", "value": "(?:(?:first|second|third)\\b)", "flags": "gi" },
+        { "kind": "regex", "value": "\\b\\w+\\s*,\\s*\\w+\\s*,\\s*(?:and|or)\\s+\\w+", "flags": "gi" }
+      ],
+      "severity": "low",
+      "basis": "cluster",
+      "thresholds": { "cluster_min": 2, "rule_of_three_cluster": 2 }
+    },
+    {
+      "name": "synonym-cycling",
+      "patterns": [
+        { "kind": "regex", "value": "\\b(?:fix|resolve|address|solve|correct)\\b", "flags": "gi" }
+      ],
+      "severity": "low",
+      "basis": "cluster",
+      "thresholds": { "cluster_min": 2, "synonym_cycle_window_sentences": 2 }
+    },
+    {
+      "name": "not-x-it-is-y",
+      "patterns": [
+        { "kind": "regex", "value": "(?:^|[.!?]\\s+)Not\\s+(?!(?:only|just|sure|certain|clear|necessarily|really|today|tomorrow)\\b)[^.!?,\\n]+,\\s*it(?:'|’)s\\s+[^.!?,\\n]+", "flags": "g" }
+      ],
+      "severity": "low",
+      "basis": "cluster",
+      "thresholds": { "cluster_min": 2 }
+    },
+    {
+      "name": "closer",
+      "patterns": [
+        { "kind": "regex", "value": "Hope this helps", "flags": "gi" },
+        { "kind": "regex", "value": "Let me know if you need anything", "flags": "gi" }
+      ],
+      "severity": "medium",
+      "basis": "strong-evidence",
+      "thresholds": { "cluster_min": 1 }
+    },
+    {
+      "name": "diff-anchored-narration",
+      "patterns": [
+        { "kind": "regex", "value": "\\b(?:line|lines)\\s+\\d+\\b", "flags": "gi" },
+        { "kind": "regex", "value": "\\b(?:hunk|diff|patch)\\b", "flags": "gi" }
+      ],
+      "severity": "low",
+      "basis": "cluster",
+      "thresholds": { "cluster_min": 2 }
+    },
+    {
+      "name": "novelty-inflation",
+      "patterns": [
+        { "kind": "regex", "value": "\\b(?:coined\\s+term|brand\\s+new\\s+concept|groundbreaking|unprecedented|never-before-seen)\\b", "flags": "gi" },
+        { "kind": "regex", "value": "\\ba\\s+concept\\s+nobody(?:'s)?\\s+naming\\b", "flags": "gi" },
+        { "kind": "regex", "value": "\\bnobody(?:'s)?\\s+naming\\b", "flags": "gi" }
+      ],
+      "severity": "low",
+      "basis": "cluster",
+      "thresholds": { "cluster_min": 2, "novelty_inflation_flag": "cluster >= 2" }
+    },
+    {
+      "name": "false-balance",
+      "patterns": [
+        { "kind": "regex", "value": "\\bon\\s+the\\s+other\\s+hand\\b", "flags": "gi" },
+        { "kind": "regex", "value": "\\bboth\\s+sides\\b", "flags": "gi" },
+        { "kind": "regex", "value": "\\bbalanced\\s+view\\b", "flags": "gi" }
+      ],
+      "severity": "low",
+      "basis": "cluster",
+      "thresholds": { "cluster_min": 2, "false_balance_flag": "cluster >= 2" }
+    }
+  ]
+}

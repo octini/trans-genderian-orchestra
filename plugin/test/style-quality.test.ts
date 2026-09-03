@@ -27,8 +27,8 @@ describe("style-quality evaluation corpus", () => {
 
   test("connects fixtures to the pure analyzer with ordered one-to-one contracts", () => {
     for (const fixture of STYLE_QUALITY_FIXTURES) {
-      const result = analyzeStyleDrift({ attemptID: fixture.id, register: fixture.register, outputClass: fixture.outputClass, mode: fixture.mode, enabled: true, reinforced: false, candidate: fixture.candidate });
-      expect(result.input).toEqual({ attemptID: fixture.id, register: fixture.register, outputClass: fixture.outputClass, mode: fixture.mode, enabled: true, reinforced: false });
+      const result = analyzeStyleDrift({ attemptID: fixture.id, cardId: fixture.cardId, outputClass: fixture.outputClass, mode: fixture.mode, enabled: true, reinforced: false, candidate: fixture.candidate });
+      expect(result.input).toEqual({ attemptID: fixture.id, cardId: fixture.cardId, outputClass: fixture.outputClass, mode: fixture.mode, enabled: true, reinforced: false });
       expect(result.state).toEqual({ attemptID: fixture.id, enabled: true, reinforced: false });
       expect(result.aggregate.severity).toBe(fixture.expected.aggregate);
       expect(result.aggregate.actionable).toBe(fixture.expected.actionable);
@@ -61,7 +61,7 @@ describe("style-quality evaluation corpus", () => {
 
   test("reports STE soft length as metric-only with mode-gated applicability", () => {
     for (const fixture of STYLE_QUALITY_FIXTURES) {
-      const result = analyzeStyleDrift({ attemptID: fixture.id, register: fixture.register, outputClass: fixture.outputClass, mode: fixture.mode, enabled: true, reinforced: false, candidate: fixture.candidate });
+      const result = analyzeStyleDrift({ attemptID: fixture.id, cardId: fixture.cardId, outputClass: fixture.outputClass, mode: fixture.mode, enabled: true, reinforced: false, candidate: fixture.candidate });
       if (fixture.mode === "chat") {
         expect(result.metrics.steLength.applicable).toBe(false);
         expect(result.metrics.steLength.violationsPer100w).toBe(0);
@@ -82,7 +82,7 @@ describe("style-quality evaluation corpus", () => {
     // ste-selective variant: still metric-only even when violations exist (benchmark proxy)
     const toolHeavyFixture = STYLE_QUALITY_FIXTURES.find((f) => f.mode === "tool-heavy")!;
     const candidateWithSteViolation = toolHeavyFixture.candidate + " " + "word ".repeat(30).trim() + ".";
-    const selectiveResult = analyzeStyleDrift({ attemptID: `${toolHeavyFixture.id}:tgo-ste-selective`, register: toolHeavyFixture.register, outputClass: toolHeavyFixture.outputClass, mode: toolHeavyFixture.mode, enabled: true, reinforced: false, candidate: candidateWithSteViolation });
+    const selectiveResult = analyzeStyleDrift({ attemptID: `${toolHeavyFixture.id}:tgo-ste-selective`, cardId: toolHeavyFixture.cardId, outputClass: toolHeavyFixture.outputClass, mode: toolHeavyFixture.mode, enabled: true, reinforced: false, candidate: candidateWithSteViolation });
     expect(selectiveResult.metrics.steLength.applicable).toBe(true);
     expect(selectiveResult.metrics.steLength.basis.toLowerCase()).toContain("metric only");
     expect(selectiveResult.metrics.steLength.violationsPer100w).toBeGreaterThanOrEqual(0);

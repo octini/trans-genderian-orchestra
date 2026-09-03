@@ -2,6 +2,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertPromptUnderBudget, estimatePromptTokens } from "./config";
+import { voiceCardSchema, renderFold, type VoiceCard } from "./voices";
 
 const packageRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -9,21 +10,22 @@ const packageRoot = path.resolve(
 );
 
 export const HOUSE_STYLE_SLOT = "{{TGO_HOUSE_STYLE}}";
-export const REGISTER_SLOT = "{{TGO_REGISTER}}";
 export const AGENTS_MARKER_BEGIN = "<!-- TGO: thin always-on advice layer";
 export const AGENTS_MARKER_END = "<!-- END TGO advice layer -->";
 
-export const REGISTERS = ["concise", "natural"] as const;
-export type Register = (typeof REGISTERS)[number];
+export const VOICE_CARDS = ["default", "prose", "conversational"] as const;
+export type VoiceCardId = (typeof VOICE_CARDS)[number];
 
 export interface RenderedSeat {
   fileName: string;
   content: string;
 }
 
-export async function loadHouseStyle(): Promise<string> {
-  const file = path.join(packageRoot, "assets", "house-style.md");
-  return fs.readFile(file, "utf-8");
+export async function loadVoiceCard(cardId: VoiceCardId | string = "default"): Promise<VoiceCard> {
+  const normalized = cardId.startsWith("tgo-") ? cardId : `tgo-${cardId}`;
+  const file = path.join(packageRoot, "assets", "voices", `${normalized}.json`);
+  const raw = JSON.parse(await fs.readFile(file, "utf-8"));
+  return voiceCardSchema.parse(raw);
 }
 
 export async function loadAgentsFragment(): Promise<string> {
@@ -31,22 +33,16 @@ export async function loadAgentsFragment(): Promise<string> {
   return fs.readFile(file, "utf-8");
 }
 
-export function foldHouseStyle(
-  template: string,
-  houseStyle: string,
-  register: Register = "concise"
-): string {
+export function foldHouseStyle(template: string, voiceCard: string): string {
   if (!template.includes(HOUSE_STYLE_SLOT)) return template;
-  return template
-    .replace(HOUSE_STYLE_SLOT, houseStyle.trim())
-    .replace(new RegExp(REGISTER_SLOT, "g"), register);
+  return template.replace(HOUSE_STYLE_SLOT, voiceCard.trim());
 }
 
-export async function renderSeats(
-  sourceDir: string,
-  register: Register = "concise"
-): Promise<RenderedSeat[]> {
-  const houseStyle = await loadHouseStyle();
+export async function renderSeats(sourceDir: string, voiceCardId: VoiceCardId | string = "default"): Promise<RenderedSeat[]> {
+  // Normalize unknown ids to default so old validate.ts callers with stale ids still pass budget checks
+  const effectiveId = (VOICE_CARDS as readonly string[]).includes(voiceCardId) ? (voiceCardId as VoiceCardId) : "default";
+  const card = await loadVoiceCard(effectiveId);
+  const fold = renderFold(card);
   const files = await fs.readdir(sourceDir).catch((err) => {
     // build-time: no plugin logger available, console.warn is intentional (review tgo-73s)
     console.warn(`tgo: renderSeats readdir failed: ${String(err)}`, { sourceDir });
@@ -56,19 +52,16 @@ export async function renderSeats(
   for (const file of files) {
     if (!file.endsWith(".md")) continue;
     const template = await fs.readFile(path.join(sourceDir, file), "utf-8");
-    const content = foldHouseStyle(template, houseStyle, register);
+    const content = foldHouseStyle(template, fold);
     assertPromptUnderBudget(content, file);
     seats.push({ fileName: file, content });
   }
   return seats;
 }
 
-export async function buildSeatsTo(
-  agentsDir: string,
-  register: Register = "concise"
-): Promise<RenderedSeat[]> {
+export async function buildSeatsTo(agentsDir: string, voiceCardId: VoiceCardId | string = "default"): Promise<RenderedSeat[]> {
   const sourceDir = path.join(packageRoot, "assets", "agents");
-  const seats = await renderSeats(sourceDir, register);
+  const seats = await renderSeats(sourceDir, voiceCardId);
   await fs.mkdir(agentsDir, { recursive: true });
   for (const seat of seats) {
     await fs.writeFile(path.join(agentsDir, seat.fileName), seat.content, "utf-8");

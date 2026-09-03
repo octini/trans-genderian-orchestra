@@ -48,6 +48,47 @@ export interface AwaitRecord {
   expired?: boolean;
 }
 
+// T4 — Ambiguity question schema for voice-card assignment (D2 source c)
+// Reuses existing suspend/resume machinery; no new durability mechanism.
+// Suspend question: { style: enum[default,prose,conversational], reason: string }
+// Resume answer: { style: enum } (or same shape) — validated via tryProseResume
+export const STYLE_VALUES = ["default", "prose", "conversational"] as const;
+export type StyleQuestionStyle = (typeof STYLE_VALUES)[number];
+
+export const styleQuestionSuspendSchema: JsonSchema = {
+  type: "object",
+  properties: {
+    style: { type: "string", enum: [...STYLE_VALUES] },
+    reason: { type: "string" },
+  },
+  required: ["style", "reason"],
+};
+
+export const styleQuestionResumeSchema: JsonSchema = {
+  type: "object",
+  properties: {
+    style: { type: "string", enum: [...STYLE_VALUES] },
+  },
+  required: ["style"],
+};
+
+export interface StyleQuestionPayload {
+  style: StyleQuestionStyle;
+  reason: string;
+}
+
+export interface StyleAnswerPayload {
+  style: StyleQuestionStyle;
+}
+
+export function validateStyleQuestionPayload(payload: unknown): { valid: boolean; errors: string[] } {
+  return validateAgainstSchema(payload, styleQuestionSuspendSchema);
+}
+
+export function validateStyleAnswerPayload(payload: unknown): { valid: boolean; errors: string[] } {
+  return validateAgainstSchema(payload, styleQuestionResumeSchema);
+}
+
 export function awaitJsonPath(repoRoot: string, issueId: string): string {
   assertValidBeadID(issueId);
   return path.join(repoRoot, ".tgo", issueId, "await.json");
@@ -523,6 +564,37 @@ export async function tryProseResume(opts: {
   }
 
   return { success: true, record };
+}
+
+// T4 — Inert style-question helpers (orchestrator-facing; T5 wires usage)
+// Bernstein can invoke suspendStyleQuestion when packet.style absent and task shape ambiguous;
+// user replies with { style } which is validated via the resume schema.
+export async function suspendStyleQuestion(opts: {
+  repoRoot: string;
+  issueId: string;
+  style: StyleQuestionStyle;
+  reason: string;
+  until?: string;
+  sessionId?: string;
+}): Promise<{ written: boolean; record: AwaitRecord }> {
+  return suspend({
+    repoRoot: opts.repoRoot,
+    issueId: opts.issueId,
+    suspendSchema: styleQuestionSuspendSchema,
+    suspendPayload: { style: opts.style, reason: opts.reason } satisfies StyleQuestionPayload,
+    resumeSchema: styleQuestionResumeSchema,
+    reason: opts.reason,
+    until: opts.until,
+    sessionId: opts.sessionId,
+  });
+}
+
+export async function tryStyleQuestionResume(opts: {
+  repoRoot: string;
+  issueId: string;
+  rawReply: string | unknown;
+}): Promise<{ success: boolean; errors?: string[]; record?: AwaitRecord }> {
+  return tryProseResume(opts);
 }
 
 // Scan for all awaits under .tgo

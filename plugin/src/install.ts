@@ -70,7 +70,7 @@ export interface InstallReport extends InstallTarget {
   agentsMerge: string;
   globalMerge: string;
   globalMergeBackedUp: boolean;
-  register: string;
+  style: string;
   plugin: string | undefined;
   pluginAction: "added" | "unchanged" | undefined;
   backgroundSubagents: string | undefined;
@@ -136,7 +136,7 @@ export async function install(overrides?: InstallOptions): Promise<InstallReport
     presets: JSON.parse(await fs.readFile(srcPresets, "utf-8")),
   });
 
-  const seats = await buildSeatsTo(target.agentsDir, config.register);
+  const seats = await buildSeatsTo(target.agentsDir, "default");
 
   const merged = await mergeAgentsFragment(target.configDir);
 
@@ -259,7 +259,7 @@ export async function install(overrides?: InstallOptions): Promise<InstallReport
     agentsMerge: merged.action,
     globalMerge: globalMerge.action,
     globalMergeBackedUp: globalMerge.backedUp ?? false,
-    register: config.register,
+    style: config.style?.card ?? "default",
     plugin,
     pluginAction,
     backgroundSubagents,
@@ -309,7 +309,7 @@ if (import.meta.main) {
   if (report.globalMergeBackedUp) {
     console.log(`WARNING: existing ${GLOBAL_OPENCODE_FILE} was not valid JSON/JSONC — backed up to ${GLOBAL_OPENCODE_FILE}.bak and a fresh fragment written. Review the backup.`);
   }
-  console.log(`Active preset: balanced · register: ${report.register}`);
+  console.log(`Active preset: balanced · style: ${report.style}`);
   console.log(`Setup skill: ${report.setupSkill} → ${path.join(report.configDir, "skills", SETUP_SKILL_NAME, "SKILL.md")}`);
   const created = report.skills.filter((s) => s.action === "created");
   console.log(`Skill bundle: ${report.skills.length} skills (${created.length} created, ${report.skills.length - created.length} unchanged) → ${path.join(report.configDir, "skills")}`);

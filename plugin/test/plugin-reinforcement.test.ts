@@ -318,7 +318,7 @@ describe("plugin completion observer boundary", () => {
   });
 
   test("keeps the opt-in surrogate observer primary-only", async () => {
-    const hooks = await TgoPlugin(input(), { concision: { enabled: true, reinforcement: true } });
+    const hooks = await TgoPlugin(input(), { style: { enabled: true, reinforcement: true, card: "default" } });
     const complete = hooks["experimental.text.complete"]!;
     await complete(
       { sessionID: "primary", messageID: "message", partID: "part" } as never,
@@ -337,7 +337,7 @@ describe("plugin completion observer boundary", () => {
   });
 
   test("plugin boundary suppresses delegated completion after a parent lookup", async () => {
-    const hooks = await TgoPlugin(input(), { concision: { enabled: true, reinforcement: true } });
+    const hooks = await TgoPlugin(input(), { style: { enabled: true, reinforcement: true, card: "default" } });
     const complete = hooks["experimental.text.complete"]!;
     await complete(
       { sessionID: "delegated", messageID: "message", partID: "part" } as never,

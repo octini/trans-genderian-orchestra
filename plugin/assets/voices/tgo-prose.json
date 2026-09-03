@@ -1,0 +1,176 @@
+{
+  "$schema": "../../schema/voice-card.schema.json",
+  "id": "tgo-prose",
+  "version": "1.0.0",
+  "meta": {
+    "display_name": "TGO Prose",
+    "attribution": "Generated passages, user-approved (v1 calibration)",
+    "exemplar_source": "calibration-transcript",
+    "notes": "Prose card: measured, image-led; D10 invariants + D9 prose targets 29/44/27 mean 19 median 16 p90 37 max 60. Human corpus *.rtf never ships."
+  },
+  "voice_invariants": {
+    "tone": "measured, image-led, dry humor only when built",
+    "diction": "precise, concrete, image-led; informed similes only (comparison must inform; universal truisms hollow, banned); personified environment does concrete physical things only (never abstract/epistemic roles); no content-word echo within a sentence (unless deliberate anaphora); entity coherence (no role contradictions); unearned-resonance ban (closers may only gesture at meaning the passage built; flat landings need concrete referents); era-agnosticism (world-texture native to scene era; era defaulting anti-pattern)",
+    "syntax_targets": {
+      "sentence_buckets_by_count": {
+        "short_1_10w": 29,
+        "medium_11_24w": 44,
+        "long_25w_plus": 27
+      },
+      "mean_words": 19,
+      "median_words": 16,
+      "p90_words": 37,
+      "max_words": 60,
+      "long_formation": "paratactic addition (and-chains of full clauses), not subordination depth",
+      "ste_thresholds": {
+        "instruction": 20,
+        "descriptive": 25
+      }
+    },
+    "punctuation_budgets": {
+      "em_dash_per_100w_max": 0.9,
+      "em_dash_cluster_flag": 2,
+      "sentence_initial_transitions_per_paragraph_max": 2,
+      "transitions_exempt_from_flagging": [],
+      "one_device_per_sentence": true
+    },
+    "rhythm_rules": {
+      "paragraph_head_discipline": "max one long opener before a short landing; never two longs stacked",
+      "length_bias": "short",
+      "variance_follows_emphasis": true,
+      "no_metronome_alternation": true,
+      "linked_clause_requires_verb": true,
+      "fragments": "only as deliberate beats; no verbless chained absolutes"
+    },
+    "perspective": "any — signature must survive the switch",
+    "anti_patterns": {
+      "refs": [
+        "mechanics",
+        "concision",
+        "voice-cadence"
+      ],
+      "strictness": "high",
+      "thresholds": {
+        "hedge_stack_max": 1,
+        "hidden_actor_flag": "cluster >= 2",
+        "rule_of_three_cluster": 2,
+        "synonym_cycle_window_sentences": 2,
+        "novelty_inflation_flag": "cluster >= 2",
+        "false_balance_flag": "cluster >= 2",
+        "informed_similes_only": true,
+        "personified_environment_concrete_only": true,
+        "no_content_word_echo": true,
+        "entity_coherence": true,
+        "unearned_resonance_ban": true,
+        "era_agnosticism": true
+      }
+    },
+    "controls": {
+      "off_switch": "stop X / normal mode",
+      "exemplar_injection_max": 2,
+      "exemplar_selection": "shape-tag match only; never all",
+      "closer": "priority [scene-truth, rhythm, structure, diction]; unearned-resonance ban — closers may only gesture at meaning the passage built; flat landings need concrete referents"
+    }
+  },
+  "arc_repertoire": {
+    "templates": [
+      {
+        "shape": "scene-vignette",
+        "moves": [
+          "establish",
+          "complicate",
+          "turn",
+          "button"
+        ],
+        "constraints": [
+          "one device per sentence"
+        ]
+      },
+      {
+        "shape": "institutional-comedy",
+        "moves": [
+          "setup",
+          "escalation",
+          "deflation",
+          "button"
+        ],
+        "constraints": [
+          "one device per sentence"
+        ]
+      },
+      {
+        "shape": "retrospective-solitude",
+        "moves": [
+          "establish",
+          "complicate",
+          "turn",
+          "button"
+        ],
+        "constraints": [
+          "one device per sentence"
+        ]
+      },
+      {
+        "shape": "dialogue-menace",
+        "moves": [
+          "setup",
+          "tension",
+          "reveal",
+          "button"
+        ],
+        "constraints": [
+          "one device per sentence"
+        ]
+      },
+      {
+        "shape": "genre-dialogue",
+        "moves": [
+          "establish",
+          "exchange",
+          "turn",
+          "button"
+        ],
+        "constraints": [
+          "one device per sentence"
+        ]
+      }
+    ]
+  },
+  "exemplars": [
+    {
+      "shape": "scene-vignette",
+      "person": "third",
+      "first_line": "The marquee said CLOSED FOR THE SEASON, and under that, in smaller letters, THANK YOU FOR 61 YEARS, the Y trailing off where the plastic had cracked.",
+      "last_line": "He salted the next batch anyway.",
+      "text": "The marquee said CLOSED FOR THE SEASON, and under that, in smaller letters, THANK YOU FOR 61 YEARS, the Y trailing off where the plastic had cracked. Randy leaned on the fence. He had worked the snack bar since high school; the projection booth still burned actual film in those days, and tonight he had let the kids run the register so he could watch. Cars kept coming. Triple feature night, seven dollars a head, and the lot filled the way it used to fill in the nineties—pickups backed in facing the screen, minivans nose-first with the tailgates down, one moped off to the side that everybody pretended was normal. Headlights swept the fence line like searchlights at a very low-stakes prison break. The projector shuddered once at dusk and then found its frame. Somewhere past the second fence the freight line blew through, long and loud, and nobody honked, because everybody here had agreed a long time ago to let the trains have their moment. Randy watched the screen glow blue before the feature came up. Sixty-one years, he thought, and the popcorn machine had outlived four owners and one divorce. He salted the next batch anyway."
+    },
+    {
+      "shape": "institutional-comedy",
+      "person": "first",
+      "first_line": "They had us in a room that smelled like carpet and old pizza, forty of us watching a clock that had no second hand.",
+      "last_line": "Then the bailiff asked who wanted to be foreman, and twelve people looked at their shoes.",
+      "text": "They had us in a room that smelled like carpet and old pizza, forty of us watching a clock that had no second hand. My name came up at ten sharp. I swore on a courthouse Bible so worn the gilded edges had gone cloudy. I took my seat in the box, and the whole time I was thinking about the parking meter I had fed until four o'clock, like a pet I would never see again. The plaintiff was a roofer. The defendant was his neighbor, and the matter in dispute was a fence, and I want to tell you I paid close attention, but a fence is a fence. Mostly I watched the judge. She had a way of sipping coffee during the loud parts—unhurried, like a woman who had heard every fence there was. When they sent us out to deliberate I felt important for exactly one hallway. Then the bailiff asked who wanted to be foreman, and twelve people looked at their shoes."
+    },
+    {
+      "shape": "retrospective-solitude",
+      "person": "third",
+      "first_line": "The night shift at the toll plaza ran on coffee and spite.",
+      "last_line": "The moths kept coming.",
+      "text": "The night shift at the toll plaza ran on coffee and spite. Donna took lane 4. Cars came through in gusts, then not at all, then gusts again, and between gusts she counted the moths stacking up on the light. The plaza radio played country. A trucker in an F-150 threw two dollars in the basket without slowing, the way the regulars did, and the coins rang the bottom of the bucket like a bell. At two, a state trooper came through and saluted her, a thing he did every night, and a thing she had decided to find charming. At three the fog arrived. It came up the river flats in one piece, ate the far lanes first, then the median grass, and left her booth lit and separate, like a stage set up in the dark. Her phone buzzed against the counter: her sister, who called every Sunday from Louisville and had never once in her life let a Sunday stop her. Donna let it go to voicemail. She'd hear it tomorrow, with her coffee, the way she heard all of them. The moths kept coming."
+    },
+    {
+      "shape": "dialogue-menace",
+      "person": "first",
+      "first_line": "The bell over the door rang at 8:52, six minutes before close, and I knew it was trouble because nobody comes in at 8:52 happy.",
+      "last_line": "I thought about the lock on the cooler, and whether it was a good lock.",
+      "text": "The bell over the door rang at 8:52, six minutes before close, and I knew it was trouble because nobody comes in at 8:52 happy. I kept my eyes on the minnow tanks. \"We're closing up,\" I said. The man stood in the bait aisle a while, reading labels the way you read labels when you can read anything. \"You got nightcrawlers,\" he said. It wasn't a question, and it wasn't the voice either — it was the flat middle-of-it, like a man reciting from a card. \"Aisle two,\" I said. Terry came out of the back room with the mop, took one look, and went back in, and I decided to let him have that. The man brought the crawlers to the counter and laid out exact change, counted from a fold of bills, and stood there after, not leaving, working his jaw like the words were backlogged. \"Fella from the county was out to my place,\" he said. \"Told me to get ahold of somebody if I seen anything.\" I rang him up. \"We sell bait,\" I said. The man nodded, slow, like we'd agreed on something. The bell rang going out, and I watched him all the way to the tree line, which was a good hundred yards past where any car was parked, and I will tell you honestly that I did not think about county business even once. I thought about the lock on the cooler, and whether it was a good lock."
+    },
+    {
+      "shape": "genre-dialogue",
+      "person": "third",
+      "first_line": "The sorceress kept shop hours the way other women kept cats, more out of habit than affection, and by the last hour of market day her cellar smelled of cooling wax and whatever it is that regret leaves in a room.",
+      "last_line": "Outside, the market bells rang the hour, and somewhere under the floor her apprentices stopped sweeping to listen.",
+      "text": "The sorceress kept shop hours the way other women kept cats, more out of habit than affection, and by the last hour of market day her cellar smelled of cooling wax and whatever it is that regret leaves in a room. Her final customer was a knight — or had been one, once; the tabard was clean but the shoulders under it had the look of things borrowed. \"You're the one who unbinds,\" he said. \"I unbind what can be unbound,\" she said. \"Curses, contracts, marriages?\" \"In rising order of difficulty, and price.\" He set the sword on her counter like a man setting down a sleeping dog, and she looked at it a long moment — at the edge, and then at him, because the edge was the least of it. \"Who bound this?\" \"It doesn't matter who bound it.\" \"It matters,\" she said, \"the way a name matters, which is to say entirely, which is to say that it will cost you.\" Outside, the market bells rang the hour, and somewhere under the floor her apprentices stopped sweeping to listen."
+    }
+  ]
+}

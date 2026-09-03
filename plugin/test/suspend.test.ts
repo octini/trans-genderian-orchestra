@@ -20,6 +20,13 @@ import {
   getBoardBadgeForIssue,
   __setSuspendWriteDelayForTest,
   __clearSuspendWriteDelayForTest,
+  STYLE_VALUES,
+  styleQuestionSuspendSchema,
+  styleQuestionResumeSchema,
+  validateStyleQuestionPayload,
+  validateStyleAnswerPayload,
+  suspendStyleQuestion,
+  tryStyleQuestionResume,
 } from "../src/suspend";
 import type { JsonSchema, AwaitRecord } from "../src/suspend";
 import { readProgress, updateProgress } from "../src/progress";
@@ -491,5 +498,76 @@ describe("format badge helpers", () => {
       createdAt: new Date().toISOString(),
     };
     expect(formatSuspendBadge(rec)).toBe("⏸ awaiting human: need a — reply with: a");
+  });
+});
+
+describe("style question schema round-trip (T4)", () => {
+  test("validates style question payload and answer schemas", () => {
+    for (const style of STYLE_VALUES) {
+      expect(validateStyleQuestionPayload({ style, reason: "ambiguous task shape" }).valid).toBe(true);
+      expect(validateStyleAnswerPayload({ style }).valid).toBe(true);
+    }
+    expect(validateStyleQuestionPayload({ style: "invalid", reason: "x" }).valid).toBe(false);
+    expect(validateStyleQuestionPayload({ style: "prose" }).valid).toBe(false); // missing reason
+    expect(validateStyleAnswerPayload({ style: "invalid" }).valid).toBe(false);
+    expect(validateStyleAnswerPayload({}).valid).toBe(false);
+    // suspend/resume schemas themselves validate via validateAgainstSchema
+    expect(validateAgainstSchema({ style: "prose", reason: "why" }, styleQuestionSuspendSchema).valid).toBe(true);
+    expect(validateAgainstSchema({ style: "conversational" }, styleQuestionResumeSchema).valid).toBe(true);
+    expect(validateAgainstSchema({ style: "default", reason: "r" }, styleQuestionSuspendSchema).valid).toBe(true);
+  });
+
+  test("suspendStyleQuestion → tryStyleQuestionResume round-trip via file durable gate (suspend + tryProseResume)", async () => {
+    const dir = tmpDir();
+    try {
+      const issueId = "tgo-styleq";
+      const res = await suspendStyleQuestion({
+        repoRoot: dir,
+        issueId,
+        style: "prose",
+        reason: "ambiguous style — need user choice",
+      });
+      expect(res.written).toBe(true);
+      const rec = await readAwaitJson(dir, issueId);
+      expect(rec).toBeDefined();
+      expect(rec?.suspendPayload).toMatchObject({ style: "prose", reason: "ambiguous style — need user choice" });
+      expect(validateAgainstSchema(rec!.suspendPayload, styleQuestionSuspendSchema).valid).toBe(true);
+      expect(validateAgainstSchema({ style: "prose" }, rec!.resumeSchema).valid).toBe(true);
+      // resume via typed helper (wraps tryProseResume, no new durability)
+      const ok = await tryStyleQuestionResume({ repoRoot: dir, issueId, rawReply: JSON.stringify({ style: "conversational" }) });
+      expect(ok.success).toBe(true);
+      expect(await readAwaitJson(dir, issueId)).toBeUndefined();
+      // also verify generic suspend with same schemas works (orchestrator-facing, T5 wires usage)
+      const res2 = await suspend({
+        repoRoot: dir,
+        issueId: "tgo-styleq2",
+        suspendSchema: styleQuestionSuspendSchema,
+        suspendPayload: { style: "default", reason: "fallback" },
+        resumeSchema: styleQuestionResumeSchema,
+        reason: "fallback question",
+      });
+      expect(res2.written).toBe(true);
+      const resume2 = await tryProseResume({ repoRoot: dir, issueId: "tgo-styleq2", rawReply: JSON.stringify({ style: "default" }) });
+      expect(resume2.success).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("invalid style answer rejected via resume schema, file stays suspended", async () => {
+    const dir = tmpDir();
+    try {
+      const issueId = "tgo-style-bad";
+      await suspendStyleQuestion({ repoRoot: dir, issueId, style: "prose", reason: "need choice" });
+      const bad = await tryStyleQuestionResume({ repoRoot: dir, issueId, rawReply: JSON.stringify({ style: "invalid" }) });
+      expect(bad.success).toBe(false);
+      expect(bad.errors?.join(" ")).toContain("must be one of");
+      expect(await readAwaitJson(dir, issueId)).toBeDefined();
+      const bad2 = await tryStyleQuestionResume({ repoRoot: dir, issueId, rawReply: JSON.stringify({}) });
+      expect(bad2.success).toBe(false);
+      expect(await readAwaitJson(dir, issueId)).toBeDefined();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

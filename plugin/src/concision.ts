@@ -1,26 +1,31 @@
-import * as fs from "node:fs/promises";
-import * as path from "node:path";
-import { fileURLToPath } from "node:url";
-import { REGISTER_SLOT, type Register } from "./build";
 import { safeWarn } from "./config";
+import { loadVoiceCard as loadVoiceCardFromVoices, renderInstruction, renderStyleOverride, estimateVoiceTokens, type VoiceCard } from "./voices";
 
-export { REGISTER_SLOT };
-
-const packageRoot = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  ".."
-);
-
-export async function loadConcisionInstruction(): Promise<string> {
-  const file = path.join(packageRoot, "assets", "concision-instruction.md");
-  return fs.readFile(file, "utf-8");
+export async function loadVoiceCard(cardId = "default"): Promise<VoiceCard> {
+  return loadVoiceCardFromVoices(cardId);
 }
 
-export async function buildConcisionInstruction(
-  register: Register = "concise"
-): Promise<string> {
-  const template = await loadConcisionInstruction();
-  return template.replace(new RegExp(REGISTER_SLOT, "g"), register);
+export async function buildVoiceInstruction(cardId = "default"): Promise<string> {
+  const card = await loadVoiceCard(cardId);
+  return renderInstruction(card);
+}
+
+export async function buildVoiceOverride(cardId: string): Promise<string> {
+  const card = await loadVoiceCard(cardId);
+  const override = renderStyleOverride(card);
+  if (override) {
+    const tokens = estimateVoiceTokens(override);
+    if (tokens > 200) throw new Error(`voice override for ${cardId} exceeds 200 tokens: ${tokens}`);
+  }
+  return override;
+}
+
+export async function buildLayeredInstructions(effectiveCardId = "default"): Promise<string[]> {
+  const defaultInstruction = await buildVoiceInstruction("default");
+  const normalized = effectiveCardId.startsWith("tgo-") ? effectiveCardId : `tgo-${effectiveCardId}`;
+  if (normalized === "tgo-default") return [defaultInstruction];
+  const override = await buildVoiceOverride(effectiveCardId);
+  return override ? [defaultInstruction, override] : [defaultInstruction];
 }
 
 export interface SessionClient {
@@ -41,20 +46,42 @@ export const DEFAULT_CONCISION_ENABLED = true;
 
 export class ConcisionController {
   private readonly enabled: boolean;
-  private readonly register: Register;
+  private cardId: string;
   private readonly primaryCache = new Map<string, boolean>();
   private instruction: string | undefined;
+  private defaultInstruction: string | undefined;
+  private overrideInstruction: string | undefined;
+  private overrideCardId: string | undefined;
   private readonly log?: (level: "warn" | "info" | "error", message: string, extra?: Record<string, unknown>) => void;
 
-  constructor(opts: { enabled?: boolean; register?: Register; log?: (level: "warn" | "info" | "error", message: string, extra?: Record<string, unknown>) => void }) {
+  constructor(opts: { enabled?: boolean; cardId?: string; register?: string; log?: (level: "warn" | "info" | "error", message: string, extra?: Record<string, unknown>) => void }) {
     this.enabled = opts.enabled ?? DEFAULT_CONCISION_ENABLED;
-    this.register = opts.register ?? "concise";
+    const legacy = (opts as { register?: string }).register;
+    if (opts.cardId !== undefined) this.cardId = opts.cardId;
+    else if (typeof legacy === "string" && (["default", "prose", "conversational"] as const).includes(legacy as unknown as "default")) this.cardId = legacy;
+    else if (typeof legacy === "string") this.cardId = "default";
+    else this.cardId = "default";
     this.log = opts.log;
   }
 
   async buildInstruction(): Promise<string> {
-    this.instruction ??= await buildConcisionInstruction(this.register);
+    this.instruction ??= await buildVoiceInstruction(this.cardId);
     return this.instruction;
+  }
+
+  async buildDefaultInstruction(): Promise<string> {
+    this.defaultInstruction ??= await buildVoiceInstruction("default");
+    return this.defaultInstruction;
+  }
+
+  async buildOverrideInstruction(): Promise<string | undefined> {
+    const normalized = this.cardId.startsWith("tgo-") ? this.cardId : `tgo-${this.cardId}`;
+    if (normalized === "tgo-default") return undefined;
+    if (this.overrideCardId === this.cardId && this.overrideInstruction !== undefined) return this.overrideInstruction;
+    const ov = await buildVoiceOverride(this.cardId);
+    this.overrideCardId = this.cardId;
+    this.overrideInstruction = ov || undefined;
+    return this.overrideInstruction;
   }
 
   private async isPrimary(
@@ -80,6 +107,9 @@ export class ConcisionController {
   reset(): void {
     this.primaryCache.clear();
     this.instruction = undefined;
+    this.defaultInstruction = undefined;
+    this.overrideInstruction = undefined;
+    this.overrideCardId = undefined;
   }
 
   async transform(
@@ -91,8 +121,11 @@ export class ConcisionController {
     if (!input.sessionID) return false;
     if (!(await this.isPrimary(client, input.sessionID))) return false;
 
-    const instruction = await this.buildInstruction();
-    if (instruction) output.system.push(instruction);
+    // Layered injection: default always, plus override when named card active
+    const defaultInstruction = await this.buildDefaultInstruction();
+    if (defaultInstruction) output.system.push(defaultInstruction);
+    const override = await this.buildOverrideInstruction();
+    if (override) output.system.push(override);
     return true;
   }
 }

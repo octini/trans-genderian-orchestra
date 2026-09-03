@@ -1,5 +1,14 @@
 import { describe, expect, test } from "bun:test";
-import { validateDelegationBoundary, validateDelegationPacket, verifyClaimObserved } from "../src/delegation";
+import {
+  validateDelegationBoundary,
+  validateDelegationPacket,
+  verifyClaimObserved,
+  DELEGATION_STYLES,
+  isDelegationStyle,
+  delegationStyleToVoiceCardId,
+  voiceCardIdToDelegationStyle,
+  resolveEffectiveVoiceCardId,
+} from "../src/delegation";
 import type { RoutingClassification } from "../src/fit";
 
 const standard: RoutingClassification = { route: "standard", tiny: false, reasons: [] };
@@ -170,5 +179,64 @@ describe("validateDelegationPacket", () => {
     }
     const traversal = { ...full, progressPath: ".tgo/../../etc/passwd" };
     expect(validateDelegationPacket(standard, traversal).valid).toBe(false);
+  });
+});
+
+describe("validateDelegationPacket style field (T4)", () => {
+  test("accepts style ∈ {default,prose,conversational} and rejects invalid strings; absent = valid (defaults to tgo-default)", () => {
+    for (const style of DELEGATION_STYLES) {
+      const result = validateDelegationPacket(standard, { ...full, style });
+      expect(result.valid).toBe(true);
+      expect(result.malformed).not.toContain("style");
+    }
+    const absent = validateDelegationPacket(standard, full);
+    expect(absent.valid).toBe(true);
+    expect(absent.malformed).not.toContain("style");
+    // defaults to tgo-default via helper
+    expect(delegationStyleToVoiceCardId("default")).toBe("tgo-default");
+    expect(resolveEffectiveVoiceCardId({})).toBe("tgo-default");
+    expect(resolveEffectiveVoiceCardId({ packetStyle: undefined })).toBe("tgo-default");
+  });
+
+  test("rejects invalid style strings", () => {
+    for (const bad of ["prose2", "natural", "concise", "", "PROSE", "default ", 42, null]) {
+      const result = validateDelegationPacket(standard, { ...full, style: bad });
+      expect(result.valid).toBe(false);
+      expect(result.malformed).toContain("style");
+      expect(result.diagnostics.join(" ")).toContain("style must be one of");
+    }
+  });
+
+  test("validates styleSource enum when present", () => {
+    for (const src of ["explicit", "packet"] as const) {
+      const result = validateDelegationPacket(standard, { ...full, style: "prose", styleSource: src });
+      expect(result.valid).toBe(true);
+      expect(result.malformed).not.toContain("styleSource");
+    }
+    const absent = validateDelegationPacket(standard, { ...full, style: "prose" });
+    expect(absent.valid).toBe(true);
+    const bad = validateDelegationPacket(standard, { ...full, styleSource: "other" });
+    expect(bad.valid).toBe(false);
+    expect(bad.malformed).toContain("styleSource");
+  });
+
+  test("maps delegation style to VoiceCardId and back", () => {
+    expect(delegationStyleToVoiceCardId("default")).toBe("tgo-default");
+    expect(delegationStyleToVoiceCardId("prose")).toBe("tgo-prose");
+    expect(delegationStyleToVoiceCardId("conversational")).toBe("tgo-conversational");
+    expect(voiceCardIdToDelegationStyle("tgo-default")).toBe("default");
+    expect(voiceCardIdToDelegationStyle("tgo-prose")).toBe("prose");
+    expect(voiceCardIdToDelegationStyle("tgo-conversational")).toBe("conversational");
+    expect(isDelegationStyle("prose")).toBe(true);
+    expect(isDelegationStyle("invalid")).toBe(false);
+  });
+
+  test("precedence helper: explicit > packet > default", () => {
+    expect(resolveEffectiveVoiceCardId({ packetStyle: "prose", explicitOverride: "tgo-conversational" })).toBe("tgo-conversational");
+    expect(resolveEffectiveVoiceCardId({ packetStyle: "prose", explicitOverride: null })).toBe("tgo-prose");
+    expect(resolveEffectiveVoiceCardId({ packetStyle: "conversational" })).toBe("tgo-conversational");
+    expect(resolveEffectiveVoiceCardId({ packetStyle: "default" })).toBe("tgo-default");
+    expect(resolveEffectiveVoiceCardId({})).toBe("tgo-default");
+    expect(resolveEffectiveVoiceCardId({ packetStyle: "invalid" })).toBe("tgo-default");
   });
 });

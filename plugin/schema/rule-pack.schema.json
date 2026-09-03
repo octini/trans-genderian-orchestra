@@ -1,0 +1,89 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://opencode.ai/trans-genderian-orchestra.rule-pack.schema.json",
+  "title": "TGO rule pack",
+  "description": "Drift rule pack — tiered families with regex patterns and card-aware gating. Validated at build via plugin/src/validate.ts zod ↔ JSON parity.",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Optional JSON Schema pointer for editor validation."
+    },
+    "id": {
+      "type": "string",
+      "description": "Stable pack identifier (e.g. mechanics, concision, voice-cadence)."
+    },
+    "tier": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 3,
+      "description": "False-positive tier: 1 low (always-on), 2 medium (whitelist), 3 high (cluster)."
+    },
+    "false_positive_risk": {
+      "type": "string",
+      "enum": ["low", "medium", "high"],
+      "description": "Per-pack false-positive risk."
+    },
+    "gating": {
+      "type": "string",
+      "enum": ["always-on", "whitelist", "cluster"],
+      "description": "How the pack is gated. always-on never suppressed by card; whitelist excludes protected spans; cluster requires >=2 signals."
+    },
+    "families": {
+      "type": "array",
+      "description": "Rule families within the pack.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Family name (e.g. spelling-caps-repetition, verbal-false-limbs)."
+          },
+          "patterns": {
+            "type": "array",
+            "description": "Regex patterns for the family.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": ["regex"],
+                  "description": "Pattern kind — regex only at v1."
+                },
+                "value": {
+                  "type": "string",
+                  "description": "Regex source without delimiters."
+                },
+                "flags": {
+                  "type": "string",
+                  "description": "Optional RegExp flags (e.g. gi)."
+                }
+              },
+              "required": ["kind", "value"],
+              "additionalProperties": false
+            }
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["low", "medium", "high", "none"],
+            "description": "Default severity when the family fires."
+          },
+          "basis": {
+            "type": "string",
+            "enum": ["cluster", "repeated-signal", "strong-evidence"],
+            "description": "Evidence basis contract."
+          },
+          "thresholds": {
+            "type": "object",
+            "description": "Numeric overrides for the family (e.g. cluster_min).",
+            "additionalProperties": true
+          }
+        },
+        "required": ["name", "patterns"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["id", "tier", "false_positive_risk", "gating", "families"],
+  "additionalProperties": false
+}

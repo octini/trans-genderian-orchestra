@@ -3,12 +3,13 @@ import { mkdtempSync, existsSync, readFileSync, rmSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import {
+  buildSeatsTo,
   foldHouseStyle,
   HOUSE_STYLE_SLOT,
   hasGlobalTgoKeys,
   hasPluginEntry,
   loadAgentsFragment,
-  loadHouseStyle,
+  loadVoiceCard,
   mergeAgentsFragment,
   mergeOpenCodeConfig,
   PLUGIN_MODULE,
@@ -16,7 +17,9 @@ import {
   registerMcpServer,
   registerTuiPlugin,
   renderSeats,
+  VOICE_CARDS,
 } from "../src/build";
+import { renderFold } from "../src/voices";
 import { estimatePromptTokens, MAX_PROMPT_TOKENS } from "../src/config";
 
 const agentsDir = path.resolve(__dirname, "../assets/agents");
@@ -35,20 +38,24 @@ describe("house-style fold", () => {
   });
 
   test("fold replaces the slot with the house-style body", async () => {
-    const houseStyle = await loadHouseStyle();
-    const rendered = foldHouseStyle("a\n{{TGO_HOUSE_STYLE}}\nb", houseStyle);
+    const card = await loadVoiceCard("default");
+    const fold = renderFold(card);
+    const rendered = foldHouseStyle("a\n{{TGO_HOUSE_STYLE}}\nb", fold);
     expect(rendered).not.toContain(HOUSE_STYLE_SLOT);
-    expect(rendered).toContain("House style");
+    expect(rendered).toContain("TGO house style");
+    expect(rendered).toContain("Banned tells");
   });
 
-  test("fold renders the register dial from the register value", async () => {
-    const houseStyle = await loadHouseStyle();
-    const concise = foldHouseStyle("{{TGO_HOUSE_STYLE}}", houseStyle, "concise");
-    const natural = foldHouseStyle("{{TGO_HOUSE_STYLE}}", houseStyle, "natural");
-    expect(concise).toContain("present in concise mode by default");
-    expect(natural).toContain("present in natural mode by default");
-    expect(natural).toContain("self-classify by output class");
-    expect(concise).not.toContain("{{TGO_REGISTER}}");
+  test("fold renders the default-card banned-tell vocabulary (cluster framing)", async () => {
+    const card = await loadVoiceCard("default");
+    const fold = renderFold(card);
+    const rendered = foldHouseStyle("{{TGO_HOUSE_STYLE}}", fold);
+    expect(rendered).toContain("judge by clusters, not isolated instances");
+    expect(rendered).toContain("utilize");
+    expect(rendered).toContain("seamless");
+    expect(rendered).toContain("leverage");
+    expect(rendered).toContain("house style");
+    expect(rendered).not.toContain("{{TGO_REGISTER}}");
   });
 
   test("templates without a slot are left untouched", async () => {
@@ -56,23 +63,47 @@ describe("house-style fold", () => {
     expect(rendered).toBe("plain prompt");
   });
 
-  test("every rendered seat stays under the token budget in both registers", async () => {
-    for (const register of ["concise", "natural"] as const) {
-      const seats = await renderSeats(agentsDir, register);
+  test("every rendered seat stays under the token budget in every voice card", async () => {
+    for (const cardId of VOICE_CARDS) {
+      const seats = await renderSeats(agentsDir, cardId);
       expect(seats.length).toBeGreaterThanOrEqual(7);
       for (const seat of seats) {
         const tokens = estimatePromptTokens(seat.content);
         expect(tokens).toBeLessThanOrEqual(MAX_PROMPT_TOKENS);
       }
     }
+    // default param is default card
+    const defaultSeats = await renderSeats(agentsDir);
+    expect(defaultSeats.length).toBeGreaterThanOrEqual(7);
+    for (const seat of defaultSeats) {
+      expect(estimatePromptTokens(seat.content)).toBeLessThanOrEqual(MAX_PROMPT_TOKENS);
+    }
   });
 
   test("rendered subagents gain house style; bernstein does not", async () => {
     const seats = await renderSeats(agentsDir);
     const byName = Object.fromEntries(seats.map((s) => [s.fileName, s.content]));
-    expect(byName["bernstein.md"]).not.toContain("House style");
-    expect(byName["dylan.md"]).toContain("House style");
-    expect(byName["cobain.md"]).toContain("House style");
+    expect(byName["bernstein.md"]).not.toContain("TGO house style");
+    expect(byName["dylan.md"]).toContain("TGO house style");
+    expect(byName["dylan.md"]).toContain("Banned tells");
+    expect(byName["cobain.md"]).toContain("TGO house style");
+  });
+
+  test("buildSeatsTo writes rendered seats to disk", async () => {
+    const dir = tmpDir();
+    const seats = await buildSeatsTo(dir, "default");
+    expect(seats.length).toBeGreaterThanOrEqual(7);
+    for (const seat of seats) {
+      expect(existsSync(path.join(dir, seat.fileName))).toBe(true);
+      const content = readFileSync(path.join(dir, seat.fileName), "utf-8");
+      expect(estimatePromptTokens(content)).toBeLessThanOrEqual(MAX_PROMPT_TOKENS);
+      if (seat.fileName === "bernstein.md") {
+        expect(content).not.toContain("TGO house style");
+      } else {
+        expect(content).toContain("TGO house style");
+      }
+    }
+    rmSync(dir, { recursive: true, force: true });
   });
 });
 

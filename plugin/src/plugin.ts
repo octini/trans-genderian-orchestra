@@ -11,7 +11,8 @@ import { SetupController } from "./setup";
 import { preapproveExternalDirectory, resolveWorktreeFamily } from "./permissions";
 import { DEPENDENCIES, installMissing, runShellCommand } from "./deps";
 import { applyPreset, readPresetNudge, resolveActivePreset, resolveSeatModels } from "./presets";
-import { validateDelegationBoundary, validateDelegationPacket, verifyClaimObserved as verifyDelegationClaimObserved } from "./delegation";
+import { validateDelegationBoundary, validateDelegationPacket, verifyClaimObserved as verifyDelegationClaimObserved, isDelegationStyle, delegationStyleToVoiceCardId, type DelegationStyle } from "./delegation";
+import type { VoiceCardId } from "./voices";
 import { captureDelegationSession, probeSessionReuseCapability, persistAbortHandback, loadSessionMap } from "./session-reuse";
 import { ensureDefSnapshot, isValidBeadID, assertValidBeadID } from "./def-snapshot";
 import {
@@ -149,7 +150,7 @@ export const TgoPlugin: Plugin = async (
     try {
       const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
       const assetsAgentsDir = path.join(packageRoot, "assets", "agents");
-      const summary = await reconcileSeats(assetsAgentsDir, seatDir, appLog, config.register);
+      const summary = await reconcileSeats(assetsAgentsDir, seatDir, appLog, "default");
       if (summary.length > 0) {
         let version = "unknown";
         try {
@@ -212,14 +213,14 @@ export const TgoPlugin: Plugin = async (
   }
 
   const concision = new ConcisionController({
-    enabled: config.concision?.enabled,
-    register: config.register,
+    enabled: config.style?.enabled ?? true,
+    cardId: config.style?.card ? delegationStyleToVoiceCardId(config.style.card as DelegationStyle) : "tgo-default",
     log: appLog,
   });
   const styleReinforcement = new StyleReinforcementController({
-    enabled: config.concision?.enabled,
-    productionEnabled: config.concision?.reinforcement,
-    register: config.register,
+    enabled: config.style?.enabled ?? true,
+    productionEnabled: config.style?.reinforcement ?? false,
+    cardId: config.style?.card ? delegationStyleToVoiceCardId(config.style.card as DelegationStyle) : "tgo-default",
     log: appLog,
   });
 
@@ -370,6 +371,21 @@ export const TgoPlugin: Plugin = async (
   const delegatedSessionIds = new Set<string>();
   const completionSignals = new Map<string, { signal: CompletionSignal; text: string; exitGateRequired: boolean }>();
   const terminationParentIds = new Map<string, string | undefined>();
+
+  // T4 — delegation packet style → per-turn routing seam (D2 source a, precedence packet > default)
+  // Stored per session at dispatch time; explicit request (style-reinforcement) overrides per-turn via controller.
+  // Minimal seam: packet style captured here, routing resolves effective card via explicit > packet > default (T5 wires final injection).
+  const delegationStyleBySession = new Map<string, DelegationStyle>();
+  const resolvedVoiceCardBySession = new Map<string, VoiceCardId>();
+  const pendingDelegationStyleByParentSession = new Map<string, DelegationStyle>();
+  function rememberDelegationStyleForSession(sessionID: string, packet: Record<string, unknown>): void {
+    const raw = packet.style;
+    if (typeof raw === "string" && isDelegationStyle(raw)) {
+      delegationStyleBySession.set(sessionID, raw);
+      resolvedVoiceCardBySession.set(sessionID, delegationStyleToVoiceCardId(raw));
+      pendingDelegationStyleByParentSession.set(sessionID, raw);
+    }
+  }
 
   // ── Worktree lane auto-enforcement (tgo-bh0) — additive, zero overhead when lane not set ──
   // G1 investigation (5-min box, 2026-08-28): does task tool's input schema accept worktree/cwd for child session?
@@ -819,6 +835,16 @@ export const TgoPlugin: Plugin = async (
             await captureWorktreeLaneForChildSessionViaParent(info.id, info.parentID, repoRootWt);
           }
         } catch {}
+        // T4: propagate delegation style from parent pending to child session (packet > default, explicit > packet per-turn via controller)
+        try {
+          if (info.id && info.parentID) {
+            const pendingStyle = pendingDelegationStyleByParentSession.get(info.parentID);
+            if (pendingStyle) {
+              delegationStyleBySession.set(info.id, pendingStyle);
+              resolvedVoiceCardBySession.set(info.id, delegationStyleToVoiceCardId(pendingStyle));
+            }
+          }
+        } catch {}
         // F1 seed child sessions at creation — resolve runId from parent's current mapping
         try {
           if (info.id && info.parentID) {
@@ -844,8 +870,11 @@ export const TgoPlugin: Plugin = async (
           try { completionSignals.delete(deletedId); } catch {}
           try { terminationParentIds.delete(deletedId); } catch {}
           try { worktreeLaneBySession.delete(deletedId); } catch {}
+          try { delegationStyleBySession.delete(deletedId); } catch {}
+          try { resolvedVoiceCardBySession.delete(deletedId); } catch {}
           // G3: also clear pending parent-session lane mapping so stale entries don't misbind later dispatches
           try { pendingWorktreeLaneByParentSession.delete(deletedId); } catch {}
+          try { pendingDelegationStyleByParentSession.delete(deletedId); } catch {}
           // tgo-wpl: release recursion depth/cycle maps
           try { onSessionDeleted(deletedId); } catch {}
           // F3 cleanup mapping + heartbeat
@@ -1151,6 +1180,12 @@ export const TgoPlugin: Plugin = async (
           const rr = directory ?? worktree ?? (project as unknown as { worktree?: string })?.worktree ?? ".";
           rememberWorktreeLaneForDelegation(pktDispatch, input.sessionID, rr);
         }
+      } catch {}
+      // T4: remember delegation style for per-turn routing seam (additive; packet > default, explicit > packet via controller)
+      try {
+        const rawStyle = output?.args as Record<string, unknown> | undefined;
+        const pktStyle = rawStyle?.delegationPacket as Record<string, unknown> | undefined;
+        if (pktStyle) rememberDelegationStyleForSession(input.sessionID, pktStyle);
       } catch {}
       // G3 reorder: worktree lane enforcement FIRST — lane blocks must win over the
       // termination guard (a lane-violating call must be refused even if a completion
@@ -1600,6 +1635,26 @@ export const TgoPlugin: Plugin = async (
           }
         }
       } catch {}
+      // T4: propagate pending delegation style to child after dispatch (mirrors worktree lane capture)
+      try {
+        if (input.tool === "task") {
+          const pendingStyleAfter = pendingDelegationStyleByParentSession.get(input.sessionID);
+          if (pendingStyleAfter) {
+            const metaAfter = (output as unknown as { metadata?: unknown })?.metadata as Record<string, unknown> | undefined;
+            let childSidAfter: string | undefined;
+            if (metaAfter && typeof metaAfter.sessionId === "string" && metaAfter.sessionId.trim()) childSidAfter = metaAfter.sessionId.trim();
+            if (!childSidAfter) {
+              const outTextAfter = typeof (output as unknown as { output?: string })?.output === "string" ? (output as unknown as { output: string }).output : "";
+              const mAfter = outTextAfter.match(/ses_[A-Za-z0-9]+/);
+              if (mAfter) childSidAfter = mAfter[0];
+            }
+            if (childSidAfter && /^ses_[A-Za-z0-9]+$/.test(childSidAfter)) {
+              delegationStyleBySession.set(childSidAfter, pendingStyleAfter);
+              resolvedVoiceCardBySession.set(childSidAfter, delegationStyleToVoiceCardId(pendingStyleAfter));
+            }
+          }
+        }
+      } catch {}
       if (input.tool === "task" && typeof output?.output === "string") {
         let report = parseTaskReport(output.output);
         if (output && typeof output === "object") {
@@ -1756,21 +1811,38 @@ export const TgoPlugin: Plugin = async (
     },
 
     "experimental.chat.system.transform": async (input, output) => {
+      // T5 — close T4 seam: delegation style routing feeds effective card used by both controllers — explicit > packet > default per session
+      let effective: VoiceCardId = config.style?.card ? delegationStyleToVoiceCardId(config.style.card as DelegationStyle) : "tgo-default";
+      try {
+        if (input.sessionID) {
+          const packetStyle = delegationStyleBySession.get(input.sessionID);
+          const explicit = (styleReinforcement as unknown as { getStyleOverride?: (id: string) => VoiceCardId | undefined }).getStyleOverride?.(input.sessionID) as VoiceCardId | undefined;
+          effective = explicit ?? (packetStyle ? delegationStyleToVoiceCardId(packetStyle) : (config.style?.card ? delegationStyleToVoiceCardId(config.style.card as DelegationStyle) : "tgo-default"));
+          resolvedVoiceCardBySession.set(input.sessionID, effective);
+          // Wire effective card into concision for this turn (mutation without touching concision.ts file)
+          (concision as unknown as { cardId: VoiceCardId; instruction?: string }).cardId = effective;
+          (concision as unknown as { instruction?: string }).instruction = undefined;
+          // Ensure styleReinforcement default reflects config card (explicit/packet handled via getEffectiveStyle)
+          (styleReinforcement as unknown as { cardId: VoiceCardId }).cardId = config.style?.card ? delegationStyleToVoiceCardId(config.style.card as DelegationStyle) : "tgo-default";
+        }
+      } catch {}
       const appended = await concision.transform(client, input, output);
       const reinforced = input.sessionID ? await styleReinforcement.appendPending(client, input.sessionID, output.system) : false;
       if (appended) {
         logEvent("concision.appended", input.sessionID ?? "?", {
-          register: config.register,
+          style: effective,
         });
       }
-      if (reinforced) logEvent("style_reinforcement.appended", input.sessionID ?? "?", { register: config.register });
+      if (reinforced) logEvent("style_reinforcement.appended", input.sessionID ?? "?", { style: effective });
     },
 
     "experimental.text.complete": async (input, output) => {
+      const packetStyle = input.sessionID ? delegationStyleBySession.get(input.sessionID) : undefined;
       await styleReinforcement.noteCompletion(client, {
         sessionID: input.sessionID,
         messageID: input.messageID,
         candidate: output.text,
+        packetStyle,
       });
     },
 
@@ -1786,6 +1858,9 @@ export const TgoPlugin: Plugin = async (
       try { worktreeLaneBySession.clear(); } catch {}
       try { pendingWorktreeLaneByIssue.clear(); } catch {}
       try { pendingWorktreeLaneByParentSession.clear(); } catch {}
+      try { delegationStyleBySession.clear(); } catch {}
+      try { resolvedVoiceCardBySession.clear(); } catch {}
+      try { pendingDelegationStyleByParentSession.clear(); } catch {}
     },
   };
 };

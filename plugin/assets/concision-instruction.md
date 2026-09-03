@@ -1,3 +1,4 @@
+RETIRED — replaced by plugin/assets/voices/tgo-default.json (voice-cards T2)
 ## TGO house style — active every turn
 
 This is the amalgamated always-on style layer. It applies to every response in this session, every turn. Follow it unless following it would break correctness (a security warning, an irreversible confirmation, an ambiguity-prone sequence must stay full and clear).

@@ -69,7 +69,8 @@ const boardConfig = z.object({
   refreshMs: z.number().int().positive().default(5000),
 });
 
-const concisionConfig = z.object({
+const styleConfig = z.object({
+  card: z.enum(["default", "prose", "conversational"]).default("default"),
   enabled: z.boolean().default(true),
   reinforcement: z.boolean().default(false),
 });
@@ -130,11 +131,10 @@ export const tgoConfigSchema = z.object({
       frontier: seatPreset.optional(),
     })
     .optional(),
-  register: z.enum(["concise", "natural"]).default("concise"),
+  style: styleConfig.optional().default(() => ({ card: "default" as const, enabled: true, reinforcement: false })),
   agentDir: z.string().optional(),
   checkVersion: z.boolean().default(true),
   board: boardConfig.optional().default(() => ({ enabled: true, refreshMs: 5000 })),
-  concision: concisionConfig.optional().default(() => ({ enabled: true, reinforcement: false })),
   setup: setupConfig.optional().default(() => ({ enabled: true, autoInstallBeads: true })),
   watchdog: watchdogConfig.optional().default(() => ({
     enabled: true,

@@ -1,7 +1,7 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { safeWarn } from "./config";
-import { renderSeats, type Register } from "./build";
+import { renderSeats, type VoiceCardId } from "./build";
 
 function parseSteps(content: string): string | null {
   const m = content.match(/^\s*steps:\s*(\d+)/m);
@@ -12,12 +12,13 @@ export async function reconcileSeats(
   assetsAgentsDir: string,
   installedAgentsDir: string,
   log?: (level: "warn" | "info" | "error", message: string, extra?: Record<string, unknown>) => void,
-  register: Register = "concise"
+  _card: VoiceCardId | string = "default"
 ): Promise<string[]> {
   const summary: string[] = [];
   let renderedSeats: Array<{ fileName: string; content: string }>;
   try {
-    renderedSeats = await renderSeats(assetsAgentsDir, register);
+    // 2026-09-02 remediation: seat baking pinned to tgo-default ALWAYS — named deltas never baked (spec §6)
+    renderedSeats = await renderSeats(assetsAgentsDir, "default");
   } catch (err) {
     safeWarn(log, "tgo: seat sync render failed", { assetsAgentsDir, error: String(err) });
     return summary;

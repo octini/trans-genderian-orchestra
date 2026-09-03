@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { estimatePromptTokens, loadTgoConfig, MAX_PROMPT_TOKENS, tgoConfigSchema } from "./config";
 import { renderSeats } from "./build";
 import { readSeatContent, reportSeat } from "./permissions";
+import { rulePackSchema, voiceCardSchema } from "./voices";
 
 const packageRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -13,7 +14,15 @@ const packageRoot = path.resolve(
 function unwrapZod(schema: unknown): unknown {
   let current = schema;
   while (current && typeof current === "object" && "unwrap" in current) {
-    current = (current as { unwrap: () => unknown }).unwrap();
+    const curType = (current as { def?: { type?: string }; _zod?: { def?: { type?: string } } }).def?.type ?? (current as { _zod?: { def?: { type?: string } } })._zod?.def?.type;
+    if (curType === "array") break;
+    const next = (current as { unwrap: () => unknown }).unwrap();
+    const nextType = (next as { def?: { type?: string }; _zod?: { def?: { type?: string } } } | null | undefined)?.def?.type ?? (next as { _zod?: { def?: { type?: string } } } | null | undefined)?._zod?.def?.type;
+    if (nextType === "array") {
+      current = next;
+      break;
+    }
+    current = next;
   }
   return current;
 }
@@ -79,6 +88,28 @@ async function validateSchema(): Promise<void> {
   if (problems.length > 0) {
     throw new Error(`schema/zod parity: ${problems.join("; ")}`);
   }
+
+  const voiceCardPath = path.join(packageRoot, "schema", "voice-card.schema.json");
+  const voiceRaw = JSON.parse(await fs.readFile(voiceCardPath, "utf-8"));
+  const voiceProblems = assertSchemaZodParity(voiceCardSchema, voiceRaw, "voice-card.schema.json", voiceRaw);
+  if (voiceProblems.length > 0) {
+    throw new Error(`schema/zod parity: ${voiceProblems.join("; ")}`);
+  }
+
+  const rulePackPath = path.join(packageRoot, "schema", "rule-pack.schema.json");
+  const ruleRaw = JSON.parse(await fs.readFile(rulePackPath, "utf-8"));
+  const ruleProblems = assertSchemaZodParity(rulePackSchema, ruleRaw, "rule-pack.schema.json", ruleRaw);
+  if (ruleProblems.length > 0) {
+    throw new Error(`schema/zod parity: ${ruleProblems.join("; ")}`);
+  }
+}
+
+async function validateVoiceCards(): Promise<void> {
+  for (const id of ["tgo-default", "tgo-prose", "tgo-conversational"] as const) {
+    const cardPath = path.join(packageRoot, "assets", "voices", `${id}.json`);
+    const raw = JSON.parse(await fs.readFile(cardPath, "utf-8"));
+    voiceCardSchema.parse(raw);
+  }
 }
 
 async function validatePresetsFile(): Promise<void> {
@@ -89,20 +120,20 @@ async function validatePresetsFile(): Promise<void> {
 
 async function validateRenderedSeats(): Promise<void> {
   const agentsDir = path.join(packageRoot, "assets", "agents");
-  for (const register of ["concise", "natural"] as const) {
-    const seats = await renderSeats(agentsDir, register);
+  for (const card of ["default", "prose", "conversational"] as const) {
+    const seats = await renderSeats(agentsDir, card);
     let checked = 0;
     for (const seat of seats) {
       const tokens = estimatePromptTokens(seat.content);
       if (tokens > MAX_PROMPT_TOKENS) {
         throw new Error(
-          `${seat.fileName} (${register}): ${tokens} tokens exceeds ${MAX_PROMPT_TOKENS}-token budget`
+          `${seat.fileName} (${card}): ${tokens} tokens exceeds ${MAX_PROMPT_TOKENS}-token budget`
         );
       }
       checked++;
     }
     if (checked === 0) {
-      console.log(`WARNING: no seat prompt files found to validate (${register})`);
+      console.log(`WARNING: no seat prompt files found to validate (${card})`);
     }
   }
 }
@@ -211,6 +242,7 @@ async function validateSkillGrants(): Promise<void> {
 
 if (import.meta.main) {
   await validateSchema();
+  await validateVoiceCards();
   await validatePresetsFile();
   await validateRenderedSeats();
   await validatePermissionGraph();

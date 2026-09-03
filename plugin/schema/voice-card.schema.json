@@ -1,0 +1,311 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://opencode.ai/trans-genderian-orchestra.voice-card.schema.json",
+  "title": "TGO voice card",
+  "description": "Voice card — invariants (always apply), arc repertoire (shape-tagged templates), and exemplars. Validated at build via plugin/src/validate.ts zod ↔ JSON parity.",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Optional JSON Schema pointer for editor validation."
+    },
+    "id": {
+      "type": "string",
+      "enum": ["tgo-default", "tgo-prose", "tgo-conversational"],
+      "description": "Stable card identifier."
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "Semver version of the card."
+    },
+    "meta": {
+      "type": "object",
+      "description": "Display and provenance metadata.",
+      "properties": {
+        "display_name": {
+          "type": "string",
+          "description": "Human-readable card name."
+        },
+        "attribution": {
+          "type": "string",
+          "description": "Generic attribution — no author name-drops."
+        },
+        "exemplar_source": {
+          "type": "string",
+          "description": "Provenance tag for exemplars (e.g. calibration-transcript)."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Author notes about the card."
+        }
+      },
+      "required": ["display_name", "attribution"],
+      "additionalProperties": false
+    },
+    "voice_invariants": {
+      "type": "object",
+      "description": "Fields that always apply when the card is active.",
+      "properties": {
+        "tone": {
+          "type": "string",
+          "description": "Tone descriptor."
+        },
+        "diction": {
+          "type": "string",
+          "description": "Diction descriptor."
+        },
+        "syntax_targets": {
+          "type": "object",
+          "description": "Sentence-length and STE targets.",
+          "properties": {
+            "sentence_buckets_by_count": {
+              "type": "object",
+              "description": "Percentage buckets by sentence length (must sum ~100).",
+              "properties": {
+                "short_1_10w": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 100
+                },
+                "medium_11_24w": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 100
+                },
+                "long_25w_plus": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 100
+                }
+              },
+              "additionalProperties": false
+            },
+            "mean_words": {
+              "type": "number",
+              "description": "Mean words per sentence."
+            },
+            "median_words": {
+              "type": "number",
+              "description": "Median words per sentence."
+            },
+            "p90_words": {
+              "type": "number",
+              "description": "P90 words per sentence."
+            },
+            "max_words": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Hard max words per sentence."
+            },
+            "long_formation": {
+              "type": "string",
+              "description": "How long sentences are formed (e.g. paratactic addition)."
+            },
+            "ste_thresholds": {
+              "type": "object",
+              "description": "STE thresholds by context.",
+              "properties": {
+                "instruction": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "descriptive": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        "punctuation_budgets": {
+          "type": "object",
+          "description": "Punctuation and transition budgets.",
+          "properties": {
+            "em_dash_per_100w_max": {
+              "type": "number",
+              "minimum": 0
+            },
+            "em_dash_cluster_flag": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "sentence_initial_transitions_per_paragraph_max": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "transitions_exempt_from_flagging": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "one_device_per_sentence": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        },
+        "rhythm_rules": {
+          "type": "object",
+          "description": "Paragraph and sentence rhythm rules.",
+          "properties": {
+            "paragraph_head_discipline": {
+              "type": "string"
+            },
+            "length_bias": {
+              "type": "string",
+              "enum": ["short", "medium", "long"]
+            },
+            "variance_follows_emphasis": {
+              "type": "boolean"
+            },
+            "no_metronome_alternation": {
+              "type": "boolean"
+            },
+            "linked_clause_requires_verb": {
+              "type": "boolean"
+            },
+            "fragments": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "perspective": {
+          "type": "string",
+          "description": "Narrative perspective."
+        },
+        "anti_patterns": {
+          "type": "object",
+          "description": "Card-aware gating for drift families.",
+          "properties": {
+            "refs": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "strictness": {
+              "type": "string",
+              "enum": ["low", "medium", "high"]
+            },
+            "thresholds": {
+              "type": "object",
+              "description": "Numeric overrides for family gating.",
+              "properties": {
+                "hedge_stack_max": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "hidden_actor_flag": {
+                  "type": "string"
+                },
+                "rule_of_three_cluster": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "synonym_cycle_window_sentences": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "novelty_inflation_flag": {
+                  "type": "string"
+                },
+                "false_balance_flag": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "additionalProperties": false
+        },
+        "controls": {
+          "type": "object",
+          "description": "Global card controls.",
+          "properties": {
+            "off_switch": {
+              "type": "string"
+            },
+            "exemplar_injection_max": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "exemplar_selection": {
+              "type": "string"
+            },
+            "closer": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "arc_repertoire": {
+      "type": "object",
+      "description": "Conditional structure templates selected by shape tag.",
+      "properties": {
+        "templates": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "shape": {
+                "type": "string"
+              },
+              "moves": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "constraints": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": ["shape", "moves"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "exemplars": {
+      "type": "array",
+      "description": "Embedded verbatim passages, shape-tagged. Loader injects 1–2 whose shape matches task; never all. tgo-default must be [].",
+      "items": {
+        "type": "object",
+        "properties": {
+          "shape": {
+            "type": "string"
+          },
+          "person": {
+            "type": "string",
+            "enum": ["first", "second", "third"]
+          },
+          "first_line": {
+            "type": "string"
+          },
+          "last_line": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": ["shape", "person", "first_line", "last_line", "text"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["id", "version", "meta", "voice_invariants", "arc_repertoire", "exemplars"],
+  "additionalProperties": false
+}

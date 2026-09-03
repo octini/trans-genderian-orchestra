@@ -18,3 +18,6 @@ plugin/node_modules/
 2026_08_06_pocock_video_transcript.txt
 .cortexkit/
 tmp-repro/
+
+# TGO voice-calibration samples (do not commit)
+*.rtf

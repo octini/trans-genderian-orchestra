@@ -10,10 +10,27 @@
       "enum": ["balanced", "cheap", "frontier"],
       "default": "balanced"
     },
-    "register": {
-      "description": "Writing register for Dylan's output.",
-      "enum": ["concise", "natural"],
-      "default": "concise"
+    "style": {
+      "description": "Voice card style settings (replaces register/concision).",
+      "type": "object",
+      "properties": {
+        "card": {
+          "description": "Active voice card.",
+          "enum": ["default", "prose", "conversational"],
+          "default": "default"
+        },
+        "enabled": {
+          "description": "Universal off-switch for the per-turn style injection.",
+          "type": "boolean",
+          "default": true
+        },
+        "reinforcement": {
+          "description": "Opt-in generation-time style reinforcement. The verified completion hook does not provide preservation or response-lineage context; default disabled.",
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "additionalProperties": false
     },
     "agentDir": {
       "description": "Directory holding seat prompt .md files (defaults to the opencode global agent dir).",
@@ -38,23 +55,6 @@
           "type": "integer",
           "minimum": 1,
           "default": 5000
-        }
-      },
-      "additionalProperties": false
-    },
-    "concision": {
-      "description": "Always-on concision transform (hook #4) settings.",
-      "type": "object",
-      "properties": {
-        "enabled": {
-          "description": "Universal off-switch for the per-turn house-style injection.",
-          "type": "boolean",
-          "default": true
-        },
-        "reinforcement": {
-          "description": "Opt-in generation-time style reinforcement. The verified completion hook does not provide preservation or response-lineage context; default disabled.",
-          "type": "boolean",
-          "default": false
         }
       },
       "additionalProperties": false
@@ -211,8 +211,8 @@
         "bernstein": { "$ref": "#/definitions/modelRef" },
         "horowitz": { "$ref": "#/definitions/modelRef" },
         "nas": { "$ref": "#/definitions/modelRef" },
-        "dylan": { "$ref": "#/definitions/modelRef" },
         "nirvana": { "$ref": "#/definitions/modelRef" },
+        "dylan": { "$ref": "#/definitions/modelRef" },
         "band-members": { "$ref": "#/definitions/modelRef" }
       },
       "required": ["bernstein", "horowitz", "nas", "dylan", "nirvana", "band-members"],

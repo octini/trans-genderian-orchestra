@@ -1,0 +1,57 @@
+{
+  "$schema": "../../schema/rule-pack.schema.json",
+  "id": "mechanics",
+  "tier": 1,
+  "false_positive_risk": "low",
+  "gating": "always-on",
+  "families": [
+    {
+      "name": "spelling-caps-repetition",
+      "patterns": [
+        { "kind": "regex", "value": "\\b(?:teh|recieve|occured|definately|seperate|accomodate)\\b", "flags": "gi" },
+        { "kind": "regex", "value": "\\b[A-Z]{5,}\\b", "flags": "g" },
+        { "kind": "regex", "value": "\\b(\\w+)\\s+\\1\\b", "flags": "gi" }
+      ],
+      "severity": "low",
+      "basis": "cluster",
+      "thresholds": { "cluster_min": 1 }
+    },
+    {
+      "name": "unfilled-placeholders",
+      "patterns": [
+        { "kind": "regex", "value": "\\[TODO\\]", "flags": "gi" },
+        { "kind": "regex", "value": "\\[[A-Z][A-Z0-9 _\\-\\.:]{2,}\\]", "flags": "g" },
+        { "kind": "regex", "value": "20\\d\\d-XX-XX", "flags": "g" },
+        { "kind": "regex", "value": "\\{\\{[^}]+\\}\\}", "flags": "g" },
+        { "kind": "regex", "value": "<<[^>]+>>", "flags": "g" }
+      ],
+      "severity": "high",
+      "basis": "strong-evidence",
+      "thresholds": { "cluster_min": 1 }
+    },
+    {
+      "name": "chat-citation-markup",
+      "patterns": [
+        { "kind": "regex", "value": "【[^】]*†[^】]*】", "flags": "g" },
+        { "kind": "regex", "value": "【L\\d+[^】]*】", "flags": "g" },
+        { "kind": "regex", "value": "citeturn[a-z0-9]+", "flags": "gi" },
+        { "kind": "regex", "value": "oai_citation", "flags": "gi" },
+        { "kind": "regex", "value": "\\[(?:attached_file|citation)[:\\d][^\\]]*\\]", "flags": "gi" }
+      ],
+      "severity": "high",
+      "basis": "strong-evidence",
+      "thresholds": { "cluster_min": 1 }
+    },
+    {
+      "name": "ai-tracking-params",
+      "patterns": [
+        { "kind": "regex", "value": "utm_source=chatgpt", "flags": "gi" },
+        { "kind": "regex", "value": "utm_(?:source|medium|campaign)=[^&\\s]+", "flags": "gi" },
+        { "kind": "regex", "value": "\\?[^\\s]*utm_source=[^\\s&]+", "flags": "gi" }
+      ],
+      "severity": "high",
+      "basis": "strong-evidence",
+      "thresholds": { "cluster_min": 1 }
+    }
+  ]
+}

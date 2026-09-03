@@ -8,7 +8,9 @@
 
 export type OutputClass = "technical-steps-code" | "voice-forward-prose";
 export type Mode = "chat" | "tool-heavy";
-export type Register = "concise" | "natural";
+// legacy alias: "concise"/"natural" map to byCard "default" (card-aware gating via cardId); byCard naming is "default" | "prose" | "conversational"
+export type Register = "concise" | "natural" | "default" | "prose" | "conversational";
+export type CardId = "tgo-default" | "tgo-prose" | "tgo-conversational";
 export type Axis = "response-length" | "readability" | "progress-narration" | "anti-style-cluster";
 export type Severity = "none" | "low" | "medium" | "high";
 
@@ -44,7 +46,8 @@ export interface ExpectedFinding {
 export interface StyleQualityFixture {
   id: string;
   description: string;
-  register: Register;
+  cardId: CardId;
+  register?: Register;
   outputClass: OutputClass;
   mode: Mode;
   taskClass?: string;
@@ -81,7 +84,8 @@ export const STYLE_QUALITY_FIXTURES: StyleQualityFixture[] = [
   withSpans({
     id: "chat-ordinary-concise",
     description: "Ordinary answer with one isolated mild tell; no drift finding.",
-    register: "concise",
+    cardId: "tgo-default",
+    register: "default",
     outputClass: "technical-steps-code",
     mode: "chat",
     candidate: "1. Restart the service. The change takes effect immediately.",
@@ -91,7 +95,8 @@ export const STYLE_QUALITY_FIXTURES: StyleQualityFixture[] = [
   withSpans({
     id: "technical-explanation-preserved",
     description: "Technical explanation keeps an identifier, number, unit, negation, and necessary caveat.",
-    register: "concise",
+    cardId: "tgo-default",
+    register: "default",
     outputClass: "technical-steps-code",
     mode: "chat",
     candidate: "Set `timeoutMs` to 500 ms. Do not remove the retry because the first request can fail during startup.",
@@ -106,7 +111,8 @@ export const STYLE_QUALITY_FIXTURES: StyleQualityFixture[] = [
   withSpans({
     id: "tool-heavy-success",
     description: "Tool-heavy result separates command and verification from progress narration.",
-    register: "concise",
+    cardId: "tgo-default",
+    register: "default",
     outputClass: "technical-steps-code",
     mode: "tool-heavy",
     candidate: "1. Ran `bun test plugin/test/concision.test.ts`.\n2. Result: 18 tests passed. No files changed.",
@@ -119,7 +125,8 @@ export const STYLE_QUALITY_FIXTURES: StyleQualityFixture[] = [
   withSpans({
     id: "failure-warning-and-error",
     description: "Failure report preserves the exact error, warning, command, and security instruction.",
-    register: "concise",
+    cardId: "tgo-default",
+    register: "default",
     outputClass: "technical-steps-code",
     mode: "tool-heavy",
     candidate: "1. `npm run build` failed with `ERR_MODULE_NOT_FOUND`. Warning: do not run this with production credentials. Retry after installing `zod@4.1.13`.",
@@ -134,7 +141,8 @@ export const STYLE_QUALITY_FIXTURES: StyleQualityFixture[] = [
   withSpans({
     id: "code-and-quotation",
     description: "Code and a quotation are protected even when the surrounding answer is short.",
-    register: "concise",
+    cardId: "tgo-default",
+    register: "default",
     outputClass: "technical-steps-code",
     mode: "chat",
     candidate: "Use `if (ready) return;`. The API contract says, \"A missing token is not anonymous access.\"",
@@ -147,7 +155,8 @@ export const STYLE_QUALITY_FIXTURES: StyleQualityFixture[] = [
   withSpans({
     id: "chat-drift-cluster",
     description: "Chat-style answer seeds filler, AI vocabulary, hedging, repetition, and a closer.",
-    register: "natural",
+    cardId: "tgo-default",
+    register: "default",
     outputClass: "voice-forward-prose",
     mode: "chat",
     candidate: "Great question. It is important to note that we can utilize this robust approach. I think it is really useful and, in my opinion, it is the best option. The answer is to restart the service. The answer is to restart the service. Hope this helps.",
@@ -156,10 +165,12 @@ export const STYLE_QUALITY_FIXTURES: StyleQualityFixture[] = [
       actionable: true,
       reinforcementEligible: true,
       findings: [
-          { axis: "anti-style-cluster", severity: "low", basis: "cluster", evidence: "modal-hedge tell cluster", suppressed: false, spans: [{ start: 82, end: 89 }, { start: 115, end: 128 }] },
-         { axis: "response-length", severity: "high", basis: "strong-evidence", evidence: "Consecutive repeated sentence: The answer is to restart the service.", suppressed: false, spans: [{ start: 152, end: 190 }, { start: 190, end: 228 }] },
-         { axis: "anti-style-cluster", severity: "medium", basis: "strong-evidence", evidence: "Chatbot closer after the answer is complete", suppressed: false, spans: [{ start: 229, end: 244 }] },
-      ],
+        { axis: "anti-style-cluster", severity: "low", basis: "cluster", evidence: "verbal-false-limbs tell cluster", suppressed: false, spans: [{ start: 16, end: 39 }] },
+        { axis: "anti-style-cluster", severity: "low", basis: "cluster", evidence: "corporate-speak tell cluster", suppressed: false, spans: [{ start: 52, end: 59 }, { start: 65, end: 71 }] },
+        { axis: "anti-style-cluster", severity: "medium", basis: "cluster", evidence: "hedge-stacks tell cluster", suppressed: false, spans: [{ start: 82, end: 89 }, { start: 96, end: 102 }, { start: 115, end: 128 }] },
+        { axis: "response-length", severity: "high", basis: "strong-evidence", evidence: "Consecutive repeated sentence: The answer is to restart the service.", suppressed: false, spans: [{ start: 152, end: 190 }, { start: 190, end: 228 }] },
+        { axis: "anti-style-cluster", severity: "medium", basis: "strong-evidence", evidence: "Chatbot closer after the answer is complete", suppressed: false, spans: [{ start: 229, end: 244 }] },
+     ],
         preservation: "meaning-retained",
          requiredClaims: ["The answer is to restart the service."],
       },
@@ -168,7 +179,8 @@ export const STYLE_QUALITY_FIXTURES: StyleQualityFixture[] = [
   withSpans({
     id: "tool-heavy-narration-and-preservation-risk",
     description: "Tool narration repeats the result; an uncertain protected span suppresses reinforcement.",
-    register: "concise",
+    cardId: "tgo-default",
+    register: "default",
     outputClass: "technical-steps-code",
     mode: "tool-heavy",
     candidate: "Changed `config.ts` to set 30 seconds. I changed `config.ts`. The warning says \"Do not disable TLS verification.\" The exact production behavior remains uncertain.",
@@ -189,7 +201,8 @@ export const STYLE_QUALITY_FIXTURES: StyleQualityFixture[] = [
   withSpans({
     id: "long-reasoning-natural",
     description: "Longer reasoning retains a necessary ambiguity explanation; cadence is not capped.",
-    register: "natural",
+    cardId: "tgo-default",
+    register: "default",
     outputClass: "voice-forward-prose",
     mode: "chat",
     candidate: "There are two plausible causes. If the cache is stale, clearing it fixes the symptom, but if the token is expired, clearing it changes nothing. Check the timestamp first; that distinction matters because the safe next step differs, and we should not delete the cache until the token check is complete.",
@@ -202,7 +215,8 @@ export const STYLE_QUALITY_FIXTURES: StyleQualityFixture[] = [
   withSpans({
     id: "terse-qa-factual",
     description: "Terse factual Q&A preserves negation, number-unit, and quotation in a concise answer.",
-    register: "concise",
+    cardId: "tgo-default",
+    register: "default",
     outputClass: "technical-steps-code",
     mode: "chat",
     taskClass: "terse-qa",
@@ -218,7 +232,8 @@ export const STYLE_QUALITY_FIXTURES: StyleQualityFixture[] = [
   withSpans({
     id: "orchestration-dag-wave",
     description: "Orchestration wave: Bernstein DAG create→dispatch→verify with delegation count.",
-    register: "concise",
+    cardId: "tgo-default",
+    register: "default",
     outputClass: "technical-steps-code",
     mode: "tool-heavy",
     taskClass: "orchestration",

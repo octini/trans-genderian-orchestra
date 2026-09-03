@@ -57,16 +57,31 @@ describe("token budget", () => {
 });
 
 describe("config schema", () => {
-  test("defaults to balanced + concise", async () => {
+  test("defaults to balanced + default style card", async () => {
     const cfg = await loadTgoConfig({});
     expect(cfg.preset).toBe("balanced");
-    expect(cfg.register).toBe("concise");
+    expect(cfg.style.card).toBe("default");
+    expect(cfg.style.enabled).toBe(true);
+    expect(cfg.style.reinforcement).toBe(false);
   });
 
   test("rejects unknown preset", async () => {
     expect(() =>
       loadTgoConfig({ preset: "nonsense" } as unknown as Record<string, unknown>)
     ).toThrow();
+  });
+
+  test("rejects unknown style card", async () => {
+    expect(() =>
+      loadTgoConfig({ style: { card: "invalid" } } as unknown as Record<string, unknown>)
+    ).toThrow();
+  });
+
+  test("accepts prose and conversational cards", async () => {
+    const prose = await loadTgoConfig({ style: { card: "prose" } });
+    expect(prose.style.card).toBe("prose");
+    const conv = await loadTgoConfig({ style: { card: "conversational" } });
+    expect(conv.style.card).toBe("conversational");
   });
 
   test("tolerates model-name drift (model IDs are free-form)", async () => {
@@ -130,13 +145,26 @@ describe("config schema", () => {
     expect(cfg.board?.refreshMs).toBe(1000);
   });
 
-  test("concision defaults to enabled", async () => {
+  test("style defaults to enabled", async () => {
     const cfg = await loadTgoConfig({});
-    expect(cfg.concision?.enabled).toBe(true);
+    expect(cfg.style?.enabled).toBe(true);
+    expect(cfg.style?.reinforcement).toBe(false);
   });
 
-  test("concision can be disabled (universal off-switch)", async () => {
-    const cfg = await loadTgoConfig({ concision: { enabled: false } });
-    expect(cfg.concision?.enabled).toBe(false);
+  test("style can be disabled (universal off-switch)", async () => {
+    const cfg = await loadTgoConfig({ style: { enabled: false } });
+    expect(cfg.style?.enabled).toBe(false);
+  });
+
+  test("style reinforcement can be enabled", async () => {
+    const cfg = await loadTgoConfig({ style: { reinforcement: true } });
+    expect(cfg.style?.reinforcement).toBe(true);
+  });
+
+  test("style card + enabled + reinforcement parity with schema", async () => {
+    const cfg = await loadTgoConfig({ style: { card: "prose", enabled: true, reinforcement: true } });
+    expect(cfg.style.card).toBe("prose");
+    expect(cfg.style.enabled).toBe(true);
+    expect(cfg.style.reinforcement).toBe(true);
   });
 });

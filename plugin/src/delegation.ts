@@ -1,5 +1,6 @@
 import { classifyRouting, type RouteClass, type RoutingInput } from "./fit";
 import { normalizeScopePath } from "./manifest";
+import type { VoiceCardId } from "./voices";
 import {
   hashString,
   hashFivePartPacket,
@@ -15,6 +16,33 @@ import {
   type DefSnapshot,
 } from "./def-snapshot";
 export { hashString, hashFivePartPacket, buildDefSnapshot, buildDefSnapshotFromPrompt, defSnapshotPath, writeDefSnapshot, readDefSnapshot, ensureDefSnapshot, isValidBeadID, assertValidBeadID, VALID_BEAD_ID, type DefSnapshot };
+
+export type DelegationStyle = "default" | "prose" | "conversational";
+export const DELEGATION_STYLES: readonly DelegationStyle[] = ["default", "prose", "conversational"] as const;
+export const STYLE_SOURCES: readonly ["explicit", "packet"] = ["explicit", "packet"] as const;
+export type StyleSource = (typeof STYLE_SOURCES)[number];
+
+export function isDelegationStyle(value: unknown): value is DelegationStyle {
+  return typeof value === "string" && (DELEGATION_STYLES as readonly string[]).includes(value);
+}
+
+export function delegationStyleToVoiceCardId(style: DelegationStyle): VoiceCardId {
+  if (style === "prose") return "tgo-prose";
+  if (style === "conversational") return "tgo-conversational";
+  return "tgo-default";
+}
+
+export function voiceCardIdToDelegationStyle(id: VoiceCardId): DelegationStyle {
+  if (id === "tgo-prose") return "prose";
+  if (id === "tgo-conversational") return "conversational";
+  return "default";
+}
+
+export function resolveEffectiveVoiceCardId(opts: { packetStyle?: unknown; explicitOverride?: VoiceCardId | null | undefined }): VoiceCardId {
+  if (opts.explicitOverride) return opts.explicitOverride;
+  if (isDelegationStyle(opts.packetStyle)) return delegationStyleToVoiceCardId(opts.packetStyle);
+  return "tgo-default";
+}
 
 export interface DelegationPacket {
   Objective?: unknown;
@@ -41,6 +69,10 @@ export interface DelegationPacket {
   seatFrontmatter?: unknown;
   /** Worktree lane flag — worktree enforcement active when "worktree", zero overhead otherwise. */
   lane?: unknown;
+  /** Voice card assignment — orchestrator sets per task (D2 source a). */
+  style?: DelegationStyle;
+  /** Provenance of style assignment. */
+  styleSource?: StyleSource;
 }
 
 export interface DelegationBoundaryArgs {
@@ -223,6 +255,22 @@ export function validateDelegationPacket(
     if (lane !== "worktree" && lane !== "inline") {
       malformed.push("lane");
       diagnostics.push('lane must be "worktree" | "inline" when present (default inline).');
+    }
+  }
+
+  if ("style" in value) {
+    const style = value.style;
+    if (typeof style !== "string" || !(DELEGATION_STYLES as readonly string[]).includes(style)) {
+      malformed.push("style");
+      diagnostics.push(`style must be one of ${DELEGATION_STYLES.join(", ")} when present — got ${JSON.stringify(style)}.`);
+    }
+  }
+
+  if ("styleSource" in value) {
+    const src = value.styleSource;
+    if (src !== "explicit" && src !== "packet") {
+      malformed.push("styleSource");
+      diagnostics.push(`styleSource must be "explicit" | "packet" when present — got ${JSON.stringify(src)}.`);
     }
   }
 

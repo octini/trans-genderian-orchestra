@@ -1,0 +1,68 @@
+{
+  "$schema": "../../schema/rule-pack.schema.json",
+  "id": "concision",
+  "tier": 2,
+  "false_positive_risk": "medium",
+  "gating": "whitelist",
+  "families": [
+    {
+      "name": "corporate-speak",
+      "patterns": [
+        { "kind": "regex", "value": "\\b(?:utilize|leverage|delve|showcase|landscape)\\b", "flags": "gi" },
+        { "kind": "regex", "value": "\\b(?:seamless|robust|world-class|cutting-edge|effortless|next-generation|revolutionary)\\b", "flags": "gi" },
+        { "kind": "regex", "value": "\\b(?:commence|furthermore|moreover|initiate|ensure)\\b", "flags": "gi" },
+        { "kind": "regex", "value": "\\b(?:synergy|ecosystem|paradigm|holistic|deep dive|circle back|move the needle)\\b", "flags": "gi" }
+      ],
+      "severity": "low",
+      "basis": "cluster",
+      "thresholds": { "cluster_min": 1 }
+    },
+    {
+      "name": "verbal-false-limbs",
+      "patterns": [
+        { "kind": "regex", "value": "\\bmake\\s+an?\\s+improvement\\b", "flags": "gi" },
+        { "kind": "regex", "value": "\\bmake\\s+a\\s+decision\\b", "flags": "gi" },
+        { "kind": "regex", "value": "\\btake\\s+into\\s+consideration\\b", "flags": "gi" },
+        { "kind": "regex", "value": "\\bconduct\\s+an?\\s+investigation\\b", "flags": "gi" },
+        { "kind": "regex", "value": "\\bprovide\\s+assistance\\b", "flags": "gi" },
+        { "kind": "regex", "value": "\\bmake\\s+use\\s+of\\b", "flags": "gi" },
+        { "kind": "regex", "value": "\\bgive\\s+consideration\\s+to\\b", "flags": "gi" },
+        { "kind": "regex", "value": "\\breach\\s+an?\\s+agreement\\b", "flags": "gi" },
+        { "kind": "regex", "value": "\\b(?:basically|actually|simply)\\b", "flags": "gi" },
+        { "kind": "regex", "value": "\\bit\\s+is\\s+important\\s+to\\s+note\\b", "flags": "gi" },
+        { "kind": "regex", "value": "\\bhere(?:'|’)s\\s+the\\s+thing\\b", "flags": "gi" }
+      ],
+      "severity": "low",
+      "basis": "cluster",
+      "thresholds": { "cluster_min": 1 }
+    },
+    {
+      "name": "unnamed-authority",
+      "patterns": [
+        { "kind": "regex", "value": "\\bexperts?\\s+say\\b", "flags": "gi" },
+        { "kind": "regex", "value": "\\bstudies?\\s+show\\b", "flags": "gi" },
+        { "kind": "regex", "value": "\\bresearch\\s+(?:shows|suggests|indicates)\\b", "flags": "gi" },
+        { "kind": "regex", "value": "\\bit\\s+is\\s+(?:said|known|believed)\\s+that\\b", "flags": "gi" },
+        { "kind": "regex", "value": "\\bexperts?\\s+agree\\b", "flags": "gi" }
+      ],
+      "severity": "medium",
+      "basis": "cluster",
+      "thresholds": { "cluster_min": 1 }
+    },
+    {
+      "name": "circumlocution-swaps",
+      "patterns": [
+        { "kind": "regex", "value": "\\bdue\\s+to\\s+the\\s+fact\\s+that\\b", "flags": "gi" },
+        { "kind": "regex", "value": "\\bat\\s+this\\s+point\\s+in\\s+time\\b", "flags": "gi" },
+        { "kind": "regex", "value": "\\bin\\s+order\\s+to\\b", "flags": "gi" },
+        { "kind": "regex", "value": "\\bin\\s+the\\s+event\\s+that\\b", "flags": "gi" },
+        { "kind": "regex", "value": "\\bfor\\s+the\\s+purpose\\s+of\\b", "flags": "gi" },
+        { "kind": "regex", "value": "\\bwith\\s+regard\\s+to\\b", "flags": "gi" },
+        { "kind": "regex", "value": "\\bin\\s+spite\\s+of\\s+the\\s+fact\\s+that\\b", "flags": "gi" }
+      ],
+      "severity": "low",
+      "basis": "cluster",
+      "thresholds": { "cluster_min": 1 }
+    }
+  ]
+}
