@@ -1,0 +1,85 @@
+{
+  "_header": "Prompt assembly baseline — captures rendered seat prompt skeleton (section order + stable markers). Do not hand-edit. To update after intentional changes: UPDATE_PROMPT_BASELINE=1 bun test plugin/test/prompt-baseline.test.ts (see docs/SETUP.md). \"generated\" is an audit stamp only — unhashed and uncompared, expected to diff on every update.",
+  "_normalization": "Normalized before hashing: strip dates, versions/npm versions, absolute paths/home dirs, token counts via normalizeForHash in plugin/src/prompt-baseline.ts (placeholders <DATE>/<VERSION>/<PATH>/<TOKENS>), canonicalize line endings/whitespace.",
+  "generated": "2026-09-06T22:39:54.164Z",
+  "wholeHash": "a9f3fb72157c4f8ce0983b44d10ef45379c357bc370ecb9749a31f6aaf9c656a",
+  "seats": {
+    "bernstein.md": {
+      "sections": [
+        "# Bernstein",
+        "## Identity",
+        "## Rules",
+        "## Delegate when (lane-card)",
+        "## Example"
+      ],
+      "hash": "d09658933e115e8f8b16b749e21a00bbdb4a1f933914135e4edfc091876d91ff"
+    },
+    "cobain.md": {
+      "sections": [
+        "# Cobain",
+        "## Identity",
+        "## Rules",
+        "## TGO house style — active every turn"
+      ],
+      "hash": "0412dcf875e0968d9009eeb7149b55e1f2f223831907aeb3c44513ef600e752d"
+    },
+    "dylan.md": {
+      "sections": [
+        "# Dylan",
+        "## Identity",
+        "## Rules",
+        "## Example",
+        "## TGO house style — active every turn"
+      ],
+      "hash": "5b55ff42222428bdc959d446640c03001c5c486f2134065c50854db6f47f1eaa"
+    },
+    "grohl.md": {
+      "sections": [
+        "# Grohl",
+        "## Identity",
+        "## Rules",
+        "## TGO house style — active every turn"
+      ],
+      "hash": "814b47eec6fb873fb42229484b277154e04fbf2d4dfbb0a791261727798f2be3"
+    },
+    "horowitz.md": {
+      "sections": [
+        "# Horowitz",
+        "## Identity",
+        "## Rules",
+        "## Example",
+        "## TGO house style — active every turn"
+      ],
+      "hash": "831a37ae9ebb6d50bfdcbbf51ce63faa0799b8301d3a14fcab0a705cf2a70ff0"
+    },
+    "nas.md": {
+      "sections": [
+        "# Nas",
+        "## Identity",
+        "## Rules",
+        "## Example",
+        "## TGO house style — active every turn"
+      ],
+      "hash": "acc83ad29e13abc89b3142220058b47d6b9b6281ae4e3a58443ad9d25c90b7a3"
+    },
+    "nirvana.md": {
+      "sections": [
+        "# Nirvana",
+        "## Identity",
+        "## Rules",
+        "## Example",
+        "## TGO house style — active every turn"
+      ],
+      "hash": "4b01382f34a426c6b4907fc6273157c10419c4d05963370fe0f65fe45d4f9abd"
+    },
+    "novoselic.md": {
+      "sections": [
+        "# Novoselic",
+        "## Identity",
+        "## Rules",
+        "## TGO house style — active every turn"
+      ],
+      "hash": "ba116dedc5f26fa9eae33d92c122727720e429764363e00cb2a14f3df4f378ff"
+    }
+  }
+}

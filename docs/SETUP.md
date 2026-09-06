@@ -165,6 +165,10 @@ Plugin diagnostics, by the way, go through `client.app.log({ service: "tgo" })` 
 | Config feels corrupted | The installer backs up before overwriting | Look for `opencode.jsonc.bak` in the config dir |
 | A model override didn’t take effect | Per-seat models are fixed at session start (OpenCode’s `task` tool takes no model parameter) | Change the preset/override and start a new session |
 
+## Prompt baseline
+
+Prompt baseline: after intentional seat-prompt changes, refresh the fixture with `UPDATE_PROMPT_BASELINE=1 bun test plugin/test/prompt-baseline.test.ts`.
+
 ## Where this sits among the rest of the docs
 
 - Spec (canonical): `docs/spec/setup.md`, `docs/spec/mcp-permissions.md` (dependencies), `docs/spec/beads-integration.md` (the work-unit store)
