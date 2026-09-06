@@ -84,15 +84,15 @@ describe("isPresetName", () => {
 });
 
 describe("applyPreset", () => {
-  test("routes balanced seats to the performance-tiered models", async () => {
+  test("routes balanced seats to Muse Spark (identical to cheap)", async () => {
     const cfg = await loadTgoConfig({ preset: "balanced" });
     const balanced = cfg.presets!.balanced;
-    expect(balanced.bernstein).toEqual({ model: "opencode-go/glm-5.3-flash", variant: "max" });
-    expect(balanced.horowitz).toEqual({ model: "opencode-go/qwen3.8-flash", variant: "xhigh" });
-    expect(balanced.nirvana).toEqual({ model: "opencode-go/glm-5.3-flash", variant: "max" });
-    expect(balanced.dylan).toEqual({ model: "opencode-go/muse-spark-1.2-contributor", variant: "xhigh" });
-    expect(balanced.nas).toEqual({ model: "opencode-go/muse-spark-1.2-contributor", variant: "xhigh" });
-    expect(balanced["band-members"]).toEqual({ model: "opencode-go/muse-spark-1.2-contributor", variant: "xhigh" });
+    expect(balanced.bernstein).toEqual({ model: "opencode-go/muse-spark-1.3-contributor", variant: "xhigh" });
+    expect(balanced.horowitz).toEqual({ model: "opencode-go/muse-spark-1.3-contributor", variant: "xhigh" });
+    expect(balanced.nirvana).toEqual({ model: "opencode-go/muse-spark-1.3-contributor", variant: "xhigh" });
+    expect(balanced.dylan).toEqual({ model: "opencode-go/muse-spark-1.3-contributor", variant: "xhigh" });
+    expect(balanced.nas).toEqual({ model: "opencode-go/muse-spark-1.3-contributor", variant: "xhigh" });
+    expect(balanced["band-members"]).toEqual({ model: "opencode-go/muse-spark-1.3-contributor", variant: "xhigh" });
   });
 
   test("sets model + variant on every seat", async () => {

@@ -1,26 +1,26 @@
 {
   "balanced": {
-    "bernstein":     { "model": "opencode-go/glm-5.3-flash",             "variant": "max" },
-    "horowitz":      { "model": "opencode-go/qwen3.8-flash",             "variant": "xhigh" },
-    "nas":           { "model": "opencode-go/muse-spark-1.2-contributor", "variant": "xhigh" },
-    "dylan":         { "model": "opencode-go/muse-spark-1.2-contributor", "variant": "xhigh" },
-    "nirvana":       { "model": "opencode-go/glm-5.3-flash",             "variant": "max" },
-    "band-members":  { "model": "opencode-go/muse-spark-1.2-contributor", "variant": "xhigh" }
+    "bernstein":     { "model": "opencode-go/muse-spark-1.3-contributor", "variant": "xhigh" },
+    "horowitz":      { "model": "opencode-go/muse-spark-1.3-contributor", "variant": "xhigh" },
+    "nas":           { "model": "opencode-go/muse-spark-1.3-contributor", "variant": "xhigh" },
+    "dylan":         { "model": "opencode-go/muse-spark-1.3-contributor", "variant": "xhigh" },
+    "nirvana":       { "model": "opencode-go/muse-spark-1.3-contributor", "variant": "xhigh" },
+    "band-members":  { "model": "opencode-go/muse-spark-1.3-contributor", "variant": "xhigh" }
   },
   "cheap": {
-    "bernstein":     { "model": "opencode-go/muse-spark-1.2-contributor", "variant": "xhigh" },
-    "horowitz":      { "model": "opencode-go/muse-spark-1.2-contributor", "variant": "xhigh" },
-    "nas":           { "model": "opencode-go/muse-spark-1.2-contributor", "variant": "xhigh" },
-    "dylan":         { "model": "opencode-go/muse-spark-1.2-contributor", "variant": "xhigh" },
-    "nirvana":       { "model": "opencode-go/muse-spark-1.2-contributor", "variant": "xhigh" },
-    "band-members":  { "model": "opencode-go/muse-spark-1.2-contributor", "variant": "xhigh" }
+    "bernstein":     { "model": "opencode-go/muse-spark-1.3-contributor", "variant": "xhigh" },
+    "horowitz":      { "model": "opencode-go/muse-spark-1.3-contributor", "variant": "xhigh" },
+    "nas":           { "model": "opencode-go/muse-spark-1.3-contributor", "variant": "xhigh" },
+    "dylan":         { "model": "opencode-go/muse-spark-1.3-contributor", "variant": "xhigh" },
+    "nirvana":       { "model": "opencode-go/muse-spark-1.3-contributor", "variant": "xhigh" },
+    "band-members":  { "model": "opencode-go/muse-spark-1.3-contributor", "variant": "xhigh" }
   },
   "frontier": {
     "bernstein":     { "model": "opencode-go/glm-5.3",                   "variant": "max" },
     "horowitz":      { "model": "opencode-go/kimi-k3",                  "variant": "max" },
-    "nas":           { "model": "opencode-go/muse-spark-1.2-contributor", "variant": "xhigh" },
-    "dylan":         { "model": "opencode-go/muse-spark-1.2-contributor", "variant": "xhigh" },
+    "nas":           { "model": "opencode-go/muse-spark-1.3-contributor", "variant": "xhigh" },
+    "dylan":         { "model": "opencode-go/muse-spark-1.3-contributor", "variant": "xhigh" },
     "nirvana":       { "model": "opencode-go/grok-4.6",                 "variant": "xhigh" },
-    "band-members":  { "model": "opencode-go/muse-spark-1.2-contributor", "variant": "xhigh" }
+    "band-members":  { "model": "opencode-go/muse-spark-1.3-contributor", "variant": "xhigh" }
   }
 }
