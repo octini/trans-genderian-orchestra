@@ -81,7 +81,7 @@ function assertSchemaZodParity(
   return problems;
 }
 
-async function validateSchema(): Promise<void> {
+export async function validateSchema(): Promise<void> {
   const schemaPath = path.join(packageRoot, "schema", "tgo.config.schema.json");
   const raw = JSON.parse(await fs.readFile(schemaPath, "utf-8"));
   const problems = assertSchemaZodParity(tgoConfigSchema, raw, "tgo.config.schema.json", raw);
@@ -104,7 +104,7 @@ async function validateSchema(): Promise<void> {
   }
 }
 
-async function validateVoiceCards(): Promise<void> {
+export async function validateVoiceCards(): Promise<void> {
   for (const id of ["tgo-default", "tgo-prose", "tgo-conversational"] as const) {
     const cardPath = path.join(packageRoot, "assets", "voices", `${id}.json`);
     const raw = JSON.parse(await fs.readFile(cardPath, "utf-8"));
@@ -112,13 +112,13 @@ async function validateVoiceCards(): Promise<void> {
   }
 }
 
-async function validatePresetsFile(): Promise<void> {
+export async function validatePresetsFile(): Promise<void> {
   const presetsPath = path.join(packageRoot, "assets", "presets.json");
   const raw = JSON.parse(await fs.readFile(presetsPath, "utf-8"));
   await loadTgoConfig({ preset: "balanced", presets: raw });
 }
 
-async function validateRenderedSeats(): Promise<void> {
+export async function validateRenderedSeats(): Promise<void> {
   const agentsDir = path.join(packageRoot, "assets", "agents");
   for (const card of ["default", "prose", "conversational"] as const) {
     const seats = await renderSeats(agentsDir, card);
@@ -138,7 +138,7 @@ async function validateRenderedSeats(): Promise<void> {
   }
 }
 
-async function validatePermissionGraph(): Promise<void> {
+export async function validatePermissionGraph(): Promise<void> {
   const agentsDir = path.join(packageRoot, "assets", "agents");
   const named = ["bernstein", "horowitz", "nas", "dylan"];
   const toolLess = ["nirvana", "cobain", "grohl", "novoselic"];
@@ -204,7 +204,7 @@ const EXPECTED_SKILL_GRANTS: Record<string, string[]> = {
   dylan: ["implement", "tdd", "receiving-code-review", "diagnosing-bugs"],
 };
 
-async function validateSkillGrants(): Promise<void> {
+export async function validateSkillGrants(): Promise<void> {
   const agentsDir = path.join(packageRoot, "assets", "agents");
   const skillsDir = path.join(packageRoot, "assets", "skills");
   const shipped = new Set(
@@ -240,12 +240,16 @@ async function validateSkillGrants(): Promise<void> {
   }
 }
 
-if (import.meta.main) {
+export async function validateAll(): Promise<void> {
   await validateSchema();
   await validateVoiceCards();
   await validatePresetsFile();
   await validateRenderedSeats();
   await validatePermissionGraph();
   await validateSkillGrants();
+}
+
+if (import.meta.main) {
+  await validateAll();
   console.log("TGO config validation: PASSED");
 }

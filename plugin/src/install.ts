@@ -38,6 +38,20 @@ const packageRoot = path.resolve(
   ".."
 );
 
+export const SUPPORTED_PLATFORMS = ["darwin", "linux", "win32"] as const;
+
+export function isSupportedPlatform(platform: string): boolean {
+  return (SUPPORTED_PLATFORMS as readonly string[]).includes(platform);
+}
+
+export function assertSupportedPlatform(platform: string = process.platform): void {
+  if (!isSupportedPlatform(platform)) {
+    throw new Error(
+      `Unsupported platform "${platform}". Supported: macOS, Linux, Windows (Git Bash recommended): https://git-scm.com/downloads`
+    );
+  }
+}
+
 const DEFAULTS = {
   configDir: path.join(os.homedir(), ".config", "opencode"),
   agentsSubdir: "agent",
@@ -62,6 +76,59 @@ export interface InstallOptions {
   deps?: DepMode;
   register?: string | true | false;
   backgroundSubagents?: boolean;
+  skipValidation?: boolean;
+  /** test-only: override platform string for gate (e.g. "freebsd" to simulate unsupported) */
+  __platform?: string;
+  /** test-only: inject custom validator (if provided, called instead of validateAll) */
+  __validate?: () => Promise<void>;
+  /** test-only: hook run after pre-flight but before first mutation — throw to simulate mid-install failure */
+  __afterPreFlight?: () => Promise<void> | void;
+}
+
+export interface InstallCliArgs {
+  configDir?: string;
+  agentsSubdir?: string;
+  deps: DepMode;
+  register: string | true | false;
+  backgroundSubagents: boolean | undefined;
+  skipValidation: boolean;
+}
+
+export function parseInstallCliArgs(argv: string[]): InstallCliArgs {
+  const arg = (name: string) => {
+    const idx = argv.indexOf(name);
+    return idx !== -1 && argv[idx + 1] ? argv[idx + 1] : undefined;
+  };
+  const depsMode = (arg("--deps") ?? "auto") as DepMode;
+  const registerValue = argv.includes("--register") ? arg("--register") : undefined;
+  const register =
+    argv.includes("--no-register")
+      ? false
+      : registerValue !== undefined && !registerValue.startsWith("--")
+        ? registerValue
+        : true;
+  const backgroundSubagents = argv.includes("--no-bg") ? false : undefined;
+  const skipValidation = argv.includes("--skip-validation");
+  return {
+    configDir: arg("--configDir"),
+    agentsSubdir: arg("--agentsSubdir"),
+    deps: depsMode,
+    register,
+    backgroundSubagents,
+    skipValidation,
+  };
+}
+
+export function getInstallErrorMessages(err: unknown): string[] {
+  const msg = err instanceof Error ? err.message : String(err);
+  const first = `Install failed: ${msg}`;
+  const isMidInstall = !!(err as any)?.preFlightDone;
+  if (isMidInstall) {
+    const target = (err as any)?.installTarget?.configDir as string | undefined;
+    const hint = target ? ` partial files may exist at ${target}` : " partial files may exist";
+    return [first, `install failed after pre-flight;${hint}.`];
+  }
+  return [first, "No files were written (pre-flight gate). Re-run with --skip-validation to bypass validation if needed, or fix the reported issue."];
 }
 
 export interface InstallReport extends InstallTarget {
@@ -126,148 +193,178 @@ export async function copySkillBundle(configDir: string): Promise<SkillCopyResul
 }
 
 export async function install(overrides?: InstallOptions): Promise<InstallReport> {
-  const target = resolveInstallTarget(overrides);
-  await fs.mkdir(target.configDir, { recursive: true });
+  // 1) platform gate — before any write
+  assertSupportedPlatform(overrides?.__platform ?? process.platform);
 
-  const srcPresets = path.join(packageRoot, "assets", "presets.json");
-  const config = await loadTgoConfig({
-    preset: "balanced",
-    presets: JSON.parse(await fs.readFile(srcPresets, "utf-8")),
-  });
-
-  const seats = await buildSeatsTo(target.agentsDir, "default");
-
-  const merged = await mergeAgentsFragment(target.configDir);
-
-  const globalMerge = await mergeOpenCodeConfig(target.configDir);
-
-  const setupSkill = await copySetupSkill(target.configDir);
-
-  const skills = await copySkillBundle(target.configDir);
-
-  const deps = await checkDependencies(defaultDepContext(target.configDir));
-  let depsInstalled: string[] = [];
-  if (overrides?.deps === "skip") {
-    // dependency layer intentionally left alone
-  } else if (overrides?.deps === "check") {
-    // report-only; no installs run
-  } else {
-    depsInstalled = await installMissing(deps, runShellCommand);
-  }
-
-  // magic-context's own setup is interactive, so the dep step only registers the
-  // plugin entry here. opencode then installs the package and loads it.
-  // Skipped with --no-register (which means "don't touch the plugin array").
-  // Beyond the plugin entry magic-context needs a configured historian model
-  // (else historian runs fail and nothing is summarized) AND opencode's built-in
-  // compaction off (else magic-context disables itself on conflict). We write
-  // both here non-interactively — the interactive `setup` TUI only picks the
-  // historian model, which we already know from the active preset.
-  const magicContext = deps.find((d) => d.name === "magic-context");
-  let magicContextConfig: MagicContextConfigureResult | undefined;
-  const magicContextWanted =
-    overrides?.register !== false &&
-    magicContext &&
-    (magicContext.present || depsInstalled.includes("magic-context"));
-  if (magicContextWanted) {
-    await registerGlobalPlugin(
-      target.configDir,
-      "@cortexkit/opencode-magic-context@latest"
-    );
-    // The sidebar is a TUI slot: opencode's TUI loads plugins only from
-    // tui.json/tui.jsonc, so the plugin must be registered on BOTH surfaces or
-    // the sidebar never mounts even though the server half (ctx_* tools, the
-    // historian) works. Verified: MC's own wizard writes both files.
-    await registerTuiPlugin(
-      target.configDir,
-      "@cortexkit/opencode-magic-context@latest"
-    );
-    const dylanSeat = (config.presets as Record<string, Record<string, { model?: string; variant?: string }>> | undefined)?.[config.preset]?.dylan;
-    magicContextConfig = await configureMagicContext({
-      configDir: target.configDir,
-      dylan: dylanSeat ? { model: dylanSeat.model, variant: dylanSeat.variant } : undefined,
-      sync: config.magicContext.historianSync,
-    });
-  }
-
-  // context7's interactive `npx ctx7 setup` can't run under the installer, so
-  // register the hosted remote MCP server directly (server answers initialize +
-  // tools/list with no auth). Only when the dep is present or being installed,
-  // and skipped with --no-register (same contract as magic-context above).
-  const context7 = deps.find((d) => d.name === "context7");
-  let context7Registered: boolean | undefined;
-  if (
-    overrides?.register !== false &&
-    context7 &&
-    (context7.present || depsInstalled.includes("context7"))
-  ) {
-    await registerMcpServer(target.configDir, CONTEXT7_MCP_SERVER, {
-      type: "remote",
-      url: CONTEXT7_MCP_URL,
-    });
-    context7Registered = true;
-  }
-
-  await validateAgentDir(target.agentsDir);
-
-  // Self-registration is ON by default: a blank-slate opencode install must end
-  // up with the plugin actually loaded, or the seats/skills/deps are inert.
-  // Opt out with --no-register (e.g. when wiring the plugin manually).
-  let plugin: string | undefined;
-  let pluginAction: "added" | "unchanged" | "pin-fixed" | undefined;
-  const registerModule =
-    overrides?.register === false
-      ? undefined
-      : typeof overrides?.register === "string"
-        ? overrides.register
-        : PLUGIN_MODULE;
-  if (registerModule) {
-    const registered = await registerGlobalPlugin(target.configDir, registerModule);
-    await registerTuiPlugin(target.configDir, registerModule);
-    plugin = registerModule;
-    pluginAction = registered.action;
-  }
-
-  // nirvana's parallel lens spawns need background subagents. Unlike the other
-  // deps there is no config key or plugin-factory hook that can set it (opencode
-  // snapshots RuntimeFlags at startup), so the only automated path is writing
-  // the export into the user's shell startup file — same approach as
-  // oh-my-opencode-slim. Idempotent marker block; opt out with --no-bg.
-  let backgroundSubagents: string | undefined;
-  if (overrides?.backgroundSubagents !== false) {
-    // The managed block sets BOTH vars. Only short-circuit when both are
-    // already enabled; if e.g. a stale shell exports BACKGROUND but not EXA,
-    // skipping the write would silently drop the websearch/Exa enable flag
-    // (test-7: "Model tried to call unavailable tool 'websearch'").
-    const alreadyEnabled = isEnvBlockEnabled(process.env);
-    if (alreadyEnabled) {
-      backgroundSubagents = "already-in-env";
+  // 2) validation pre-flight — before any file write (unless explicitly skipped)
+  if (!overrides?.skipValidation) {
+    if (overrides?.__validate) {
+      await overrides.__validate();
     } else {
-      const target = detectBackgroundSubagentsTarget();
-      if (target) {
-        await writeBackgroundSubagentsBlock(target);
-        backgroundSubagents = `wrote ${target}`;
-      }
+      const { validateAll } = await import("./validate");
+      await validateAll();
     }
   }
 
-  return {
-    ...target,
-    seats: seats.length,
-    agentsMerge: merged.action,
-    globalMerge: globalMerge.action,
-    globalMergeBackedUp: globalMerge.backedUp ?? false,
-    style: config.style?.card ?? "default",
-    plugin,
-    pluginAction,
-    backgroundSubagents,
-    deps,
-    depsInstalled,
-    setupSkill,
-    skills,
-    magicContext: magicContextConfig,
-    context7Registered,
-  };
+  // pre-flight done — from here any throw is mid-install and must not claim "no files written"
+  let target: InstallTarget | undefined;
+  const preFlightDone = true;
+  try {
+    target = resolveInstallTarget(overrides);
+    if (overrides?.__afterPreFlight) await overrides.__afterPreFlight();
+    await fs.mkdir(target.configDir, { recursive: true });
+
+    const srcPresets = path.join(packageRoot, "assets", "presets.json");
+    const config = await loadTgoConfig({
+      preset: "balanced",
+      presets: JSON.parse(await fs.readFile(srcPresets, "utf-8")),
+    });
+
+    const seats = await buildSeatsTo(target.agentsDir, "default");
+
+    const merged = await mergeAgentsFragment(target.configDir);
+
+    const globalMerge = await mergeOpenCodeConfig(target.configDir);
+
+    const setupSkill = await copySetupSkill(target.configDir);
+
+    const skills = await copySkillBundle(target.configDir);
+
+    const deps = await checkDependencies(defaultDepContext(target.configDir));
+    let depsInstalled: string[] = [];
+    if (overrides?.deps === "skip") {
+      // dependency layer intentionally left alone
+    } else if (overrides?.deps === "check") {
+      // report-only; no installs run
+    } else {
+      depsInstalled = await installMissing(deps, runShellCommand);
+    }
+
+    // magic-context's own setup is interactive, so the dep step only registers the
+    // plugin entry here. opencode then installs the package and loads it.
+    // Skipped with --no-register (which means "don't touch the plugin array").
+    // Beyond the plugin entry magic-context needs a configured historian model
+    // (else historian runs fail and nothing is summarized) AND opencode's built-in
+    // compaction off (else magic-context disables itself on conflict). We write
+    // both here non-interactively — the interactive `setup` TUI only picks the
+    // historian model, which we already know from the active preset.
+    const magicContext = deps.find((d) => d.name === "magic-context");
+    let magicContextConfig: MagicContextConfigureResult | undefined;
+    const magicContextWanted =
+      overrides?.register !== false &&
+      magicContext &&
+      (magicContext.present || depsInstalled.includes("magic-context"));
+    if (magicContextWanted) {
+      await registerGlobalPlugin(
+        target.configDir,
+        "@cortexkit/opencode-magic-context@latest"
+      );
+      // The sidebar is a TUI slot: opencode's TUI loads plugins only from
+      // tui.json/tui.jsonc, so the plugin must be registered on BOTH surfaces or
+      // the sidebar never mounts even though the server half (ctx_* tools, the
+      // historian) works. Verified: MC's own wizard writes both files.
+      await registerTuiPlugin(
+        target.configDir,
+        "@cortexkit/opencode-magic-context@latest"
+      );
+      const dylanSeat = (config.presets as Record<string, Record<string, { model?: string; variant?: string }>> | undefined)?.[config.preset]?.dylan;
+      magicContextConfig = await configureMagicContext({
+        configDir: target.configDir,
+        dylan: dylanSeat ? { model: dylanSeat.model, variant: dylanSeat.variant } : undefined,
+        sync: config.magicContext.historianSync,
+      });
+    }
+
+    // context7's interactive `npx ctx7 setup` can't run under the installer, so
+    // register the hosted remote MCP server directly (server answers initialize +
+    // tools/list with no auth). Only when the dep is present or being installed,
+    // and skipped with --no-register (same contract as magic-context above).
+    const context7 = deps.find((d) => d.name === "context7");
+    let context7Registered: boolean | undefined;
+    if (
+      overrides?.register !== false &&
+      context7 &&
+      (context7.present || depsInstalled.includes("context7"))
+    ) {
+      await registerMcpServer(target.configDir, CONTEXT7_MCP_SERVER, {
+        type: "remote",
+        url: CONTEXT7_MCP_URL,
+      });
+      context7Registered = true;
+    }
+
+    await validateAgentDir(target.agentsDir);
+
+    // Self-registration is ON by default: a blank-slate opencode install must end
+    // up with the plugin actually loaded, or the seats/skills/deps are inert.
+    // Opt out with --no-register (e.g. when wiring the plugin manually).
+    let plugin: string | undefined;
+    let pluginAction: "added" | "unchanged" | "pin-fixed" | undefined;
+    const registerModule =
+      overrides?.register === false
+        ? undefined
+        : typeof overrides?.register === "string"
+          ? overrides.register
+          : PLUGIN_MODULE;
+    if (registerModule) {
+      const registered = await registerGlobalPlugin(target.configDir, registerModule);
+      await registerTuiPlugin(target.configDir, registerModule);
+      plugin = registerModule;
+      pluginAction = registered.action;
+    }
+
+    // nirvana's parallel lens spawns need background subagents. Unlike the other
+    // deps there is no config key or plugin-factory hook that can set it (opencode
+    // snapshots RuntimeFlags at startup), so the only automated path is writing
+    // the export into the user's shell startup file — same approach as
+    // oh-my-opencode-slim. Idempotent marker block; opt out with --no-bg.
+    let backgroundSubagents: string | undefined;
+    if (overrides?.backgroundSubagents !== false) {
+      // The managed block sets BOTH vars. Only short-circuit when both are
+      // already enabled; if e.g. a stale shell exports BACKGROUND but not EXA,
+      // skipping the write would silently drop the websearch/Exa enable flag
+      // (test-7: "Model tried to call unavailable tool 'websearch'").
+      const alreadyEnabled = isEnvBlockEnabled(process.env);
+      if (alreadyEnabled) {
+        backgroundSubagents = "already-in-env";
+      } else {
+        const bgTarget = detectBackgroundSubagentsTarget();
+        if (bgTarget) {
+          await writeBackgroundSubagentsBlock(bgTarget);
+          backgroundSubagents = `wrote ${bgTarget}`;
+        }
+      }
+    }
+
+    return {
+      ...target,
+      seats: seats.length,
+      agentsMerge: merged.action,
+      globalMerge: globalMerge.action,
+      globalMergeBackedUp: globalMerge.backedUp ?? false,
+      style: config.style?.card ?? "default",
+      plugin,
+      pluginAction,
+      backgroundSubagents,
+      deps,
+      depsInstalled,
+      setupSkill,
+      skills,
+      magicContext: magicContextConfig,
+      context7Registered,
+    };
+  } catch (err: any) {
+    if (preFlightDone) {
+      err.preFlightDone = true;
+      if (!target) {
+        try {
+          target = resolveInstallTarget(overrides);
+        } catch {}
+      }
+      if (target) err.installTarget = target;
+    }
+    throw err;
+  }
 }
 
 function depLine(status: DepStatus): string {
@@ -276,27 +373,21 @@ function depLine(status: DepStatus): string {
 }
 
 if (import.meta.main) {
-  const argv = process.argv.slice(2);
-  const arg = (name: string) => {
-    const idx = argv.indexOf(name);
-    return idx !== -1 && argv[idx + 1] ? argv[idx + 1] : undefined;
-  };
-  const depsMode = (arg("--deps") ?? "auto") as DepMode;
-  const registerValue = argv.includes("--register") ? arg("--register") : undefined;
-  const register =
-    argv.includes("--no-register")
-      ? false
-      : registerValue !== undefined && !registerValue.startsWith("--")
-        ? registerValue
-        : true;
-  const backgroundSubagents = argv.includes("--no-bg") ? false : undefined;
-  const report = await install({
-    configDir: arg("--configDir"),
-    agentsSubdir: arg("--agentsSubdir"),
-    deps: depsMode,
-    register,
-    backgroundSubagents,
-  });
+  const cliArgs = parseInstallCliArgs(process.argv.slice(2));
+  let report!: InstallReport;
+  try {
+    report = await install({
+      configDir: cliArgs.configDir,
+      agentsSubdir: cliArgs.agentsSubdir,
+      deps: cliArgs.deps,
+      register: cliArgs.register,
+      backgroundSubagents: cliArgs.backgroundSubagents,
+      skipValidation: cliArgs.skipValidation,
+    });
+  } catch (err) {
+    for (const line of getInstallErrorMessages(err)) console.error(line);
+    process.exit(1);
+  }
   console.log(`TGO config installed to ${report.configDir}`);
   console.log(`Seat prompts installed to ${report.agentsDir} (${report.seats} files)`);
   console.log(`AGENTS.md fragment: ${report.agentsMerge}`);
@@ -330,9 +421,9 @@ if (import.meta.main) {
   for (const status of report.deps) {
     console.log(`  ${depLine(status)}`);
   }
-  if (depsMode === "skip") {
+  if (cliArgs.deps === "skip") {
     console.log("  (dependency install skipped via --deps skip)");
-  } else if (depsMode === "check") {
+  } else if (cliArgs.deps === "check") {
     const missing = report.deps.filter((d) => !d.present);
     console.log(missing.length
       ? `  ${missing.length} missing — re-run with --deps auto (default) to install.`
@@ -354,5 +445,9 @@ if (import.meta.main) {
   } else {
     console.log("Background subagents: skipped (--no-bg). The nirvana band's parallel lens spawns need OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true at opencode start; without it the band still works but lenses may serialize.");
   }
-  console.log(`Validation: passed (config + rendered seat prompts under budget)`);
+  if (cliArgs.skipValidation) {
+    console.log(`Validation: skipped (--skip-validation)`);
+  } else {
+    console.log(`Validation: passed (config + rendered seat prompts under budget)`);
+  }
 }
