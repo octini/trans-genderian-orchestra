@@ -152,6 +152,7 @@ Put options in the second element of the plugin tuple: `["trans-genderian-orches
 | `metrics` | `{ enabled }` — the per-seat queue gauge and problems-view scan. | `true` |
 | `recursion` | `{ enabled, maxDepth }` — delegation depth cap plus spawn-cycle detection. | `true`, 4 |
 | `cost` | `{ enabled }` — the cost surface (per-seat model budget vs. spend) and quota-aware preset hints. | `true` |
+| `magicContext` | `{ historianSync }` — `follow` (default) keeps the magic-context historian always following the active preset's Dylan model + variant on every startup/install; `off` never touches `~/.config/cortexkit/magic-context.jsonc`; compaction stays installer-managed even with historianSync: off. | `follow` |
 
 The JSON schema is at `plugin/schema/tgo.config.schema.json`.
 
@@ -162,9 +163,11 @@ There’s also a human voice for the docs themselves. The shipped `tgo-prose` an
 TGO keeps its dependency surface small and explicit. The installer checks for each of these and installs what’s missing (`--deps auto | check | skip`):
 
 - **beads** (`bd` CLI) — the work-unit store the board reads from. Bernstein is the intended single writer in the future; today the board reads `bd list --all`, `bd ready`, and friends, and writes stay out of scope.
-- **AFT** — the symbol-aware code tools (`aft_*`, `ast_grep_*`). Dylan’s day-to-day.
-- **magic-context** — quiet, cross-session recall (`ctx_*`) that the installer wires end to end, including the historian on the active preset’s Dylan model and the TUI sidebar.
+- **AFT** — the symbol-aware code tools (`aft_*`, `ast_grep_*`). Dylan’s day-to-day. Installed via `npx @cortexkit/aft@latest setup` (`plugin/src/deps.ts`); self-updates by default when present (`@cortexkit/aft-opencode@latest`, `auto_update` defaults `true`) and TGO only auto-fixes an existing exact version pin to `@latest` on install / plugin registration (partial pins like `@0.38` and ranges like `@^0.38.0` are intentionally untouched).
+- **magic-context** — quiet, cross-session recall (`ctx_*`) that the installer wires end to end, with the historian always following the active preset's Dylan model + variant (reconciled on every startup and install; `magicContext.historianSync: "off"` disables). Includes the TUI sidebar. Self-updates by default (`@cortexkit/opencode-magic-context@latest`, `auto_update` defaults `true` — TGO auto-fills `auto_update:true` when absent, never clobbers `false`).
 - **context7** — the one external MCP for docs lookup (`context7_*`), given to Nas and Dylan.
+
+Keep both dep `plugin` entries at `@latest`; TGO auto-fixes exact version pins (`@…@0.38.0` → `@latest`) on install and plugin registration; partial pins like `@0.38` and ranges like `@^0.38.0` are intentionally untouched.
 
 Runtime ties are light: `@opencode-ai/plugin ~1.18.13`, `zod ^4.1.13`, and `bun >= 1.0.0`.
 

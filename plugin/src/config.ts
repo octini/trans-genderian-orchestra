@@ -122,6 +122,10 @@ const costConfig = z.object({
   enabled: z.boolean().default(true),
 });
 
+const magicContextConfig = z.object({
+  historianSync: z.enum(["follow", "off"]).default("follow"),
+});
+
 export const tgoConfigSchema = z.object({
   preset: z.enum(PRESET_NAMES).default("balanced"),
   presets: z
@@ -156,6 +160,7 @@ export const tgoConfigSchema = z.object({
   metrics: metricsConfig.optional().default(() => ({ enabled: true })),
   recursion: recursionConfig.optional().default(() => ({ enabled: true, maxDepth: 4 })),
   cost: costConfig.optional().default(() => ({ enabled: true })),
+  magicContext: magicContextConfig.optional().default(() => ({ historianSync: "follow" as const })),
 });
 
 export type TgoConfig = z.infer<typeof tgoConfigSchema>;

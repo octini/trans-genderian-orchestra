@@ -4,6 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import {
   buildSeatsTo,
+  fixPinnedPluginEntries,
   foldHouseStyle,
   HOUSE_STYLE_SLOT,
   hasGlobalTgoKeys,
@@ -12,11 +13,13 @@ import {
   loadVoiceCard,
   mergeAgentsFragment,
   mergeOpenCodeConfig,
+  PINNED_DEPS,
   PLUGIN_MODULE,
   registerGlobalPlugin,
   registerMcpServer,
   registerTuiPlugin,
   renderSeats,
+  unionPluginArrays,
   VOICE_CARDS,
 } from "../src/build";
 import { renderFold } from "../src/voices";
@@ -654,6 +657,215 @@ describe("plugin self-registration", () => {
     expect(report.context7Registered).toBeUndefined();
     const cfg = JSON.parse(readFileSync(path.join(dir, "opencode.jsonc"), "utf-8"));
     expect(cfg.mcp?.context7).toBeUndefined();
+    rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe("pinned dep auto-fix (R2)", () => {
+  test("fixPinnedPluginEntries: pinned magic-context entry → fixed to @latest", () => {
+    const { fixed, changed } = fixPinnedPluginEntries(["@cortexkit/opencode-magic-context@0.38.0"]);
+    expect(changed).toBe(true);
+    expect(fixed).toEqual(["@cortexkit/opencode-magic-context@latest"]);
+  });
+
+  test("fixPinnedPluginEntries: pinned AFT entry → fixed to @latest", () => {
+    const { fixed, changed } = fixPinnedPluginEntries(["@cortexkit/aft-opencode@1.2.3"]);
+    expect(changed).toBe(true);
+    expect(fixed).toEqual(["@cortexkit/aft-opencode@latest"]);
+  });
+
+  test("fixPinnedPluginEntries: third-party pinned entry → untouched", () => {
+    const { fixed, changed } = fixPinnedPluginEntries(["some-other@1.2.3", "@other/pkg@0.1.0"]);
+    expect(changed).toBe(false);
+    expect(fixed).toEqual(["some-other@1.2.3", "@other/pkg@0.1.0"]);
+  });
+
+  test("fixPinnedPluginEntries: already-@latest → unchanged", () => {
+    const { fixed, changed } = fixPinnedPluginEntries(["@cortexkit/opencode-magic-context@latest", "@cortexkit/aft-opencode@latest"]);
+    expect(changed).toBe(false);
+    expect(fixed).toEqual(["@cortexkit/opencode-magic-context@latest", "@cortexkit/aft-opencode@latest"]);
+  });
+
+  test("fixPinnedPluginEntries: bare names untouched", () => {
+    const { fixed, changed } = fixPinnedPluginEntries(["@cortexkit/opencode-magic-context", "@cortexkit/aft-opencode"]);
+    expect(changed).toBe(false);
+    expect(fixed).toEqual(["@cortexkit/opencode-magic-context", "@cortexkit/aft-opencode"]);
+  });
+
+  test("registerGlobalPlugin auto-fixes pinned magic-context entry in existing config", async () => {
+    const dir = tmpDir();
+    const { writeFileSync } = await import("node:fs");
+    writeFileSync(path.join(dir, "opencode.jsonc"), JSON.stringify({ plugin: ["@cortexkit/opencode-magic-context@0.38.0"] }));
+    const result = await registerGlobalPlugin(dir, "@cortexkit/opencode-magic-context@latest");
+    expect(result.action).toBe("pin-fixed");
+    const cfg = JSON.parse(readFileSync(path.join(dir, "opencode.jsonc"), "utf-8"));
+    expect(cfg.plugin).toEqual(["@cortexkit/opencode-magic-context@latest"]);
+    // second call now unchanged
+    const second = await registerGlobalPlugin(dir, "@cortexkit/opencode-magic-context@latest");
+    expect(second.action).toBe("unchanged");
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("registerGlobalPlugin auto-fixes pinned AFT entry", async () => {
+    const dir = tmpDir();
+    const { writeFileSync } = await import("node:fs");
+    writeFileSync(path.join(dir, "opencode.jsonc"), JSON.stringify({ plugin: ["@cortexkit/aft-opencode@0.10.0", "other@1.0.0"] }));
+    const result = await registerGlobalPlugin(dir, PLUGIN_MODULE);
+    const cfg = JSON.parse(readFileSync(path.join(dir, "opencode.jsonc"), "utf-8"));
+    expect(cfg.plugin).toContain("@cortexkit/aft-opencode@latest");
+    expect(cfg.plugin).not.toContain("@cortexkit/aft-opencode@0.10.0");
+    expect(cfg.plugin).toContain("other@1.0.0");
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("registerGlobalPlugin leaves third-party pinned entries untouched", async () => {
+    const dir = tmpDir();
+    const { writeFileSync } = await import("node:fs");
+    writeFileSync(path.join(dir, "opencode.jsonc"), JSON.stringify({ plugin: ["third-party@1.2.3", "@cortexkit/opencode-magic-context@latest"] }));
+    await registerGlobalPlugin(dir, PLUGIN_MODULE);
+    const cfg = JSON.parse(readFileSync(path.join(dir, "opencode.jsonc"), "utf-8"));
+    expect(cfg.plugin).toContain("third-party@1.2.3");
+    expect(cfg.plugin).toContain("@cortexkit/opencode-magic-context@latest");
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("registerTuiPlugin auto-fixes pinned dep entry", async () => {
+    const dir = tmpDir();
+    const { writeFileSync } = await import("node:fs");
+    writeFileSync(path.join(dir, "tui.jsonc"), JSON.stringify({ plugin: ["@cortexkit/aft-opencode@0.38.0"] }));
+    await registerTuiPlugin(dir, "@cortexkit/aft-opencode@latest");
+    const cfg = JSON.parse(readFileSync(path.join(dir, "tui.jsonc"), "utf-8"));
+    expect(cfg.plugin).toEqual(["@cortexkit/aft-opencode@latest"]);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("registerGlobalPlugin registers @latest dep entry (regression)", async () => {
+    const dir = tmpDir();
+    const { writeFileSync } = await import("node:fs");
+    writeFileSync(path.join(dir, "opencode.jsonc"), JSON.stringify({ marker: "aft" }));
+    await registerGlobalPlugin(dir, "@cortexkit/opencode-magic-context@latest");
+    const cfg = JSON.parse(readFileSync(path.join(dir, "opencode.jsonc"), "utf-8"));
+    expect(cfg.plugin).toContain("@cortexkit/opencode-magic-context@latest");
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("fixPinnedPluginEntries: tuple branch pinned entry → fixed to @latest preserving opts", () => {
+    const tuple: unknown = ["@cortexkit/opencode-magic-context@0.38.0", { foo: "bar" }];
+    const { fixed, changed } = fixPinnedPluginEntries([tuple]);
+    expect(changed).toBe(true);
+    expect(fixed).toEqual([["@cortexkit/opencode-magic-context@latest", { foo: "bar" }]]);
+  });
+
+  test("fixPinnedPluginEntries: tuple branch already-@latest untouched", () => {
+    const tuple: unknown = ["@cortexkit/aft-opencode@latest", { opt: 1 }];
+    const { fixed, changed } = fixPinnedPluginEntries([tuple]);
+    expect(changed).toBe(false);
+    expect(fixed).toEqual([tuple]);
+  });
+
+  test("fixPinnedPluginEntries: object branch pinned entry → fixed to @latest preserving sibling keys", () => {
+    const obj = { module: "@cortexkit/aft-opencode@1.2.3", options: { x: 1 }, extra: true };
+    const { fixed, changed } = fixPinnedPluginEntries([obj]);
+    expect(changed).toBe(true);
+    expect(fixed).toEqual([{ module: "@cortexkit/aft-opencode@latest", options: { x: 1 }, extra: true }]);
+  });
+
+  test("fixPinnedPluginEntries: object branch already-@latest untouched", () => {
+    const obj = { module: "@cortexkit/opencode-magic-context@latest", foo: 1 };
+    const { fixed, changed } = fixPinnedPluginEntries([obj]);
+    expect(changed).toBe(false);
+    expect(fixed).toEqual([obj]);
+  });
+
+  test("fixPinnedPluginEntries: prefix collision @cortexkit/aft-opencode-extra@1.0.0 must remain untouched", () => {
+    const collision = "@cortexkit/aft-opencode-extra@1.0.0";
+    const { fixed, changed } = fixPinnedPluginEntries([collision]);
+    expect(changed).toBe(false);
+    expect(fixed).toEqual([collision]);
+    const tupleColl: unknown = ["@cortexkit/aft-opencode-extra@1.0.0", {}];
+    const r2 = fixPinnedPluginEntries([tupleColl]);
+    expect(r2.changed).toBe(false);
+    expect(r2.fixed).toEqual([tupleColl]);
+    const objColl = { module: "@cortexkit/aft-opencode-extra@1.0.0" };
+    const r3 = fixPinnedPluginEntries([objColl]);
+    expect(r3.changed).toBe(false);
+    expect(r3.fixed).toEqual([objColl]);
+  });
+
+  test("fixPinnedPluginEntries: partial pins and ranges are intentionally untouched", () => {
+    const entries = ["@cortexkit/opencode-magic-context@0.38", "@cortexkit/aft-opencode@^0.38.0", "@cortexkit/opencode-magic-context@~1.2.3"];
+    const { fixed, changed } = fixPinnedPluginEntries(entries);
+    expect(changed).toBe(false);
+    expect(fixed).toEqual(entries);
+  });
+
+  test("post-fix dedupe: fixed entry must not duplicate an already-@latest sibling after unionPluginArrays", () => {
+    const pinned = "@cortexkit/aft-opencode@0.38.0";
+    const latest = "@cortexkit/aft-opencode@latest";
+    const { fixed } = fixPinnedPluginEntries([pinned, latest]);
+    expect(fixed).toEqual([latest, latest]);
+    const deduped = unionPluginArrays(fixed, []);
+    expect(deduped).toEqual([latest]);
+    // via registerGlobalPlugin path: dest has @latest, legacy has pinned → union dedupes
+    // tested implicitly by register flow; explicit union check above proves dedupe
+  });
+
+  test("registerGlobalPlugin dedupes post-fix duplicate via union (AFT pinned + existing @latest)", async () => {
+    const dir = tmpDir();
+    const { writeFileSync } = await import("node:fs");
+    writeFileSync(path.join(dir, "opencode.jsonc"), JSON.stringify({ plugin: ["@cortexkit/aft-opencode@0.38.0", "@cortexkit/aft-opencode@latest"] }));
+    await registerGlobalPlugin(dir, PLUGIN_MODULE);
+    const cfg = JSON.parse(readFileSync(path.join(dir, "opencode.jsonc"), "utf-8"));
+    // should contain single @latest, not two, plus PLUGIN_MODULE
+    const aftEntries = (cfg.plugin as string[]).filter((p: string) => typeof p === "string" && p.startsWith("@cortexkit/aft-opencode"));
+    expect(aftEntries).toEqual(["@cortexkit/aft-opencode@latest"]);
+    expect(cfg.plugin).toContain(PLUGIN_MODULE);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("registerGlobalPlugin: pinned entry ONLY in legacy file is fixed and converged to disk; second run reports no further fix", async () => {
+    const dir = tmpDir();
+    const { writeFileSync } = await import("node:fs");
+    writeFileSync(path.join(dir, "opencode.json"), JSON.stringify({ plugin: ["@cortexkit/opencode-magic-context@0.38.0"] }));
+    // dest does not exist yet
+    const result = await registerGlobalPlugin(dir, PLUGIN_MODULE);
+    // first run may be added (new dest) or pin-fixed depending on module presence; just check files
+    const legacyCfg = JSON.parse(readFileSync(path.join(dir, "opencode.json"), "utf-8"));
+    expect(legacyCfg.plugin).toEqual(["@cortexkit/opencode-magic-context@latest"]);
+    const destCfg = JSON.parse(readFileSync(path.join(dir, "opencode.jsonc"), "utf-8"));
+    expect(destCfg.plugin).toContain("@cortexkit/opencode-magic-context@latest");
+    expect(destCfg.plugin).toContain(PLUGIN_MODULE);
+    // second run should be unchanged (no further auto-fix)
+    const second = await registerGlobalPlugin(dir, PLUGIN_MODULE);
+    expect(second.action).toBe("unchanged");
+    const legacyCfg2 = JSON.parse(readFileSync(path.join(dir, "opencode.json"), "utf-8"));
+    expect(legacyCfg2.plugin).toEqual(["@cortexkit/opencode-magic-context@latest"]);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("registerTuiPlugin: pinned entry ONLY in legacy tui.json is converged; second run unchanged", async () => {
+    const dir = tmpDir();
+    const { writeFileSync } = await import("node:fs");
+    writeFileSync(path.join(dir, "tui.json"), JSON.stringify({ plugin: ["@cortexkit/aft-opencode@0.38.0"] }));
+    const result = await registerTuiPlugin(dir, "@cortexkit/opencode-magic-context@latest");
+    const legacyCfg = JSON.parse(readFileSync(path.join(dir, "tui.json"), "utf-8"));
+    expect(legacyCfg.plugin).toEqual(["@cortexkit/aft-opencode@latest"]);
+    const destCfg = JSON.parse(readFileSync(path.join(dir, "tui.jsonc"), "utf-8"));
+    expect(destCfg.plugin).toContain("@cortexkit/aft-opencode@latest");
+    const second = await registerTuiPlugin(dir, "@cortexkit/opencode-magic-context@latest");
+    expect(second.action).toBe("unchanged");
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("registerGlobalPlugin fix-only reports pin-fixed, not added", async () => {
+    const dir = tmpDir();
+    const { writeFileSync } = await import("node:fs");
+    writeFileSync(path.join(dir, "opencode.jsonc"), JSON.stringify({ plugin: ["@cortexkit/opencode-magic-context@0.38.0", PLUGIN_MODULE] }));
+    const result = await registerGlobalPlugin(dir, PLUGIN_MODULE);
+    expect(result.action).toBe("pin-fixed");
+    const cfg = JSON.parse(readFileSync(path.join(dir, "opencode.jsonc"), "utf-8"));
+    expect(cfg.plugin).toContain("@cortexkit/opencode-magic-context@latest");
+    expect(cfg.plugin).toContain(PLUGIN_MODULE);
     rmSync(dir, { recursive: true, force: true });
   });
 });

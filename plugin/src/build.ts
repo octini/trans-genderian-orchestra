@@ -91,11 +91,71 @@ export interface GlobalConfigMergeResult {
 }
 
 export interface PluginRegisterResult {
-  action: "added" | "unchanged";
+  action: "added" | "unchanged" | "pin-fixed";
   configFile: string;
 }
 
 export const PLUGIN_MODULE = "trans-genderian-orchestra";
+
+export const PINNED_DEPS = [
+  "@cortexkit/opencode-magic-context",
+  "@cortexkit/aft-opencode",
+] as const;
+
+export function fixPinnedPluginEntries(entries: unknown[]): { fixed: unknown[]; changed: boolean } {
+  let changed = false;
+  const fixed = entries.map((entry) => {
+    if (typeof entry === "string") {
+      for (const pkg of PINNED_DEPS) {
+        const latest = `${pkg}@latest`;
+        if (entry === latest) return entry;
+        if (entry.startsWith(`${pkg}@`)) {
+          const suffix = entry.slice(pkg.length + 1);
+          if (/^\d+\.\d+\.\d+/.test(suffix)) {
+            changed = true;
+            console.warn(`tgo: auto-fixed pinned plugin entry ${entry} → ${latest}`);
+            return latest;
+          }
+        }
+      }
+      return entry;
+    }
+    if (Array.isArray(entry) && typeof entry[0] === "string") {
+      const mod = entry[0] as string;
+      for (const pkg of PINNED_DEPS) {
+        const latest = `${pkg}@latest`;
+        if (mod === latest) return entry;
+        if (mod.startsWith(`${pkg}@`)) {
+          const suffix = mod.slice(pkg.length + 1);
+          if (/^\d+\.\d+\.\d+/.test(suffix)) {
+            changed = true;
+            console.warn(`tgo: auto-fixed pinned plugin entry ${mod} → ${latest}`);
+            return [latest, ...entry.slice(1)];
+          }
+        }
+      }
+      return entry;
+    }
+    if (entry && typeof entry === "object" && typeof (entry as { module?: unknown }).module === "string") {
+      const mod = (entry as { module: string }).module;
+      for (const pkg of PINNED_DEPS) {
+        const latest = `${pkg}@latest`;
+        if (mod === latest) return entry;
+        if (mod.startsWith(`${pkg}@`)) {
+          const suffix = mod.slice(pkg.length + 1);
+          if (/^\d+\.\d+\.\d+/.test(suffix)) {
+            changed = true;
+            console.warn(`tgo: auto-fixed pinned plugin entry ${mod} → ${latest}`);
+            return { ...(entry as Record<string, unknown>), module: latest };
+          }
+        }
+      }
+      return entry;
+    }
+    return entry;
+  });
+  return { fixed, changed };
+}
 
 export function hasPluginEntry(
   plugin: unknown,
@@ -148,10 +208,37 @@ export async function registerGlobalPlugin(
   const dest = path.join(configDir, GLOBAL_OPENCODE_FILE);
   const legacyDest = path.join(configDir, LEGACY_OPENCODE_FILE);
   const { config: target, hadFile } = await readExistingConfig(dest);
-  const { config: legacy } = await readExistingConfig(legacyDest);
+  const { config: legacy, hadFile: legacyHadFile } = await readExistingConfig(legacyDest);
 
-  if (hadFile && hasPluginEntry(target.plugin, module)) {
+  // Auto-fix pinned dep entries: exact version pins for our two deps must stay @latest
+  // (real-world drift: user had @0.38.0 pinned, which freezes the slot regardless of auto_update).
+  // Only those two package names; bare names and third-party pins untouched.
+  let pinnedFixedTarget = false;
+  let pinnedFixedLegacy = false;
+  if (Array.isArray(target.plugin)) {
+    const r = fixPinnedPluginEntries(target.plugin as unknown[]);
+    if (r.changed) {
+      target.plugin = r.fixed;
+      pinnedFixedTarget = true;
+    }
+  }
+  if (Array.isArray(legacy.plugin)) {
+    const r = fixPinnedPluginEntries(legacy.plugin as unknown[]);
+    if (r.changed) {
+      legacy.plugin = r.fixed;
+      pinnedFixedLegacy = true;
+    }
+  }
+  const pinnedFixed = pinnedFixedTarget || pinnedFixedLegacy;
+
+  if (hadFile && hasPluginEntry(target.plugin, module) && !pinnedFixed) {
     return { action: "unchanged", configFile: dest };
+  }
+
+  // Converge legacy pin fixes to disk so the legacy file does not perpetually re-trigger.
+  if (pinnedFixedLegacy && legacyHadFile) {
+    await fs.mkdir(configDir, { recursive: true });
+    await fs.writeFile(legacyDest, `${JSON.stringify(legacy, null, 2)}\n`, "utf-8");
   }
 
   const plugin = unionPluginArrays(
@@ -162,7 +249,9 @@ export async function registerGlobalPlugin(
   const next = { ...legacy, ...target, plugin };
   await fs.mkdir(configDir, { recursive: true });
   await fs.writeFile(dest, `${JSON.stringify(next, null, 2)}\n`, "utf-8");
-  return { action: "added", configFile: dest };
+  const targetHasModule = hasPluginEntry(target.plugin, module);
+  const action: PluginRegisterResult["action"] = targetHasModule ? "pin-fixed" : "added";
+  return { action, configFile: dest };
 }
 
 const TGO_GLOBAL_KEYS: Record<string, unknown> = {
@@ -179,7 +268,7 @@ export const DEFAULT_AGENT_NAME = "bernstein";
 // never mounts. magic-context's own wizard writes both (addPluginToOpenCodeConfig
 // + addPluginToTuiConfig); TGO's installer must do the same.
 export interface TuiPluginRegisterResult {
-  action: "added" | "unchanged";
+  action: "added" | "unchanged" | "pin-fixed";
   configFile: string;
 }
 
@@ -190,17 +279,43 @@ export async function registerTuiPlugin(
   const dest = path.join(configDir, TUI_OPENCODE_FILE);
   const legacyDest = path.join(configDir, TUI_LEGACY_FILE);
   const { config: target, hadFile } = await readExistingConfig(dest);
-  const { config: legacy } = await readExistingConfig(legacyDest);
+  const { config: legacy, hadFile: legacyHadFile } = await readExistingConfig(legacyDest);
 
-  if (hadFile && hasPluginEntry(target.plugin, module)) {
+  // Auto-fix pinned dep entries for TUI surface as well (same two deps).
+  let pinnedFixedTarget = false;
+  let pinnedFixedLegacy = false;
+  if (Array.isArray(target.plugin)) {
+    const r = fixPinnedPluginEntries(target.plugin as unknown[]);
+    if (r.changed) {
+      target.plugin = r.fixed;
+      pinnedFixedTarget = true;
+    }
+  }
+  if (Array.isArray(legacy.plugin)) {
+    const r = fixPinnedPluginEntries(legacy.plugin as unknown[]);
+    if (r.changed) {
+      legacy.plugin = r.fixed;
+      pinnedFixedLegacy = true;
+    }
+  }
+  const pinnedFixed = pinnedFixedTarget || pinnedFixedLegacy;
+
+  if (hadFile && hasPluginEntry(target.plugin, module) && !pinnedFixed) {
     return { action: "unchanged", configFile: dest };
+  }
+
+  if (pinnedFixedLegacy && legacyHadFile) {
+    await fs.mkdir(configDir, { recursive: true });
+    await fs.writeFile(legacyDest, `${JSON.stringify(legacy, null, 2)}\n`, "utf-8");
   }
 
   const plugin = unionPluginArrays(legacy.plugin, target.plugin, [module]);
   const next = { ...legacy, ...target, plugin };
   await fs.mkdir(configDir, { recursive: true });
   await fs.writeFile(dest, `${JSON.stringify(next, null, 2)}\n`, "utf-8");
-  return { action: "added", configFile: dest };
+  const targetHasModule = hasPluginEntry(target.plugin, module);
+  const action: TuiPluginRegisterResult["action"] = targetHasModule ? "pin-fixed" : "added";
+  return { action, configFile: dest };
 }
 
 export const CONTEXT7_MCP_SERVER = "context7";

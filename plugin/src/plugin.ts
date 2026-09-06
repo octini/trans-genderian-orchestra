@@ -34,6 +34,7 @@ import { checkVersionDrift, fetchLatestVersion, PLUGIN_NPM_NAME, readLocalVersio
 import { parseCompletionSignal, terminationDecision, type CompletionSignal } from "./termination";
 import { selfUpdate } from "./self-update";
 import { reconcileSeats } from "./seat-sync";
+import { configureMagicContext } from "./magic-context";
 // Suspend gate — durable wait-for-user with typed schemas, prose resume, timer catch-up
 import {
   suspend as suspendWait,
@@ -948,6 +949,26 @@ export const TgoPlugin: Plugin = async (
         "info",
         `preset "${active}" applied to ${applied.length ? applied.join(", ") : "no seats"}`
       );
+
+      // Magic-context historian always-follows Dylan seat (R1/R2). Shape-preserving, variant verbatim, churn-avoiding.
+      // Timing per R3: same-session when this hook fires before magic-context's agent assembly, else next restart.
+      try {
+        const sync = config.magicContext.historianSync;
+        if (sync !== "off") {
+          const dylanSeat = (config.presets as Record<string, Record<string, { model?: string; variant?: string }>> | undefined)?.[active]?.dylan;
+          if (dylanSeat?.model) {
+            const mcResult = await configureMagicContext({
+              dylan: { model: dylanSeat.model, variant: dylanSeat.variant },
+              sync,
+            });
+            if (mcResult.action !== "skipped") {
+              appLog("info", `magic-context historian ${mcResult.action} → ${mcResult.configFile} (model: ${mcResult.historianModel ?? "none"})`);
+            }
+          }
+        }
+      } catch (err) {
+        safeWarn(appLog, "tgo: magic-context historian sync failed", { error: String(err) });
+      }
 
       // Pre-approve external_directory reads for the project's worktree family
       // (sibling worktrees under the same parent) so delegated sessions that

@@ -35,6 +35,7 @@ export const MODEL_BUDGETS: Record<string, ModelBudget> = {
   "opencode-go/gpt-5.6-luna": { usageMonthlyUsd: 15, listStepUsd: 0.00146 },
   "opencode-go/glm-5.3-flash": { usageMonthlyUsd: 15, listStepUsd: 0.0019 },
   "opencode-go/muse-spark-1.2-contributor": { usageMonthlyUsd: 60, listStepUsd: 0.00027 },
+  "opencode-go/muse-spark-1.3-contributor": { usageMonthlyUsd: 60, listStepUsd: 0.00027 },
 };
 
 export function round2(n: number): number {

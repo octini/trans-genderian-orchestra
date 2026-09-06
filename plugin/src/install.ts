@@ -30,7 +30,6 @@ import {
 } from "./background";
 import {
   configureMagicContext,
-  historianModelFromPreset,
   type MagicContextConfigureResult,
 } from "./magic-context";
 
@@ -72,7 +71,7 @@ export interface InstallReport extends InstallTarget {
   globalMergeBackedUp: boolean;
   style: string;
   plugin: string | undefined;
-  pluginAction: "added" | "unchanged" | undefined;
+  pluginAction: "added" | "unchanged" | "pin-fixed" | undefined;
   backgroundSubagents: string | undefined;
   deps: DepStatus[];
   depsInstalled: string[];
@@ -183,12 +182,11 @@ export async function install(overrides?: InstallOptions): Promise<InstallReport
       target.configDir,
       "@cortexkit/opencode-magic-context@latest"
     );
+    const dylanSeat = (config.presets as Record<string, Record<string, { model?: string; variant?: string }>> | undefined)?.[config.preset]?.dylan;
     magicContextConfig = await configureMagicContext({
       configDir: target.configDir,
-      historianModel: historianModelFromPreset(
-        config.presets as Record<string, Record<string, { model?: string }>>,
-        config.preset
-      ),
+      dylan: dylanSeat ? { model: dylanSeat.model, variant: dylanSeat.variant } : undefined,
+      sync: config.magicContext.historianSync,
     });
   }
 
@@ -216,7 +214,7 @@ export async function install(overrides?: InstallOptions): Promise<InstallReport
   // up with the plugin actually loaded, or the seats/skills/deps are inert.
   // Opt out with --no-register (e.g. when wiring the plugin manually).
   let plugin: string | undefined;
-  let pluginAction: "added" | "unchanged" | undefined;
+  let pluginAction: "added" | "unchanged" | "pin-fixed" | undefined;
   const registerModule =
     overrides?.register === false
       ? undefined

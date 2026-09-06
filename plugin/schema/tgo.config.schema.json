@@ -201,6 +201,14 @@
         "enabled": { "type": "boolean", "default": true }
       },
       "additionalProperties": false
+    },
+    "magicContext": {
+      "description": "Magic-context historian sync settings.",
+      "type": "object",
+      "properties": {
+        "historianSync": { "description": "Whether the historian model + variant follow the active preset's Dylan seat.", "type": "string", "enum": ["follow", "off"], "default": "follow" }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false,
