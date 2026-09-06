@@ -1676,8 +1676,10 @@ export const TgoPlugin: Plugin = async (
           }
         }
       } catch {}
+      let parsedForFit: import("./report").ParsedReport | undefined;
       if (input.tool === "task" && typeof output?.output === "string") {
         let report = parseTaskReport(output.output);
+        parsedForFit = report;
         if (output && typeof output === "object") {
           const metadata = output.metadata && typeof output.metadata === "object"
             ? output.metadata as Record<string, unknown>
@@ -1784,8 +1786,10 @@ export const TgoPlugin: Plugin = async (
             raw: report.raw,
           });
         }
+        // tgo-bf6: keep parsed report for fit gating (success reports never get advisory)
+        parsedForFit = report;
       }
-      await fit.normalize(input, output);
+      await fit.normalize(input, output, parsedForFit);
     },
 
     "experimental.chat.messages.transform": async (_input, output) => {
