@@ -36,7 +36,7 @@ One npm package exposes both via dual-package exports since v0.1.5 (`exports "./
 If you prefer to wire it by hand, this also works in `opencode.jsonc`:
 
 ```json
-{ "plugin": ["trans-genderian-orchestra@0.4.0"] }
+{ "plugin": ["trans-genderian-orchestra@0.5.0"] }
 ```
 
 Restart opencode after it installs. That’s the global layer done.
@@ -105,6 +105,11 @@ The Background Job Board is the view that follows you through all of this. Each 
 - **Session reuse** — follow-up delegations continue the same subagent session (`task_id`) instead of spawning fresh; context-size guarded; state in `.tgo/sessions.json`.
 - **Progress files** — per-issue `.tgo/<issueId>/progress.md` (Objective / Touch set / Decisions / Blockers / Status) written by Dylan, read by Bernstein/Horowitz; survives session end.
 - **Termination conditions** — composable completion detection stops post-completion waffle and hands the report back.
+- **Failure-type routing** — six signals (build/test/dependency/deploy/env/watchdog) classify failures to guide reroute vs retry.
+
+## What's new in 0.5.0
+
+TGO 0.5.0 refreshes presets to `muse-spark-1.3-contributor` (cheap = balanced = all six seats xhigh; frontier = glm-5.3 max / kimi-k3 max / grok-4.6 xhigh / Spark 1.3 xhigh ×3), keeps the magic-context historian always following the active preset's Dylan model + variant (`magicContext.historianSync: follow|off`), defaults dependency self-update (`auto_update` fill-if-absent + exact-pin auto-fix to `@latest` for `@cortexkit/opencode-magic-context` and `@cortexkit/aft-opencode`), adds installer pre-flight (platform gate + validate-before-write + `--skip-validation`), surfaces six failure-type signals for reroute, and guards prompt assembly with a committed baseline (`UPDATE_PROMPT_BASELINE=1`).
 
 ## What's new in 0.4.0
 
@@ -167,7 +172,7 @@ TGO keeps its dependency surface small and explicit. The installer checks for ea
 - **magic-context** — quiet, cross-session recall (`ctx_*`) that the installer wires end to end, with the historian always following the active preset's Dylan model + variant (reconciled on every startup and install; `magicContext.historianSync: "off"` disables). Includes the TUI sidebar. Self-updates by default (`@cortexkit/opencode-magic-context@latest`, `auto_update` defaults `true` — TGO auto-fills `auto_update:true` when absent, never clobbers `false`).
 - **context7** — the one external MCP for docs lookup (`context7_*`), given to Nas and Dylan.
 
-Keep both dep `plugin` entries at `@latest`; TGO auto-fixes exact version pins (`@…@0.38.0` → `@latest`) on install and plugin registration; partial pins like `@0.38` and ranges like `@^0.38.0` are intentionally untouched.
+Keep both dep `plugin` entries at `@latest`; TGO auto-fixes exact version pins (`@…@0.38.0` → `@latest`) on install and plugin registration; partial pins like `@0.38` and ranges like `@^0.38.0` are intentionally untouched. Installer pre-flight validates platform (macOS/Linux/Windows) and runs `validate` before writing; bypass validation with `--skip-validation` (platform gate still enforced).
 
 Runtime ties are light: `@opencode-ai/plugin ~1.18.13`, `zod ^4.1.13`, and `bun >= 1.0.0`.
 
@@ -184,10 +189,6 @@ Not guidelines — the seat frontmatter carries a permission matrix the host enf
 | **Nirvana + band** | `task` → its three band members only (cobain, grohl, novoselic) | everything else |
 
 Globally, `todowrite` is denied for every seat (beads is the tracker), `subagent_depth: 2` caps delegation, and the specialist seats carry a 20-step cap so a long session still returns a usable partial report instead of an empty handoff. The full matrix is in `docs/spec/mcp-permissions.md`.
-
-## Skills you get, and the ones it plays nicely with
-
-TGO ships thirteen advisory skills with fifteen per-seat grants — wayfinder, grilling, to-tickets, bmad-build-auto, verification-planning, diagnosing-bugs, to-questionnaire, wizard, code-review, bmad-deep-recon, implement, tdd, and receiving-code-review. Advisory means advisory: if a skill is missing, the plugin still runs. External suites from Matt Pocock, superpowers, and gsd are never disabled; TGO enables its own grants for them when they’re present. The coexistence story is in `docs/WORKS-WELL-WITH.md`.
 
 ## The house style, in plain language
 
@@ -221,6 +222,8 @@ bun test              # budget + schema + build tests
 bunx tsc --noEmit     # typecheck
 bun run setup --configDir <dir>   # build + install (defaults to ~/.config/opencode/)
 ```
+
+Prompt assembly is baseline-guarded — after intentional seat changes run `UPDATE_PROMPT_BASELINE=1 bun test plugin/test/prompt-baseline.test.ts` (see `docs/SETUP.md`).
 
 ## License
 

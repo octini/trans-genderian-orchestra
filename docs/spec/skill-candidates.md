@@ -85,8 +85,8 @@ Tiering = how strong I think the candidate is. **Seat** = natural grant target. 
 
 - **Spec/planning artifacts (Group 1):** writing-plans, bmad-spec, to-spec, domain-modeling → **all lose.** Planning/spec surface owned by to-tickets + living-spec + Five-part Spec.
 - **Review-adjacent (Group 2):** **receive-code-review → ADOPT for Dylan** (the writer's half of the review loop). Lose: requesting-code-review (folds into code-review prep), bmad-code-review/correct-course (folds into escalation), simplify (overlaps YAGNI ladder).
-- **Codebase health/design (Group 3):** improve-codebase-architecture, codebase-design, codemap → **all lose.** First stays on "works well with" page; second's vocabulary goes into Bernstein/Horowitz prompts; third approximated by Nas's native read/grep/glob.
-- **Operational/misc (Group 4):** prototype, handoff, brainstorming, clonedeps, resolving-merge-conflicts, bmad-help → **all lose.** prototype/handoff/resolving-merge-conflicts on "works well with" page; brainstorming + bmad-help overlap grilling/lane-card; clonedeps needs bash Nas is denied.
+- **Codebase health/design (Group 3):** improve-codebase-architecture, codebase-design, codemap → **all lose.** First not bundled; second's vocabulary goes into Bernstein/Horowitz prompts; third approximated by Nas's native read/grep/glob.
+- **Operational/misc (Group 4):** prototype, handoff, brainstorming, clonedeps, resolving-merge-conflicts, bmad-help → **all lose.** prototype/handoff/resolving-merge-conflicts not bundled; brainstorming + bmad-help overlap grilling/lane-card; clonedeps needs bash Nas is denied.
 
 ## FINAL BUNDLE (G1, decided 2026-08-05; amended 2026-08-06)
 
@@ -145,7 +145,7 @@ Trigger: `2026_08_06_pocock_video_transcript.txt` (v1.2.0 release video) + audit
 - **UPDATE `code-review`** → fold in the Fowler baseline + harness-agnostic subagent wording.
 - **ADD `to-questionnaire` (Bernstein, advisory):** wayfinder Task tickets needing *someone else's* knowledge get a questionnaire instead of a loose checklist.
 - **ADD `wizard` (Bernstein, advisory):** wayfinder Task tickets with human-only steps (provisioning/credentials) get a deterministic script.
-- **DON'T bundle:** `wait-what` (user-facing; insight → concision payload, tgo-96f.9); `writing-for-agents` (meta/writing; rename reference in `skill-sources-inventory.md`, list on "works well with" page).
+- **DON'T bundle:** `wait-what` (user-facing; insight → concision payload, tgo-96f.9); `writing-for-agents` (meta/writing; rename reference in `skill-sources-inventory.md`).
 - **REMOVALS:** none. All 11 original skills hold.
 
 ### Adaptation notes — new grants (Bernstein, both advisory-only, nothing load-bearing)

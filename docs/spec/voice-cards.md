@@ -406,7 +406,7 @@ Reference files: `plugin/benchmark/style-quality.ts` (variant payloads, `runBenc
 Proof-of-concept rewrite of TGO GitHub docs (`README.md` at minimum) in each of the three voices (default / prose / conversational) as **user validation**. This is not part of the build gate; it is a filed follow-up ticket closed by user approval.
 
 - Input: current `README.md`.
-- Output: `docs/validation/voice-cards/README-{default,prose,conversational}.md` (or equivalent path agreed with user).
+- Output: `docs/validation/voice-cards/README-default.md` (retained validation artifact; conversational/prose/normal variants removed in 0.5.0).
 - Acceptance: user sign-off on voice distinctness and correctness; no benchmark gate.
 
 ## 10. Implementation checklist (≤6 tickets, dependency-ordered)

@@ -16,7 +16,6 @@ Status: **spec** (buildable). Source decisions: `docs/wayfinder/decisions.md` (t
 ## 2. Bundling split (final)
 
 - bundle small (beads: own wrapper), depend on large (AFT, magic-context whole plugins).
-- Listed on the "works well with" docs page.
 
 ## 3. Permission FRAMEWORK
 

@@ -15,7 +15,7 @@ Bundle as many genuinely useful skills as warranted — **count FLEXIBLE, 5 to 5
 
 ## 3. No shipped second-tier suite
 
-No second-tier suite ships. Instead one thin **"works well with" docs page** listing compatible external suites (Matt's installed skills, superpowers, gsd) that TGO won't disable if present and whose per-seat grants TGO *enables* when available. Trim by design.
+No second-tier suite ships. Trim by design.
 
 ## 4. Six selection criteria
 

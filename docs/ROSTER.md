@@ -43,9 +43,9 @@ The routing rationale, from the spec:
 - **Balanced = Muse Spark on every seat (xhigh)** — identical to cheap for the time being (2026-09-06, option A); all six balanced entries route to `muse-spark-1.3-contributor` at effort `xhigh` (226,600/mo cap).
 - **Cheap = Muse Spark on every seat (xhigh)** — the 226,600/mo cap makes cost a non-issue; all six cheap entries route to `muse-spark-1.3-contributor` at effort `xhigh`.
 - **Frontier = best-performance-period (light month)** — Bernstein → `glm-5.3` (max, best Go agentic); Horowitz → `kimi-k3` (max, best Go long-horizon coder); Nirvana → `grok-4.6` (xhigh, best knowledge-work synth); Dylan/Nas/band-members → `muse-spark-1.3-contributor` (xhigh). Frontier caps are tight (Grok 4.6 = 845, Kimi K3 = 490, GLM-5.3 = 1,080 req/mo) — assume a light-usage month; they throttle if a frontier month gets heavy.
-- **Variant support (verified in `~/.cache/opencode/models.json`):** Muse Spark, Grok 4.6, and Qwen3.8 Flash top out at `xhigh` (no `max`); `glm-5.3`, `glm-5.3-flash`, and `kimi-k3` support `max`.
+- **Variant support (verified in `~/.cache/opencode/models.json`):** Muse Spark and Grok 4.6 top out at `xhigh` (no `max`); `glm-5.3` and `kimi-k3` support `max`.
 
-Switching presets at runtime is a prose nudge, not a config edit: say "go cheap" or "use frontier for this" and Bernstein sets the active preset, which takes effect at the next plugin load. Partial overrides are possible via the `presets` config option.
+Switching presets at runtime is a prose nudge, not a config edit: say "go cheap" or "use frontier for this" and Bernstein sets the active preset, which takes effect at the next plugin load. Partial overrides are possible via the `presets` config option. Magic-context historian follows the active preset's Dylan model + variant by default (`magicContext.historianSync: follow`, `off` disables); failure-type signals (build/test/dependency/deploy/env/watchdog) guide reroute, installer pre-flight and prompt baseline are in `docs/SETUP.md`.
 
 ## Bernstein's mandate
 

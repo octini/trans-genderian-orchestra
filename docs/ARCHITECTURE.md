@@ -37,14 +37,14 @@ The plugin's core runtime boundary has four hooks, verified against `@opencode-a
 
 1. **Background Job Board injection** — `experimental.chat.messages.transform` + a `chat.message` gate. The board is a read-only renderer over Beads plus a thin live-state shim, using `bd list`, `bd ready`, `bd blocked`, and `bd memories` when host setup supports those reads. Board reads do not authorize lifecycle actions; create, claim, close, reopen, recovery, and authorization remain disabled or unproven. bd init --directory is unsupported; bd -C fails, must use .cwd(directory). Plugin remains metadata-only until host boundary validated.
 2. **Session reconciliation** — `session.status` / `session.idle` / `session.compacted` events. Keeps the board's live-state shim consistent across busy/idle/retry transitions, compactions, and resumes.
-3. **Task-fit rejection normalization** — `tool.execute.after` on the `task` tool. Turns a specialist's "this isn't my lane" rejection into a REROUTE-NOT-RETRY signal so Bernstein reroutes to the right seat instead of retrying the same one.
+3. **Task-fit rejection normalization** — `tool.execute.after` on the `task` tool. Turns a specialist's "this isn't my lane" rejection into a REROUTE-NOT-RETRY signal so Bernstein reroutes to the right seat instead of retrying the same one. Failure-type classification (build/test/dependency/deploy/env/watchdog) further guides reroute vs retry.
 4. **Always-on concision transform** — `experimental.chat.system.transform`. Appends the default voice card (`tgo-default`) to the primary loop's system prompt every turn (single-sourced from `plugin/assets/voices/tgo-default.json` via `plugin/src/voices.ts` + `plugin/src/concision.ts`; named-card overrides `tgo-prose` / `tgo-conversational` layer on default when assigned, 300–500 + ≤200 tokens). Subagent seats get the same default card folded into their prompts at build time (≤250 tokens); Bernstein has no fold slot, so he is never double-injected. Drift is card-aware via three rule packs (mechanics always-on, concision whitelist, voice-cadence cluster-judged) with findings-targeted nudges (flag-then-override). See `docs/CONCISION.md` and `docs/spec/voice-cards.md`.
 
 > **Supporting state:** `.tgo/sessions.json` (issue→session map for delegation reuse) and `.tgo/<issueId>/progress.md` (per-issue shared context) are gitignored working state; watchdog stuck-loop is a distinct-signature window (<3 distinct tool signatures across the last 20 tools within 5m), not since-last-edit counting.
 
 At plugin load, the `config` hook applies the active preset (seat→model/variant maps) and pre-approves `external_directory` reads for the project's worktree family. Presets are data, applied once per session — OpenCode's `task` tool takes no model parameter, so per-seat models are fixed at session start.
 
-Two additional code paths sit outside the hooks: the **installer** (builds seats, writes the global config fragment, installs missing dependencies) and the **per-repo setup auto-trigger** on `session.created` (beads init + AGENTS fragment, idempotent and no-clobber). Both are documented in `docs/SETUP.md`.
+Two additional code paths sit outside the hooks: the **installer** (builds seats, writes the global config fragment, installs missing dependencies; pre-flight validates platform and runs `validate` before any write, `--skip-validation` bypasses validation) and the **per-repo setup auto-trigger** on `session.created` (beads init + AGENTS fragment, idempotent and no-clobber). Prompt assembly is baseline-guarded (`UPDATE_PROMPT_BASELINE=1`). Both are documented in `docs/SETUP.md`.
 
 ## The delegation contract
 
@@ -84,4 +84,4 @@ The design decisions are recorded in the ADRs (`docs/adr/0001-shape.md` for the 
 - Spec: `docs/spec/architecture.md` (canonical), `docs/spec/beads-integration.md`, `docs/spec/mcp-permissions.md`, `docs/spec/features.md`
 - ADR: `docs/adr/0001-shape.md`
 - Research: `docs/research/architectural-review.md`, `docs/research/opencode-plugin-api.md`
-- Human pages: `docs/ROSTER.md`, `docs/CONCISION.md`, `docs/SETUP.md`, `docs/WORKS-WELL-WITH.md`
+- Human pages: `docs/ROSTER.md`, `docs/CONCISION.md`, `docs/SETUP.md`

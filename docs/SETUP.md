@@ -12,12 +12,12 @@ You don’t need to install two things or wire two configs. A single `opencode p
 opencode plugin trans-genderian-orchestra -g
 ```
 
-Under the hood that’s one npm package (`trans-genderian-orchestra@0.4.0`) with dual-package exports since v0.1.5 — `"./server" → "./dist/server.js"` for the board that lives in chat, and `"./tui" → "./dist/tui.js"` for the sidebar you see on the right. The host-resolved peers (`solid-js`, `@opentui/solid`, `@opentui/core`) are shared, not bundled twice. On the server the plugin hooks `experimental.chat.messages.transform` and `experimental.chat.system.transform` in `dist/server.js`; in the TUI it calls `slots.register` at `order 450` in `tui.jsonc` (right between the built-in Todo at `400` and Modified Files at `500`) in `dist/tui.js`. The interactive sidebar itself arrived in 0.1.6 — 0.1.5 shipped the dual exports and the renderer-only `tgo_beads_snapshot` tool, not the live sidebar.
+Under the hood that’s one npm package (`trans-genderian-orchestra@0.5.0`) with dual-package exports since v0.1.5 — `"./server" → "./dist/server.js"` for the board that lives in chat, and `"./tui" → "./dist/tui.js"` for the sidebar you see on the right. The host-resolved peers (`solid-js`, `@opentui/solid`, `@opentui/core`) are shared, not bundled twice. On the server the plugin hooks `experimental.chat.messages.transform` and `experimental.chat.system.transform` in `dist/server.js`; in the TUI it calls `slots.register` at `order 450` in `tui.jsonc` (right between the built-in Todo at `400` and Modified Files at `500`) in `dist/tui.js`. The interactive sidebar itself arrived in 0.1.6 — 0.1.5 shipped the dual exports and the renderer-only `tgo_beads_snapshot` tool, not the live sidebar.
 
 If you’d rather declare it explicitly, the manual `opencode.jsonc` form works just as well:
 
 ```json
-{ "plugin": ["trans-genderian-orchestra@0.4.0"] }
+{ "plugin": ["trans-genderian-orchestra@0.5.0"] }
 ```
 
 OpenCode installs the package and its peers. Restart opencode and you’re globally ready. That’s the whole manual step — everything else is lazy.
@@ -30,7 +30,7 @@ bun install
 bun run setup --configDir <dir>   # defaults to ~/.config/opencode/
 ```
 
-The installer builds the seat prompts from templates, writes the global config fragment (the `subagent_depth`, `permission.todowrite`, `default_agent`, and — when magic-context is present — `compaction: { auto:false, prune:false }` dance), auto-installs any missing engine dependencies, and self-registers the plugin in your global `opencode.jsonc`. It’s idempotent — re-running never duplicates entries — and it’s careful about not clobbering a hand-edited JSONC file. If it truly can’t parse what you’ve got, it backs the file up to `opencode.jsonc.bak` first.
+The installer builds the seat prompts from templates, writes the global config fragment (the `subagent_depth`, `permission.todowrite`, `default_agent`, and — when magic-context is present — `compaction: { auto:false, prune:false }` dance), auto-installs any missing engine dependencies, and self-registers the plugin in your global `opencode.jsonc`. Pre-flight validates platform (macOS/Linux/Windows) and runs `validate` before any write — on failure no files are written (`--skip-validation` bypasses validation, not the platform gate). It’s idempotent — re-running never duplicates entries — and it’s careful about not clobbering a hand-edited JSONC file. If it truly can’t parse what you’ve got, it backs the file up to `opencode.jsonc.bak` first.
 
 A few flags you might reach for:
 
@@ -38,6 +38,7 @@ A few flags you might reach for:
 - `--no-register` — don’t self-register in `opencode.jsonc` (for when you’re wiring the plugin by hand).
 - `--register <module>` — register a different module or path instead.
 - `--no-bg` — don’t write the `OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS` export to your shell profile.
+- `--skip-validation` — bypass validate-before-write (platform gate on macOS/Linux/Windows still enforced; combine with `--deps skip` if needed).
 
 A local-plugin path also exists for quick iteration: symlink or copy `src/plugin.ts` into `~/.config/opencode/plugins/`, then run the installer for the config assets. The seat prompts are auto-discovered from `~/.config/opencode/agent/` (opencode scans both `agent/` and `agents/`).
 
