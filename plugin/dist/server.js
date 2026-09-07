@@ -14715,7 +14715,7 @@ async function validateAgentDir(agentDir, log) {
   }
   return checked;
 }
-var MAX_PROMPT_TOKENS = 1000, BD_ENV, SEATS, PRESET_NAMES, modelRef, seatPreset, boardConfig, styleConfig, setupConfig, watchdogConfig, sessionReuseConfig, terminationConfig, selfUpdateConfig, runsConfig, metricsConfig, recursionConfig, costConfig, tgoConfigSchema;
+var MAX_PROMPT_TOKENS = 1000, BD_ENV, SEATS, PRESET_NAMES, modelRef, seatPreset, boardConfig, styleConfig, setupConfig, watchdogConfig, sessionReuseConfig, terminationConfig, selfUpdateConfig, runsConfig, metricsConfig, recursionConfig, costConfig, magicContextConfig, tgoConfigSchema;
 var init_config = __esm(() => {
   init_zod();
   BD_ENV = {
@@ -14791,6 +14791,9 @@ var init_config = __esm(() => {
   costConfig = exports_external.object({
     enabled: exports_external.boolean().default(true)
   });
+  magicContextConfig = exports_external.object({
+    historianSync: exports_external.enum(["follow", "off"]).default("follow")
+  });
   tgoConfigSchema = exports_external.object({
     preset: exports_external.enum(PRESET_NAMES).default("balanced"),
     presets: exports_external.object({
@@ -14822,7 +14825,8 @@ var init_config = __esm(() => {
     })),
     metrics: metricsConfig.optional().default(() => ({ enabled: true })),
     recursion: recursionConfig.optional().default(() => ({ enabled: true, maxDepth: 4 })),
-    cost: costConfig.optional().default(() => ({ enabled: true }))
+    cost: costConfig.optional().default(() => ({ enabled: true })),
+    magicContext: magicContextConfig.optional().default(() => ({ historianSync: "follow" }))
   });
 });
 
@@ -16751,7 +16755,8 @@ var WINDOW_LIMITS = {
 var MODEL_BUDGETS = {
   "opencode-go/gpt-5.6-luna": { usageMonthlyUsd: 15, listStepUsd: 0.00146 },
   "opencode-go/glm-5.3-flash": { usageMonthlyUsd: 15, listStepUsd: 0.0019 },
-  "opencode-go/muse-spark-1.2-contributor": { usageMonthlyUsd: 60, listStepUsd: 0.00027 }
+  "opencode-go/muse-spark-1.2-contributor": { usageMonthlyUsd: 60, listStepUsd: 0.00027 },
+  "opencode-go/muse-spark-1.3-contributor": { usageMonthlyUsd: 60, listStepUsd: 0.00027 }
 };
 function round2(n) {
   return Math.round(n * 100) / 100;
@@ -18787,13 +18792,184 @@ var LANE_REJECTION_PATTERNS = [
 function detectLaneRejection(output) {
   return LANE_REJECTION_PATTERNS.some((pattern) => pattern.test(output));
 }
-function rerouteSignal(seat) {
+var FAILURE_TYPE_PATTERNS = {
+  watchdog: [
+    /watchdog.{0,40}abort/i,
+    /abort.{0,40}watchdog/i,
+    /WATCHDOG-ABORT/i,
+    /aborted by.*watchdog/i
+  ],
+  dependency: [
+    /npm ERR!/i,
+    /npm error/i,
+    /cannot find module/i,
+    /module not found/i,
+    /ERR_PNPM/i,
+    /could not resolve/i,
+    /peer dep/i,
+    /dependency.*(?:not found|missing|failed|error)/i,
+    /bun install.*(?:failed|error)/i,
+    /yarn error/i
+  ],
+  build: [
+    /\bbuild failed\b/i,
+    /\bcompilation failed\b/i,
+    /\bcompile error\b/i,
+    /\bFailed to compile\b/i,
+    /error TS\d+/i,
+    /TS\d+:\s*error\b/i,
+    /\btsc\b.*\bERROR\b/i,
+    /\bSyntaxError\b/i,
+    /\bcannot find name\b/i,
+    /\bCannot find name\b/,
+    /Module not found:.*Can't resolve/i
+  ],
+  test: [
+    /\btest[s]?\s+failed\b/i,
+    /\btests?\s+failing\b/i,
+    /\bfailing tests\b/i,
+    /\btest suite failed\b/i,
+    /\bAssertionError\b/i,
+    /\bassertion failed\b/i,
+    /\bexpected\b.{0,60}\breceived\b/i,
+    /\bexpect\s*\(.*\)\s*\.\s*to[A-Z]/,
+    /\b\d+\s+failed\b/i,
+    /^\s*FAIL\b/m
+  ],
+  deploy: [
+    /\bdeploy.*failed\b/i,
+    /\bdeployment failed\b/i,
+    /\bCI.*failed\b/i,
+    /\bgithub actions.*failed\b/i,
+    /\bdocker.*failed\b/i,
+    /\bpush rejected\b/i,
+    /\bvercel.*error\b/i,
+    /\bnetlify.*error\b/i
+  ],
+  env: [
+    /\bcommand not found\b/i,
+    /executable file not found in \$PATH/i,
+    /not found in \$PATH/i,
+    /\bpermission denied\b/i,
+    /\bno such file or directory\b/i,
+    /ENOENT:\s*no such file/i,
+    /\bbad interpreter\b/i,
+    /\bPATH.*not set\b/i,
+    /\benv.*not found\b/i
+  ]
+};
+var FAILURE_TYPE_LABELS = {
+  watchdog: "watchdog abort",
+  dependency: "dependency/npm",
+  build: "build/compile",
+  test: "test failure",
+  deploy: "deploy/CI",
+  env: "env/PATH"
+};
+var FAILURE_TYPE_HINTS = {
+  watchdog: "Watchdog abort — session was aborted (wall-clock/idle/stuck); verify what landed, then re-dispatch smaller.",
+  dependency: "Dependency/npm error — check deps/install (bd, npm, bun) before retry.",
+  build: "Build/compile error — retry with build log and tsc output; route to dylan for fix.",
+  test: "Test failure — include failing test output and rerun verification.",
+  deploy: "Deploy/CI error — verify CI/deploy config before reroute.",
+  env: "Env/PATH error — check PATH and env setup before retry."
+};
+var FAILURE_PRIORITY = [
+  "watchdog",
+  "deploy",
+  "build",
+  "dependency",
+  "test",
+  "env"
+];
+function classifyFailureType(input) {
+  if (input == null)
+    return "unclassified";
+  let text = "";
+  if (typeof input === "string") {
+    text = input;
+  } else if (typeof input === "object") {
+    const o = input;
+    if (o.watchdogAborted === true)
+      return "watchdog";
+    if (typeof o.raw === "string")
+      text += " " + o.raw;
+    if (typeof o.output === "string")
+      text += " " + o.output;
+    if (typeof o.text === "string")
+      text += " " + o.text;
+    if (typeof o.note === "string")
+      text += " " + o.note;
+    if (typeof o.cmd === "string")
+      text += " " + o.cmd;
+    if (typeof o.reason === "string")
+      text += " " + o.reason;
+    if (typeof o.status === "string")
+      text += " " + o.status;
+    if (typeof o.message === "string")
+      text += " " + o.message;
+    if (o.fields && typeof o.fields === "object") {
+      const fields = o.fields;
+      for (const v of Object.values(fields)) {
+        if (typeof v === "string")
+          text += " " + v;
+      }
+    }
+    if (!text.trim()) {
+      try {
+        text += " " + JSON.stringify(o);
+      } catch {}
+    }
+  } else {
+    text = String(input);
+  }
+  text = text.trim();
+  if (!text)
+    return "unclassified";
+  for (const type of FAILURE_PRIORITY) {
+    const patterns = FAILURE_TYPE_PATTERNS[type];
+    if (patterns.some((re) => re.test(text)))
+      return type;
+  }
+  return "unclassified";
+}
+function failureTypeHint(type) {
+  if (type === "unclassified")
+    return;
+  return FAILURE_TYPE_HINTS[type];
+}
+function failureTypeLabel(type) {
+  if (type === "unclassified")
+    return;
+  return FAILURE_TYPE_LABELS[type];
+}
+function failureRerouteSignal(failureType, seat) {
   const target = seat ? ` for ${seat}` : "";
+  const label = failureTypeLabel(failureType);
+  const hint = failureTypeHint(failureType);
   return [
+    `## ${REROUTE_NOT_RETRY}`,
+    `Delegation failed${target} with ${label} error.`,
+    hint,
+    "Do NOT simply retry — address the failure context above and reroute per lane-card."
+  ].join(`
+`);
+}
+function rerouteSignal(seat, failureType) {
+  const target = seat ? ` for ${seat}` : "";
+  const base = [
     `## ${REROUTE_NOT_RETRY}`,
     `The delegated specialist${target} rejected this task as out of its lane.`,
     "Do NOT retry the same seat — reroute to the correct lane per the lane-card, or re-decompose."
-  ].join(`
+  ];
+  if (failureType && failureType !== "unclassified") {
+    const label = failureTypeLabel(failureType);
+    const hint = failureTypeHint(failureType);
+    if (label && hint) {
+      base.push("", `Failure type: ${label} — ${hint}`);
+    }
+  }
+  return base.join(`
 `);
 }
 var HEAVY_TRIGGERS = [
@@ -18827,20 +19003,43 @@ function classifyRouting(input) {
 function isBoundedTouchSet(touchSet) {
   return touchSet !== undefined && touchSet.length === 1 && touchSet.every((file2) => file2.trim().length > 0);
 }
+function isSuccessReport(text, report) {
+  if (report) {
+    if (report.status === "complete" || report.taxonomy?.status === "complete")
+      return true;
+    if (report.raw && /\bSTATUS:\s*(complete|done)\b/i.test(report.raw))
+      return true;
+  }
+  if (/\bSTATUS:\s*(complete|done)\b/i.test(text))
+    return true;
+  return false;
+}
 
 class TaskFitController {
-  normalize(input, output) {
+  normalize(input, output, report) {
     if (input.tool !== "task")
       return false;
     if (output.output.includes(REROUTE_NOT_RETRY))
       return false;
-    if (!detectLaneRejection(output.output))
-      return false;
-    const seat = input.args?.subagent_type;
-    output.output = `${output.output.trimEnd()}
+    const isLane = detectLaneRejection(output.output);
+    const failureType = classifyFailureType(output.output);
+    if (isLane) {
+      const seat = input.args?.subagent_type;
+      output.output = `${output.output.trimEnd()}
 
-${rerouteSignal(seat)}`;
-    return true;
+${rerouteSignal(seat, failureType)}`;
+      return true;
+    }
+    if (failureType !== "unclassified") {
+      if (isSuccessReport(output.output, report))
+        return false;
+      const seat = input.args?.subagent_type;
+      output.output = `${output.output.trimEnd()}
+
+${failureRerouteSignal(failureType, seat)}`;
+      return true;
+    }
+    return false;
   }
 }
 
@@ -19877,6 +20076,113 @@ async function renderSeats(sourceDir, voiceCardId = "default") {
     seats.push({ fileName: file2, content });
   }
   return seats;
+}
+var GLOBAL_OPENCODE_FILE = "opencode.jsonc";
+var LEGACY_OPENCODE_FILE = "opencode.json";
+var TGO_GLOBAL_KEYS = {
+  subagent_depth: 2,
+  permission: { todowrite: "deny" }
+};
+var DEFAULT_AGENT_NAME = "bernstein";
+function hasGlobalTgoKeys(config2) {
+  if (config2.subagent_depth !== 2)
+    return false;
+  if (config2.default_agent !== DEFAULT_AGENT_NAME)
+    return false;
+  const permission = config2.permission;
+  return permission?.todowrite === "deny";
+}
+function stripJsoncComments(text) {
+  let out = "";
+  let inString = false;
+  let escaped = false;
+  for (let i = 0;i < text.length; i++) {
+    const c = text[i];
+    if (inString) {
+      out += c;
+      if (escaped)
+        escaped = false;
+      else if (c === "\\")
+        escaped = true;
+      else if (c === '"')
+        inString = false;
+      continue;
+    }
+    if (c === '"') {
+      inString = true;
+      out += c;
+      continue;
+    }
+    if (c === "/" && text[i + 1] === "/") {
+      while (i < text.length && text[i] !== `
+`)
+        i++;
+      out += `
+`;
+      continue;
+    }
+    if (c === "/" && text[i + 1] === "*") {
+      i += 2;
+      while (i < text.length && !(text[i] === "*" && text[i + 1] === "/"))
+        i++;
+      i++;
+      out += " ";
+      continue;
+    }
+    out += c;
+  }
+  return out.replace(/,\s*([}\]])/g, "$1");
+}
+async function readExistingConfig(dest) {
+  let raw = "";
+  try {
+    raw = await fs14.readFile(dest, "utf-8");
+  } catch {
+    return { config: {}, hadFile: false, backedUp: false };
+  }
+  try {
+    return { config: JSON.parse(raw), hadFile: true, backedUp: false };
+  } catch {
+    try {
+      const cleaned = stripJsoncComments(raw);
+      return { config: JSON.parse(cleaned), hadFile: true, backedUp: false };
+    } catch {
+      await fs14.rename(dest, `${dest}.bak`).catch(() => {});
+      return { config: {}, hadFile: false, backedUp: true };
+    }
+  }
+}
+async function mergeOpenCodeConfig(configDir, opts) {
+  const dest = path14.join(configDir, GLOBAL_OPENCODE_FILE);
+  const legacyDest = path14.join(configDir, LEGACY_OPENCODE_FILE);
+  const { config: existing, hadFile, backedUp } = await readExistingConfig(dest);
+  const { config: legacy } = await readExistingConfig(legacyDest);
+  const base = { ...legacy, ...existing };
+  const wantCompaction = opts?.compaction === true;
+  const compactionOff = base.compaction?.auto === false && base.compaction?.prune === false;
+  if (hadFile && hasGlobalTgoKeys(base) && (!wantCompaction || compactionOff)) {
+    return { action: "unchanged", configFile: dest };
+  }
+  const next = {
+    ...base,
+    default_agent: DEFAULT_AGENT_NAME,
+    subagent_depth: TGO_GLOBAL_KEYS.subagent_depth,
+    permission: {
+      ...base.permission ?? {},
+      todowrite: "deny"
+    }
+  };
+  if (wantCompaction) {
+    next.compaction = {
+      ...base.compaction ?? {},
+      auto: false,
+      prune: false
+    };
+  }
+  await fs14.mkdir(configDir, { recursive: true });
+  await fs14.writeFile(dest, `${JSON.stringify(next, null, 2)}
+`, "utf-8");
+  return { action: hadFile ? "merged" : "created", configFile: dest, backedUp };
 }
 async function mergeAgentsFragment(configDir) {
   const fragment = await loadAgentsFragment();
@@ -22011,13 +22317,190 @@ async function reconcileSeats(assetsAgentsDir, installedAgentsDir, log, _card = 
   return summary;
 }
 
+// src/magic-context.ts
+import * as fs22 from "node:fs/promises";
+import * as path23 from "node:path";
+import * as os4 from "node:os";
+var MAGIC_CONTEXT_CONFIG_DIR = path23.join(".config", "cortexkit");
+var MAGIC_CONTEXT_CONFIG_FILE = "magic-context.jsonc";
+async function ensureCompaction(configDir) {
+  if (!configDir)
+    return "skipped";
+  try {
+    const merged = await mergeOpenCodeConfig(configDir, { compaction: true });
+    return merged.action === "unchanged" ? "already-off" : "written";
+  } catch {
+    return "skipped";
+  }
+}
+async function configureMagicContext(opts) {
+  const userConfigDir = path23.join(opts.homeDir ?? os4.homedir(), MAGIC_CONTEXT_CONFIG_DIR);
+  const userConfig = path23.join(userConfigDir, MAGIC_CONTEXT_CONFIG_FILE);
+  if (opts.skip) {
+    return { action: "skipped", configFile: userConfig, historianModel: undefined, compaction: "skipped" };
+  }
+  const sync = opts.sync ?? "follow";
+  if (sync === "off") {
+    const compaction2 = await ensureCompaction(opts.configDir);
+    return { action: "skipped", configFile: userConfig, historianModel: undefined, compaction: compaction2 };
+  }
+  const dylanModel = typeof opts.dylan?.model === "string" && opts.dylan.model.length > 0 ? opts.dylan.model : undefined;
+  const dylanVariant = typeof opts.dylan?.variant === "string" && opts.dylan.variant.length > 0 ? opts.dylan.variant : undefined;
+  const hasDylanVariant = dylanVariant !== undefined;
+  if (!dylanModel) {
+    return { action: "skipped", configFile: userConfig, historianModel: undefined, compaction: "skipped" };
+  }
+  const { data: existing, warning: readWarning, parseError } = await readExisting(userConfig);
+  if (parseError) {
+    const compaction2 = await ensureCompaction(opts.configDir);
+    return {
+      action: "skipped",
+      configFile: userConfig,
+      historianModel: undefined,
+      compaction: compaction2,
+      ...readWarning ? { warning: readWarning } : {}
+    };
+  }
+  const existingHistorian = existing?.historian;
+  const hasAutoUpdate = existing !== undefined && Object.prototype.hasOwnProperty.call(existing, "auto_update");
+  const autoUpdateNeedsFill = !hasAutoUpdate;
+  const nested = existingHistorian?.opencode;
+  const hasNested = nested !== null && typeof nested === "object" && !Array.isArray(nested);
+  const hasFlatModel = typeof existingHistorian?.model === "string" && existingHistorian.model.length > 0;
+  let shape;
+  if (hasNested)
+    shape = "nested";
+  else if (hasFlatModel)
+    shape = "flat";
+  else
+    shape = "fresh";
+  let next;
+  let action = "unchanged";
+  let needsWrite = false;
+  if (shape === "nested") {
+    const curModel = typeof nested?.model === "string" ? nested.model : undefined;
+    const curVariant = typeof nested?.variant === "string" ? nested.variant : undefined;
+    const modelNeedsUpdate = curModel !== dylanModel;
+    const variantNeedsUpdate = hasDylanVariant && curVariant !== dylanVariant;
+    needsWrite = modelNeedsUpdate || variantNeedsUpdate || autoUpdateNeedsFill;
+    if (needsWrite) {
+      const nextOpencode = { ...nested };
+      nextOpencode.model = dylanModel;
+      if (hasDylanVariant) {
+        nextOpencode.variant = dylanVariant;
+      }
+      const nextHistorian = { ...existingHistorian, opencode: nextOpencode };
+      next = { ...existing ?? {}, historian: nextHistorian };
+      if (autoUpdateNeedsFill)
+        next.auto_update = true;
+      action = existing ? "updated" : "created";
+    } else {
+      next = existing;
+      action = "unchanged";
+    }
+  } else if (shape === "flat") {
+    const curModel = typeof existingHistorian?.model === "string" ? existingHistorian.model : undefined;
+    const curVariant = typeof existingHistorian?.variant === "string" ? existingHistorian.variant : undefined;
+    const modelNeedsUpdate = curModel !== dylanModel;
+    const variantNeedsUpdate = hasDylanVariant && curVariant !== dylanVariant;
+    needsWrite = modelNeedsUpdate || variantNeedsUpdate || autoUpdateNeedsFill;
+    if (needsWrite) {
+      const nextHistorian = { ...existingHistorian };
+      nextHistorian.model = dylanModel;
+      if (hasDylanVariant) {
+        nextHistorian.variant = dylanVariant;
+      }
+      next = { ...existing ?? {}, historian: nextHistorian };
+      if (autoUpdateNeedsFill)
+        next.auto_update = true;
+      action = existing ? "updated" : "created";
+    } else {
+      next = existing;
+      action = "unchanged";
+    }
+  } else {
+    needsWrite = true;
+    const nextOpencode = {};
+    nextOpencode.model = dylanModel;
+    if (hasDylanVariant)
+      nextOpencode.variant = dylanVariant;
+    const isExistingObject = typeof existing === "object" && existing !== null && !Array.isArray(existing);
+    const isHistorianObject = typeof existingHistorian === "object" && existingHistorian !== null && !Array.isArray(existingHistorian);
+    const safeExisting = isExistingObject ? existing : {};
+    const safeHistorian = isHistorianObject ? existingHistorian : {};
+    const nextHistorian = { ...safeHistorian, opencode: nextOpencode };
+    next = { ...safeExisting, historian: nextHistorian };
+    if (autoUpdateNeedsFill)
+      next.auto_update = true;
+    action = isExistingObject ? "updated" : "created";
+  }
+  if (!needsWrite) {
+    const compaction2 = await ensureCompaction(opts.configDir);
+    return {
+      action: "unchanged",
+      configFile: userConfig,
+      historianModel: dylanModel,
+      compaction: compaction2,
+      ...readWarning ? { warning: readWarning } : {}
+    };
+  }
+  await fs22.mkdir(userConfigDir, { recursive: true });
+  const tmpFile = `${userConfig}.tmp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const content = `${JSON.stringify(next, null, 2)}
+`;
+  await fs22.writeFile(tmpFile, content, "utf-8");
+  let writeWarning = readWarning;
+  try {
+    await fs22.rename(tmpFile, userConfig);
+  } catch {
+    try {
+      await fs22.copyFile(tmpFile, userConfig);
+      await fs22.unlink(tmpFile).catch(() => {});
+    } catch (copyErr) {
+      const msg = `magic-context atomic write fallback failed at ${userConfig}: ${String(copyErr)}`;
+      console.warn(msg);
+      writeWarning = writeWarning ? `${writeWarning}; ${msg}` : msg;
+      await fs22.unlink(tmpFile).catch(() => {});
+    }
+  }
+  const compaction = await ensureCompaction(opts.configDir);
+  return {
+    action,
+    configFile: userConfig,
+    historianModel: dylanModel,
+    compaction,
+    ...writeWarning ? { warning: writeWarning } : {}
+  };
+}
+async function readExisting(file2) {
+  let raw;
+  try {
+    raw = await fs22.readFile(file2, "utf-8");
+  } catch (err) {
+    const code = err?.code;
+    if (code === "ENOENT") {
+      return { data: undefined };
+    }
+    const msg = `magic-context config read error at ${file2}: ${String(err)} — skipping historian reconcile to preserve file`;
+    console.warn(msg);
+    return { data: undefined, warning: msg, parseError: true };
+  }
+  try {
+    return { data: JSON.parse(raw) };
+  } catch (parseErr) {
+    const msg = `magic-context config parse error at ${file2}: ${String(parseErr)} — skipping historian reconcile to preserve file`;
+    console.warn(msg);
+    return { data: undefined, warning: msg, parseError: true };
+  }
+}
+
 // src/plugin.ts
 init_runs();
 
 // src/manifest-hooks.ts
 init_def_snapshot();
-import * as fs22 from "node:fs/promises";
-import * as path23 from "node:path";
+import * as fs23 from "node:fs/promises";
+import * as path24 from "node:path";
 async function manifestOnDispatch(opts) {
   const { repoRoot, issueId, packet } = opts;
   if (!isValidBeadID(issueId))
@@ -22079,8 +22562,8 @@ function extractTouchedFilesFromReport(report) {
 }
 async function extractTouchedFilesFromRunLog(repoRoot, issueId) {
   try {
-    const target = path23.join(repoRoot, ".tgo", "runs", issueId + ".jsonl");
-    const raw = await fs22.readFile(target, "utf-8");
+    const target = path24.join(repoRoot, ".tgo", "runs", issueId + ".jsonl");
+    const raw = await fs23.readFile(target, "utf-8");
     const touched = [];
     for (const line2 of raw.split(`
 `)) {
@@ -22331,8 +22814,8 @@ GAPS: none`);
 }
 
 // src/plugin.ts
-import * as path24 from "node:path";
-import * as os4 from "node:os";
+import * as path25 from "node:path";
+import * as os5 from "node:os";
 import { fileURLToPath as fileURLToPath6 } from "node:url";
 var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => {
   const config2 = await loadTgoConfig(options);
@@ -22389,8 +22872,8 @@ var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => 
   const seatDir = resolveAgentsDir({ agentDir: config2.agentDir });
   (async () => {
     try {
-      const packageRoot3 = path24.resolve(path24.dirname(fileURLToPath6(import.meta.url)), "..");
-      const assetsAgentsDir = path24.join(packageRoot3, "assets", "agents");
+      const packageRoot3 = path25.resolve(path25.dirname(fileURLToPath6(import.meta.url)), "..");
+      const assetsAgentsDir = path25.join(packageRoot3, "assets", "agents");
       const summary = await reconcileSeats(assetsAgentsDir, seatDir, appLog, "default");
       if (summary.length > 0) {
         let version2 = "unknown";
@@ -22745,7 +23228,7 @@ var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => 
       try {
         const args = command.split(/\s+/);
         const proc = cwd ? $`${args}`.cwd(cwd) : $`${args}`;
-        const completed = await proc.env({ ...process.env, BD_NON_INTERACTIVE: "1", HOME: os4.homedir() }).nothrow();
+        const completed = await proc.env({ ...process.env, BD_NON_INTERACTIVE: "1", HOME: os5.homedir() }).nothrow();
         return {
           exitCode: completed.exitCode,
           stdout: completed.stdout.toString(),
@@ -23164,11 +23647,28 @@ var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => 
       const active = resolveActivePreset(config2, await readPresetNudge(runBd, appLog));
       const applied = applyPreset({ agent: input.agent }, active, config2.presets);
       appLog("info", `preset "${active}" applied to ${applied.length ? applied.join(", ") : "no seats"}`);
+      try {
+        const sync = config2.magicContext.historianSync;
+        if (sync !== "off") {
+          const dylanSeat = config2.presets?.[active]?.dylan;
+          if (dylanSeat?.model) {
+            const mcResult = await configureMagicContext({
+              dylan: { model: dylanSeat.model, variant: dylanSeat.variant },
+              sync
+            });
+            if (mcResult.action !== "skipped") {
+              appLog("info", `magic-context historian ${mcResult.action} → ${mcResult.configFile} (model: ${mcResult.historianModel ?? "none"})`);
+            }
+          }
+        }
+      } catch (err) {
+        safeWarn(appLog, "tgo: magic-context historian sync failed", { error: String(err) });
+      }
       const worktreeRoot = resolveWorktreeFamily(project?.worktree, worktree, directory);
       const nextPermission = preapproveExternalDirectory(input.permission, worktreeRoot);
       if (nextPermission && Object.keys(nextPermission).length > 0) {
         input.permission = nextPermission;
-        const parent = worktreeRoot ? path24.dirname(worktreeRoot) : undefined;
+        const parent = worktreeRoot ? path25.dirname(worktreeRoot) : undefined;
         appLog("info", `pre-approved external_directory for worktree family ${parent}/*`, {
           worktreeRoot,
           projectWorktree: project?.worktree ?? null,
@@ -23535,7 +24035,7 @@ ${truncated}`, synthetic: true }] }
             let seatFileFound = false;
             try {
               const seatDir2 = resolveAgentsDir({ agentDir: config2.agentDir });
-              const p = path24.join(seatDir2, `${seatName}.md`);
+              const p = path25.join(seatDir2, `${seatName}.md`);
               try {
                 const fsMod = await import("node:fs/promises");
                 seatFrontmatter = await fsMod.readFile(p, "utf-8");
@@ -23832,8 +24332,10 @@ ${truncated}`, synthetic: true }] }
           }
         }
       } catch {}
+      let parsedForFit;
       if (input.tool === "task" && typeof output?.output === "string") {
         let report = parseTaskReport(output.output);
+        parsedForFit = report;
         if (output && typeof output === "object") {
           const metadata = output.metadata && typeof output.metadata === "object" ? output.metadata : {};
           let effectiveArgsForManifest;
@@ -23927,8 +24429,9 @@ ${truncated}`, synthetic: true }] }
             raw: report.raw
           });
         }
+        parsedForFit = report;
       }
-      await fit.normalize(input, output);
+      await fit.normalize(input, output, parsedForFit);
     },
     "experimental.chat.messages.transform": async (_input, output) => {
       try {

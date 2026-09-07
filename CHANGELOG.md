@@ -2,6 +2,16 @@
 
 All notable changes to TGO, in reverse chronological order. Versions track `plugin/package.json`.
 
+## [0.5.0] - 2026-09-06
+
+- **All-Spark presets (muse-spark-1.3-contributor):** cheap = balanced = all six seats `muse-spark-1.3-contributor` xhigh (226,600/mo cap); frontier = `glm-5.3` max / `kimi-k3` max / `grok-4.6` xhigh / Spark 1.3 xhigh ×3.
+- **Magic-context historian always follows active preset Dylan (model + variant):** `magicContext.historianSync: follow` (default) reconciles `~/.config/cortexkit/magic-context.jsonc` on every startup/install; `off` never touches historian (compaction stays installer-managed).
+- **Dependency self-update defaults:** `auto_update` fill-if-absent for `@cortexkit/opencode-magic-context` and `@cortexkit/aft-opencode` (never clobbers `false`); exact version pins auto-fixed to `@latest` on install/plugin registration (partial pins/ranges untouched).
+- **Installer pre-flight:** platform gate (macOS/Linux/Windows) + validate-before-write; `--skip-validation` bypasses validation, platform gate still enforced; no files written on pre-flight failure.
+- **Failure-type routing signals:** six failure types (build/test/dependency/deploy/env/watchdog) classified in `fit.ts` feed reroute vs retry.
+- **Committed prompt-assembly baseline guard:** `plugin/test/fixtures/prompt-baseline.json` stores section order + stable hashes; refresh with `UPDATE_PROMPT_BASELINE=1 bun test plugin/test/prompt-baseline.test.ts` (see `docs/SETUP.md`).
+- **Docs sweep + cleanup:** preset tables and variant-support rows refreshed to 1.3, version strings 0.4.0 → 0.5.0 where shipping, short mentions of pre-flight/failure-type/baseline added where features are enumerated; removed `docs/validation/voice-cards/README-normal.md`, `README-conversational.md`, `README-prose.md` (kept `README-default.md`) and dropped `docs/WORKS-WELL-WITH.md` plus compatibility sections/links.
+
 ## [0.4.1] - 2026-09-03
 
 - **Docs-only release published to refresh the npm package page — no source changes (`plugin/src/**` and `plugin/dist/**` unchanged from 0.4.0):** living docs refreshed to the voice-cards model (README + plugin mirror, CONTEXT, CONCISION, ARCHITECTURE, ROSTER, SETUP, CONTRIBUTING now describe `style.card` / always-on default card / rule packs / findings-targeted nudges); four-voice README validation PoC added at `docs/validation/voice-cards/` (normal/default/conversational/prose, generated under byte-exact renderer payloads); npm version badge now dynamic (`img.shields.io/npm/v/...`) instead of hand-bumped.
