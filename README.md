@@ -36,7 +36,7 @@ One npm package exposes both via dual-package exports since v0.1.5 (`exports "./
 If you prefer to wire it by hand, this also works in `opencode.jsonc`:
 
 ```json
-{ "plugin": ["trans-genderian-orchestra@0.5.0"] }
+{ "plugin": ["trans-genderian-orchestra@0.5.1"] }
 ```
 
 Restart opencode after it installs. That’s the global layer done.
@@ -106,6 +106,10 @@ The Background Job Board is the view that follows you through all of this. Each 
 - **Progress files** — per-issue `.tgo/<issueId>/progress.md` (Objective / Touch set / Decisions / Blockers / Status) written by Dylan, read by Bernstein/Horowitz; survives session end.
 - **Termination conditions** — composable completion detection stops post-completion waffle and hands the report back.
 - **Failure-type routing** — six signals (build/test/dependency/deploy/env/watchdog) classify failures to guide reroute vs retry.
+
+## What's new in 0.5.1
+
+TGO 0.5.1 restores Bernstein delegation on opencode 1.18.29 — the host drops the `task` tool from manifests of custom agents carrying nested `task` permission maps, so all seats now use flat `task: allow/deny` and lane discipline (`bernstein`→4 seats, `dylan`/`horowitz`→explore, `nirvana`→3 lenses, `nas`/lenses→none) is enforced in code (`validateLaneAllowance`, fail-open on unknown callers). The five delegating seats also carry an anti-simulation rule: with no `task` tool, report STATUS blocked instead of fabulating a subordinate report.
 
 ## What's new in 0.5.0
 

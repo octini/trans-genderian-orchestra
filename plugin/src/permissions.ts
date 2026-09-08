@@ -97,6 +97,8 @@ export interface PermissionGraphReport {
   bashAllowed: string[];
   taskDenyAll: boolean;
   taskAllowed: string[];
+  taskFlatAllow: boolean;
+  taskFlatDeny: boolean;
   skillDenyAll: boolean;
   skillAllowed: string[];
   todowriteDenied: boolean;
@@ -119,6 +121,8 @@ export function reportSeat(
     bashAllowed: allowedPatterns(p.bash),
     taskDenyAll: hasCatchAllDeny(p.task),
     taskAllowed: allowedPatterns(p.task),
+    taskFlatAllow: p.task === "allow",
+    taskFlatDeny: p.task === "deny",
     skillDenyAll: hasCatchAllDeny(p.skill),
     skillAllowed: allowedPatterns(p.skill),
     todowriteDenied: allDenied || p.todowrite === "deny",

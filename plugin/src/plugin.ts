@@ -11,7 +11,7 @@ import { SetupController } from "./setup";
 import { preapproveExternalDirectory, resolveWorktreeFamily } from "./permissions";
 import { DEPENDENCIES, installMissing, runShellCommand } from "./deps";
 import { applyPreset, readPresetNudge, resolveActivePreset, resolveSeatModels } from "./presets";
-import { validateDelegationBoundary, validateDelegationPacket, verifyClaimObserved as verifyDelegationClaimObserved, isDelegationStyle, delegationStyleToVoiceCardId, type DelegationStyle } from "./delegation";
+import { validateDelegationBoundary, validateDelegationPacket, verifyClaimObserved as verifyDelegationClaimObserved, isDelegationStyle, delegationStyleToVoiceCardId, validateLaneAllowance, formatLaneViolation, type DelegationStyle } from "./delegation";
 import type { VoiceCardId } from "./voices";
 import { captureDelegationSession, probeSessionReuseCapability, persistAbortHandback, loadSessionMap } from "./session-reuse";
 import { ensureDefSnapshot, isValidBeadID, assertValidBeadID } from "./def-snapshot";
@@ -1302,6 +1302,23 @@ export const TgoPlugin: Plugin = async (
         }
       }
       if (manifestRefusal) throw new Error(manifestRefusal);
+      // Lane enforcement — host-agnostic, replaces frontmatter task scoping
+      // (nested task maps drop the tool from 1.18.29 manifests, so seats
+      // carry flat task allow/deny and this table is the discipline).
+      if (input.tool === "task") {
+        const callerSeat = board.shimState.agents.get(input.sessionID);
+        const rawSub = (output?.args as Record<string, unknown> | undefined)?.subagent_type;
+        const subagent = typeof rawSub === "string" ? rawSub.trim() : "";
+        if (!callerSeat) {
+          safeWarn(appLog, `tgo: lane check fail-open — unknown caller session spawning ${subagent || "(unknown subagent)"}`, { sessionID: input.sessionID });
+        } else {
+          const verdict = validateLaneAllowance(callerSeat, subagent);
+          if (verdict.knownCaller && !verdict.allowed) {
+            appLog("warn", `tgo: lane violation blocked`, { caller: callerSeat, subagent });
+            throw new Error(formatLaneViolation(callerSeat, subagent, verdict.lane));
+          }
+        }
+      }
       // tgo-wpl: hard gate on spawn depth + cycle — AFTER soft shaping (rewrite/filter precedes deny).
       // Host-side throw, not prompt-honor: a model cannot bypass depth/cycle refusal.
       if (input.tool === "task" && config.recursion?.enabled !== false) {

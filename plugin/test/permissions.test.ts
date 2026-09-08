@@ -34,14 +34,14 @@ describe("frontmatter parsing", () => {
     expect(p["ast_grep_*"]).toBe("allow");
   });
 
-  test("parses object rules for bash/task", () => {
+  test("parses object rules for bash, flat task", () => {
     const p = parseSeatPermission(seat("bernstein"));
     const bash = p.bash as Record<string, string>;
     expect(bash["*"]).toBe("deny");
     expect(bash["bd *"]).toBeUndefined();
-    const task = p.task as Record<string, string>;
-    expect(task["*"]).toBe("deny");
-    expect(task.dylan).toBe("allow");
+    // Flat task form only: nested task maps drop the tool from host
+    // manifests (1.18.29) — lane discipline lives in validateLaneAllowance.
+    expect(p.task).toBe("allow");
   });
 });
 
@@ -87,10 +87,9 @@ describe("permission graph — named seats", () => {
     // surfaces. Read-only shell glue is intentional for compound verification
     // commands; it does not grant Bernstein the direct grep/glob/list tools.
     expect(r.bashAllowed).toEqual(expect.arrayContaining(["grep *", "rg *", "find *"]));
-    expect(r.taskAllowed).toEqual(
-      expect.arrayContaining(["horowitz", "nas", "dylan", "nirvana"])
-    );
-    expect(r.taskAllowed).not.toContain("general");
+    // Flat allow at the manifest layer; who-may-spawn-whom is enforced by
+    // validateLaneAllowance (lane.test.ts), not frontmatter nesting.
+    expect(parseSeatPermission(await readSeatContent(agentsDir, "bernstein")).task).toBe("allow");
   });
 
   test("Bernstein's direct search/listing boundary is distinct from bash inspection", async () => {
@@ -123,7 +122,7 @@ describe("permission graph — named seats", () => {
     expect(r.bashAllowed).toEqual(
       expect.arrayContaining(["git log*", "git show*", "git status*"])
     );
-    expect(r.taskAllowed).toEqual(["explore"]);
+    expect(parseSeatPermission(await readSeatContent(agentsDir, "horowitz")).task).toBe("allow");
   });
 
   test("nas: denies edit/bash/task entirely, allows context7 + MC recall", async () => {
@@ -141,7 +140,7 @@ describe("permission graph — named seats", () => {
     expect(r.bashAllowed).toEqual(
       expect.arrayContaining(["git log*", "git show*", "git status*"])
     );
-    expect(r.taskAllowed).toEqual(["explore"]);
+    expect(parseSeatPermission(await readSeatContent(agentsDir, "horowitz")).task).toBe("allow");
   });
 
   test("horowitz allowlist covers compound read-only segments (git rev-parse/merge-base, echo)", async () => {
@@ -308,7 +307,7 @@ describe("permission graph — named seats", () => {
     expect(r.toolAllowPrefixes).toEqual(
       expect.arrayContaining(["aft_*", "ast_grep_*", "context7_*", "ctx_*"])
     );
-    expect(r.taskAllowed).toEqual(["explore"]);
+    expect(parseSeatPermission(await readSeatContent(agentsDir, "dylan")).task).toBe("allow");
   });
 
   test("MC recall granted to all named seats (ctx_* allow)", async () => {
@@ -383,9 +382,8 @@ describe("permission graph — named seats", () => {
 describe("permission graph — tool-less seats", () => {
   const toolLess = ["nirvana", "cobain", "grohl", "novoselic"] as const;
 
-  test("nirvana delegates only to its band members", async () => {
-    const r = reportSeat("nirvana", await readSeatContent(agentsDir, "nirvana"));
-    expect(r.taskAllowed).toEqual(["cobain", "grohl", "novoselic"]);
+  test("nirvana carries flat task allow (lane table scopes it to band members)", async () => {
+    expect(parseSeatPermission(await readSeatContent(agentsDir, "nirvana")).task).toBe("allow");
   });
 
   test("band members are fully tool-less", async () => {

@@ -305,6 +305,57 @@ export function filterFilesByManifestScope(files: string[], scope: readonly stri
   return { kept, stripped };
 }
 
+// Lane allowance — host-agnostic delegation discipline enforced in code.
+// Seat frontmatter uses flat task allow/deny only: nested task maps
+// ({"*": deny, …}) drop the task tool from manifests of sessions born as
+// custom agents on opencode 1.18.29, so this table (not frontmatter scoping)
+// is the single source of truth for who may spawn whom. It mirrors the
+// pre-1.18.29 frontmatter grants exactly: bernstein→4 seats, dylan/horowitz→
+// explore, nirvana→3 lenses, nas/lenses→none.
+export const LANE_ALLOWANCE: Record<string, readonly string[]> = {
+  bernstein: ["dylan", "nas", "horowitz", "nirvana"],
+  dylan: ["explore"],
+  horowitz: ["explore"],
+  nirvana: ["cobain", "grohl", "novoselic"],
+  nas: [],
+  cobain: [],
+  grohl: [],
+  novoselic: [],
+};
+
+export interface LaneAllowanceVerdict {
+  /** False only for a known TGO seat spawning outside its lane. */
+  allowed: boolean;
+  /** False for non-TGO callers (build/explore/general/…) — bypass, not a lane. */
+  knownCaller: boolean;
+  /** The caller's lane (empty for unknown callers). */
+  lane: readonly string[];
+}
+
+/**
+ * Pure table-driven lane check — no I/O, no logging; the hook logs.
+ * Unknown callers fail OPEN (bypass): the lesson of the 1.18.29 incident is
+ * that an unresolvable seat must never wedge orchestration. A known caller
+ * with an empty subagent_type also fails open — the downstream
+ * host-authoritative seat resolution reports that case precisely.
+ */
+export function validateLaneAllowance(callerSeat: unknown, subagentType: unknown): LaneAllowanceVerdict {
+  const caller = typeof callerSeat === "string" ? callerSeat.trim() : "";
+  const sub = typeof subagentType === "string" ? subagentType.trim() : "";
+  const lane: readonly string[] | undefined =
+    caller !== "" && Object.prototype.hasOwnProperty.call(LANE_ALLOWANCE, caller)
+      ? LANE_ALLOWANCE[caller]
+      : undefined;
+  if (!lane) return { allowed: true, knownCaller: false, lane: [] };
+  if (sub === "") return { allowed: true, knownCaller: true, lane };
+  return { allowed: lane.includes(sub), knownCaller: true, lane };
+}
+
+/** Distinct from the recursion gate's "Delegation blocked:" prefix. */
+export function formatLaneViolation(callerSeat: string, subagentType: string, lane: readonly string[]): string {
+  return `Lane violation: ${callerSeat} may not spawn ${subagentType} (lane: ${callerSeat}→[${lane.join(", ")}])`;
+}
+
 /** Validate structured task arguments at the plugin's task boundary. */
 export function validateDelegationBoundary(args: unknown): DelegationValidation | undefined {
   if (!args || typeof args !== "object") return undefined;

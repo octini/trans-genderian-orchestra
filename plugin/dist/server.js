@@ -19210,6 +19210,29 @@ function validateDelegationPacket(routing, packet, routedTouchSet) {
     diagnostics
   };
 }
+var LANE_ALLOWANCE = {
+  bernstein: ["dylan", "nas", "horowitz", "nirvana"],
+  dylan: ["explore"],
+  horowitz: ["explore"],
+  nirvana: ["cobain", "grohl", "novoselic"],
+  nas: [],
+  cobain: [],
+  grohl: [],
+  novoselic: []
+};
+function validateLaneAllowance(callerSeat, subagentType) {
+  const caller = typeof callerSeat === "string" ? callerSeat.trim() : "";
+  const sub = typeof subagentType === "string" ? subagentType.trim() : "";
+  const lane = caller !== "" && Object.prototype.hasOwnProperty.call(LANE_ALLOWANCE, caller) ? LANE_ALLOWANCE[caller] : undefined;
+  if (!lane)
+    return { allowed: true, knownCaller: false, lane: [] };
+  if (sub === "")
+    return { allowed: true, knownCaller: true, lane };
+  return { allowed: lane.includes(sub), knownCaller: true, lane };
+}
+function formatLaneViolation(callerSeat, subagentType, lane) {
+  return `Lane violation: ${callerSeat} may not spawn ${subagentType} (lane: ${callerSeat}→[${lane.join(", ")}])`;
+}
 function validateDelegationBoundary(args) {
   if (!args || typeof args !== "object")
     return;
@@ -23966,6 +23989,20 @@ ${truncated}`, synthetic: true }] }
       }
       if (manifestRefusal)
         throw new Error(manifestRefusal);
+      if (input.tool === "task") {
+        const callerSeat = board.shimState.agents.get(input.sessionID);
+        const rawSub = output?.args?.subagent_type;
+        const subagent = typeof rawSub === "string" ? rawSub.trim() : "";
+        if (!callerSeat) {
+          safeWarn(appLog, `tgo: lane check fail-open — unknown caller session spawning ${subagent || "(unknown subagent)"}`, { sessionID: input.sessionID });
+        } else {
+          const verdict = validateLaneAllowance(callerSeat, subagent);
+          if (verdict.knownCaller && !verdict.allowed) {
+            appLog("warn", `tgo: lane violation blocked`, { caller: callerSeat, subagent });
+            throw new Error(formatLaneViolation(callerSeat, subagent, verdict.lane));
+          }
+        }
+      }
       if (input.tool === "task" && config2.recursion?.enabled !== false) {
         try {
           const rawRec = output?.args;

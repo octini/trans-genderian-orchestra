@@ -2,6 +2,12 @@
 
 All notable changes to TGO, in reverse chronological order. Versions track `plugin/package.json`.
 
+## [0.5.1] - 2026-09-08
+
+- **Bernstein delegation restored on opencode 1.18.29 (the host drops `task` from manifests of sessions born as custom agents carrying nested `task` maps):** all seat frontmatter flattened (`bernstein`/`dylan`/`horowitz`/`nirvana` → `task: allow`; `nas` stays `task: deny`; lenses gain explicit `task: deny`) and lane discipline moved into code — pure table-driven `validateLaneAllowance(callerSeat, subagentType)` enforced in `tool.execute.before` beside the recursion gate (unknown callers fail open; violations throw `Lane violation: …`, distinct from the recursion gate's `Delegation blocked:`). Lane table mirrors the pre-1.18.29 grants exactly (`bernstein`→4 seats, `dylan`/`horowitz`→explore, `nirvana`→3 lenses, `nas`/lenses→none).
+- **Anti-simulation rule in all five delegating seats:** with no `task` tool, delegation is impossible — report STATUS blocked and stop; a subordinate report without a completed task call is fabrication.
+- **Gates:** `bun test` 1117 pass / 0 fail, `bunx tsc --noEmit` clean, `bun run validate` clean, prompt baseline refreshed (`UPDATE_PROMPT_BASELINE=1`).
+
 ## [0.5.0] - 2026-09-06
 
 - **All-Spark presets (muse-spark-1.3-contributor):** cheap = balanced = all six seats `muse-spark-1.3-contributor` xhigh (226,600/mo cap); frontier = `glm-5.3` max / `kimi-k3` max / `grok-4.6` xhigh / Spark 1.3 xhigh ×3.

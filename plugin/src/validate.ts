@@ -5,6 +5,7 @@ import { estimatePromptTokens, loadTgoConfig, MAX_PROMPT_TOKENS, tgoConfigSchema
 import { renderSeats } from "./build";
 import { readSeatContent, reportSeat } from "./permissions";
 import { rulePackSchema, voiceCardSchema } from "./voices";
+import { validateLaneAllowance, LANE_ALLOWANCE } from "./delegation";
 
 const packageRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -152,7 +153,13 @@ export async function validatePermissionGraph(): Promise<void> {
     if (seat !== "dylan" && !r.bashDenyAll) {
       problems.push("bash must carry a catch-all '*' deny");
     }
-    if (!r.taskDenyAll) problems.push("task must carry a catch-all '*' deny");
+    // Flat task form only: nested task maps drop the tool from host
+    // manifests (1.18.29) — lane discipline lives in validateLaneAllowance.
+    if (seat === "nas") {
+      if (!r.taskFlatDeny) problems.push("task must be flat deny");
+    } else if (!r.taskFlatAllow) {
+      problems.push("task must be flat allow");
+    }
     if (!r.todowriteDenied) problems.push("must deny todowrite");
     if (seat === "bernstein" && !r.readAllowed) problems.push("must allow read");
     if (problems.length > 0) {
@@ -167,24 +174,27 @@ export async function validatePermissionGraph(): Promise<void> {
     }
   }
 
+  // Lane relations are enforced by validateLaneAllowance (delegation.ts) —
+  // validate the table here, not frontmatter nesting.
+  if (!validateLaneAllowance("bernstein", "nirvana").allowed) {
+    throw new Error("permission graph: bernstein lane must include nirvana");
+  }
   const nirvana = reportSeat("nirvana", await readSeatContent(agentsDir, "nirvana"));
+  if (!nirvana.taskFlatAllow) {
+    throw new Error("permission graph: nirvana task must be flat allow");
+  }
   const bandMembers = ["cobain", "grohl", "novoselic"];
   for (const lens of bandMembers) {
-    if (!nirvana.taskAllowed.includes(lens)) {
-      throw new Error(`permission graph: nirvana must be able to task band member ${lens}`);
+    if (!validateLaneAllowance("nirvana", lens).allowed) {
+      throw new Error(`permission graph: nirvana lane must include band member ${lens}`);
     }
     const lensReport = reportSeat(lens, await readSeatContent(agentsDir, lens));
-    if (!lensReport.allToolsDenied || lensReport.taskAllowed.length > 0) {
-      throw new Error(`permission graph: band member ${lens} must be fully tool-less`);
+    if (!lensReport.allToolsDenied || lensReport.toolAllowPrefixes.length > 0 || !lensReport.taskFlatDeny) {
+      throw new Error(`permission graph: band member ${lens} must be fully tool-less with flat task deny`);
     }
   }
-  if (nirvana.taskAllowed.length !== bandMembers.length) {
-    throw new Error(`permission graph: nirvana must task exactly its ${bandMembers.length} band members`);
-  }
-
-  const bernstein = reportSeat("bernstein", await readSeatContent(agentsDir, "bernstein"));
-  if (!bernstein.taskAllowed.includes("nirvana")) {
-    throw new Error("permission graph: bernstein must be able to task nirvana");
+  if (LANE_ALLOWANCE.nirvana.length !== bandMembers.length) {
+    throw new Error(`permission graph: nirvana lane must be exactly its ${bandMembers.length} band members`);
   }
 }
 

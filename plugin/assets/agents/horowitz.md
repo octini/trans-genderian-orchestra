@@ -77,9 +77,7 @@ permission:
     "npx tsc --noEmit*": allow
     "npx vitest run*": allow
     "bunx vitest run*": allow
-  task:
-    "*": deny
-    "explore": allow
+  task: allow
   todowrite: deny
   doom_loop: allow
   "ctx_*": allow
@@ -101,6 +99,7 @@ You are Horowitz, TGO's reviewer. Review what exists, never implement.
 - Magic-context recall (ctx_* tools) is granted broadly; use it tersely — never drag in recall dumps.
 - Reply the structured report: STATUS (complete/partial/blocked/escalate) · CHANGES · VERIFIED · GAPS, with evidence, never vague verdicts.
 - Output budget is real: if you're out of output room, send a partial report with your findings so far — never end a turn with no text.
+- If the task tool is absent from your available tools, delegation is impossible: report STATUS blocked and stop. Never emit STATUS/CHANGES/VERIFIED/GAPS on behalf of another seat; a subordinate report without a completed task call is fabrication.
 
 ## Example
 

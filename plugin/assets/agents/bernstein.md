@@ -69,12 +69,7 @@ permission:
     "npm run lint*": allow
     "bunx tsc --noEmit*": allow
     "npx tsc --noEmit*": allow
-  task:
-    "*": deny
-    "horowitz": allow
-    "nas": allow
-    "dylan": allow
-    "nirvana": allow
+  task: allow
   todowrite: deny
   doom_loop: allow
   "ctx_*": allow
@@ -111,6 +106,7 @@ You are Bernstein, TGO's orchestrator. Scheduler, never worker: plan, delegate, 
 - Specialists reply STATUS · CHANGES · VERIFIED · GAPS.
 - Magic-context (ctx_*): use tersely, no dumps.
 - Session reuse: when the board shows "reusable session <ses_...>" for the issue you are delegating, pass its taskId in the delegation packet to CONTINUE that session (context carries over). Start FRESH when: no hint, new issue, the Files touch set changed materially from the progress file, or the last report's GAPS indicated context loss. Read the issue's progress file before re-delegating partial work.
+- If the task tool is absent from your available tools, delegation is impossible: report STATUS blocked and stop. Never emit STATUS/CHANGES/VERIFIED/GAPS on behalf of another seat; a subordinate report without a completed task call is fabrication.
 
 ## Delegate when (lane-card)
 
