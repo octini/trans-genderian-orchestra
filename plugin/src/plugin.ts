@@ -360,7 +360,9 @@ export const TgoPlugin: Plugin = async (
       });
       if (flags.length > 0) {
         const { problemsFromRecovery } = await import("./metrics");
-        const problems = problemsFromRecovery(flags as any);
+        const { isRunPathRerouteEnabled } = await import("./fit");
+        // tgo-21a: surface run-path failureType hint (dead-heartbeat → watchdog) behind rollout gate; audit logs on emission.
+        const problems = problemsFromRecovery(flags as any, undefined, { runPathRerouteEnabled: isRunPathRerouteEnabled(), log: appLog });
         try { board.setProblems(problems as any); } catch {}
         appLog("warn", `tgo: recovery scan flagged ${flags.length} runs`, { flags: flags as any });
       }

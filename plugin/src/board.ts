@@ -713,6 +713,7 @@ export class BoardController {
             scanRunsForProblems(repoRootForProblems, { now, heartbeatThresholdMs: this.runsConfig?.heartbeatThresholdMs }).catch(() => []),
           ]);
           const { problemsFromRecovery } = await import("./metrics");
+          const { isRunPathRerouteEnabled } = await import("./fit");
           // F5: wire watchdog problems via watchdogGetter
           let watchdogProblems: Array<{ sessionID: string; issueId?: string; state: import("./metrics").ProblemState; reason: string }> | undefined;
           // F2: only flag actual watchdog problems (idle/stuck/aborted), not every busy
@@ -732,7 +733,8 @@ export class BoardController {
               }
             } catch {}
           }
-          const derived = problemsFromRecovery(recovery as any, watchdogProblems as any);
+          // tgo-21a: run-path RecoveryFlag → failureType hint (dead-heartbeat → watchdog) behind rollout gate; audit logs on emission. Dedupe keys + full-replacement unchanged.
+          const derived = problemsFromRecovery(recovery as any, watchdogProblems as any, { runPathRerouteEnabled: isRunPathRerouteEnabled(), log: this.log });
           // F3 file-derived = full replacement each scan (no merge-back), watchdog recomputed fresh, union is cache
           // F6 dedup by runId+state (replace-not-append) is handled via Map, stale dropped by not re-adding missing cache entries
           const dedup = new Map<string, ProblemEntry>();

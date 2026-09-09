@@ -15,6 +15,9 @@ import {
   FAILURE_TYPE_LABELS,
   failureRerouteSignal,
   type FailureType,
+  RECOVERY_REASON_TO_FAILURE_TYPE,
+  classifyRecoveryReason,
+  isRunPathRerouteEnabled,
 } from "../src/fit";
 
 function taskOutput(text: string): TaskFitOutput {
@@ -466,6 +469,66 @@ describe("classifyFailureType — failure-type routing signals (tgo-bf6)", () =>
       expect(FAILURE_TYPE_LABELS[t]).toBeDefined();
       for (const re of FAILURE_TYPE_PATTERNS[t]) expect(re).toBeInstanceOf(RegExp);
     }
+  });
+});
+
+describe("classifyFailureType — run-path RecoveryFlag fast-path (tgo-21a)", () => {
+  test("reason table: dead-heartbeat → watchdog, suspended/aborted → unclassified", () => {
+    expect(RECOVERY_REASON_TO_FAILURE_TYPE["dead-heartbeat"]).toBe("watchdog");
+    expect(RECOVERY_REASON_TO_FAILURE_TYPE["suspended"]).toBe("unclassified");
+    expect(RECOVERY_REASON_TO_FAILURE_TYPE["aborted"]).toBe("unclassified");
+  });
+
+  test("classifyRecoveryReason maps table, unknown/missing → unclassified", () => {
+    expect(classifyRecoveryReason("dead-heartbeat")).toBe("watchdog");
+    expect(classifyRecoveryReason("suspended")).toBe("unclassified");
+    expect(classifyRecoveryReason("aborted")).toBe("unclassified");
+    expect(classifyRecoveryReason("unknown-reason")).toBe("unclassified");
+    expect(classifyRecoveryReason(undefined)).toBe("unclassified");
+    expect(classifyRecoveryReason(null)).toBe("unclassified");
+  });
+
+  test("dead-heartbeat RecoveryFlag classifies watchdog with hint", () => {
+    const flag = { runId: "tgo-x.1", issueId: "tgo-x.1", reason: "dead-heartbeat", hasAwaitJson: false, hasTerminalStatus: false, lastHeartbeat: 2000 };
+    expect(classifyFailureType(flag)).toBe("watchdog");
+    expect(FAILURE_TYPE_HINTS.watchdog).toBeDefined();
+  });
+
+  test("suspended RecoveryFlag does NOT collapse to watchdog", () => {
+    const flag = { runId: "tgo-x.1", issueId: "tgo-x.1", reason: "suspended", hasAwaitJson: true, hasTerminalStatus: false, lastHeartbeat: 1000 };
+    expect(classifyFailureType(flag)).toBe("unclassified");
+    expect(classifyFailureType(flag)).not.toBe("watchdog");
+  });
+
+  test("aborted RecoveryFlag does NOT collapse to watchdog (preserves aborted semantics)", () => {
+    const flag = { runId: "tgo-x.1", issueId: "tgo-x.1", reason: "aborted", hasAwaitJson: false, hasTerminalStatus: true, lastHeartbeat: 1000 };
+    expect(classifyFailureType(flag)).toBe("unclassified");
+    expect(classifyFailureType(flag)).not.toBe("watchdog");
+  });
+
+  test("unknown/missing reason on RecoveryFlag shape → unclassified", () => {
+    expect(classifyFailureType({ runId: "tgo-x.1", issueId: "tgo-x.1", reason: "bogus", hasAwaitJson: false, hasTerminalStatus: false })).toBe("unclassified");
+    expect(classifyFailureType({ runId: "tgo-x.1", hasAwaitJson: false, hasTerminalStatus: false })).toBe("unclassified");
+    expect(classifyFailureType({ runId: "tgo-x.1", issueId: "tgo-x.1", reason: null, hasAwaitJson: false, hasTerminalStatus: false })).toBe("unclassified");
+  });
+
+  test("generic reason objects without RecoveryFlag markers still use text matching", () => {
+    // No runId/hasAwaitJson/hasTerminalStatus/issueId markers → falls through to pattern match
+    expect(classifyFailureType({ reason: "watchdog abort: idle" })).toBe("watchdog");
+    expect(classifyFailureType({ reason: "build failed: error TS2304" })).toBe("build");
+  });
+
+  test("RunEvent-like shapes with issueId but no runId still classify via text (no fast-path capture)", () => {
+    expect(classifyFailureType({ note: "watchdog abort: idle", tool: "task", issueId: "tgo-1" })).toBe("watchdog");
+  });
+
+  test("isRunPathRerouteEnabled: default on, kill switch off", () => {
+    expect(isRunPathRerouteEnabled({} as any)).toBe(true);
+    expect(isRunPathRerouteEnabled({ TGO_RUN_PATH_REROUTE: "1" } as any)).toBe(true);
+    expect(isRunPathRerouteEnabled({ TGO_RUN_PATH_REROUTE: "0" } as any)).toBe(false);
+    expect(isRunPathRerouteEnabled({ TGO_RUN_PATH_REROUTE: "false" } as any)).toBe(false);
+    expect(isRunPathRerouteEnabled({ TGO_RUN_PATH_REROUTE_KILL: "1" } as any)).toBe(false);
+    expect(isRunPathRerouteEnabled({ TGO_DISABLE_RUN_PATH_REROUTE: "1" } as any)).toBe(false);
   });
 });
 

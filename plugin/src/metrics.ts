@@ -2,6 +2,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { safeWarn } from "./config";
 import { SEATS } from "./config";
+import { FAILURE_TYPE_HINTS, classifyFailureType, isRunPathRerouteEnabled, type FailureType } from "./fit";
 
 export interface SeatMetrics {
   queueDepth: number;
@@ -198,6 +199,17 @@ export interface ProblemEntry {
   state: ProblemState;
   reason: string;
   lastTs?: number;
+  /** Run-path failure classification (tgo-21a, dead-heartbeat → watchdog only). */
+  failureType?: FailureType;
+  /** FAILURE_TYPE_HINTS text for the failureType, surfaced alongside reason. */
+  hint?: string;
+}
+
+export interface ProblemsFromRecoveryOptions {
+  /** Rollout gate override; defaults to isRunPathRerouteEnabled() env check. */
+  runPathRerouteEnabled?: boolean;
+  /** Audit log — called when a run-path reroute signal is emitted. */
+  log?: (level: "warn" | "info" | "error", message: string, extra?: Record<string, unknown>) => void;
 }
 
 export function buildProblemsSection(problems: ProblemEntry[]): string | undefined {
@@ -216,30 +228,44 @@ export function buildProblemsSection(problems: ProblemEntry[]): string | undefin
     const label = state.toUpperCase();
     for (const e of arr) {
       const note = e.reason ? ` — ${e.reason}` : "";
-      lines.push(`- ${e.runId} · ${label}${note}`);
+      const hint = e.hint ? ` — ${e.hint}` : "";
+      lines.push(`- ${e.runId} · ${label}${note}${hint}`);
     }
   }
   // Any other states not in order
   for (const [state, arr] of grouped) {
     if (order.includes(state)) continue;
     for (const e of arr) {
-      lines.push(`- ${e.runId} · ${state.toUpperCase()} — ${e.reason}`);
+      const hint = (e as ProblemEntry).hint ? ` — ${(e as ProblemEntry).hint}` : "";
+      lines.push(`- ${e.runId} · ${state.toUpperCase()} — ${e.reason}${hint}`);
     }
   }
   return lines.join("\n");
 }
 
-/** Map recovery flags + watchdog state into ProblemEntry[] for board/sidebar */
+/** Map recovery flags + watchdog state into ProblemEntry[] for board/sidebar (tgo-21a enriches dead-heartbeat via classifyFailureType reuse) */
 export function problemsFromRecovery(
   recovery: Array<{ runId: string; reason: "suspended" | "dead-heartbeat" | "aborted"; lastHeartbeat?: number; hasAwaitJson: boolean }>,
   watchdogProblems?: Array<{ sessionID: string; issueId?: string; state: ProblemState; reason: string }>,
+  opts?: ProblemsFromRecoveryOptions,
 ): ProblemEntry[] {
+  const enabled = opts?.runPathRerouteEnabled ?? isRunPathRerouteEnabled();
+  const log = opts?.log;
   const out: ProblemEntry[] = [];
   for (const r of recovery) {
     if (r.reason === "suspended") {
       out.push({ runId: r.runId, state: "awaiting", reason: "suspended — await.json present", lastTs: r.lastHeartbeat });
     } else if (r.reason === "dead-heartbeat") {
-      out.push({ runId: r.runId, state: "stuck", reason: `dead heartbeat — last ${r.lastHeartbeat ? new Date(r.lastHeartbeat).toISOString() : "unknown"}`, lastTs: r.lastHeartbeat });
+      const reason = `dead heartbeat — last ${r.lastHeartbeat ? new Date(r.lastHeartbeat).toISOString() : "unknown"}`;
+      // Reuse classifyFailureType (RecoveryFlag fast-path → watchdog); suspended/aborted stay distinct.
+      const failureType = classifyFailureType(r as unknown);
+      if (enabled && failureType !== "unclassified") {
+        const hint = FAILURE_TYPE_HINTS[failureType as Exclude<FailureType, "unclassified">];
+        out.push({ runId: r.runId, state: "stuck", reason, lastTs: r.lastHeartbeat, failureType, hint });
+        try { log?.("warn", "tgo: run-path reroute signal emitted", { runId: r.runId, reason: r.reason, failureType }); } catch {}
+      } else {
+        out.push({ runId: r.runId, state: "stuck", reason, lastTs: r.lastHeartbeat });
+      }
     } else if ((r.reason as string) === "aborted") {
       out.push({ runId: r.runId, state: "aborted", reason: "aborted — terminal status", lastTs: r.lastHeartbeat });
     }

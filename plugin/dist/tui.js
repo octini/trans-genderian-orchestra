@@ -14763,6 +14763,169 @@ var init_config = __esm(() => {
   });
 });
 
+// src/fit.ts
+function isRunPathRerouteEnabled(env = process.env) {
+  const kill = env.TGO_RUN_PATH_REROUTE_KILL ?? env.TGO_DISABLE_RUN_PATH_REROUTE;
+  if (kill === "1" || kill === "true" || kill === "on")
+    return false;
+  const flag = env.TGO_RUN_PATH_REROUTE;
+  if (flag === undefined || flag === "")
+    return true;
+  if (flag === "0" || flag === "false" || flag === "off")
+    return false;
+  return flag === "1" || flag === "true" || flag === "on";
+}
+function classifyFailureType(input) {
+  if (input == null)
+    return "unclassified";
+  let text = "";
+  if (typeof input === "string") {
+    text = input;
+  } else if (typeof input === "object") {
+    const o = input;
+    if (o.watchdogAborted === true)
+      return "watchdog";
+    if (typeof o.runId === "string" && (("hasAwaitJson" in o) || ("hasTerminalStatus" in o) || ("issueId" in o))) {
+      if (typeof o.reason === "string") {
+        const mapped = RECOVERY_REASON_TO_FAILURE_TYPE[o.reason];
+        if (mapped !== undefined)
+          return mapped;
+        return "unclassified";
+      }
+      return "unclassified";
+    }
+    if (typeof o.raw === "string")
+      text += " " + o.raw;
+    if (typeof o.output === "string")
+      text += " " + o.output;
+    if (typeof o.text === "string")
+      text += " " + o.text;
+    if (typeof o.note === "string")
+      text += " " + o.note;
+    if (typeof o.cmd === "string")
+      text += " " + o.cmd;
+    if (typeof o.reason === "string")
+      text += " " + o.reason;
+    if (typeof o.status === "string")
+      text += " " + o.status;
+    if (typeof o.message === "string")
+      text += " " + o.message;
+    if (o.fields && typeof o.fields === "object") {
+      const fields = o.fields;
+      for (const v of Object.values(fields)) {
+        if (typeof v === "string")
+          text += " " + v;
+      }
+    }
+    if (!text.trim()) {
+      try {
+        text += " " + JSON.stringify(o);
+      } catch {}
+    }
+  } else {
+    text = String(input);
+  }
+  text = text.trim();
+  if (!text)
+    return "unclassified";
+  for (const type of FAILURE_PRIORITY) {
+    const patterns = FAILURE_TYPE_PATTERNS[type];
+    if (patterns.some((re) => re.test(text)))
+      return type;
+  }
+  return "unclassified";
+}
+var FAILURE_TYPE_PATTERNS, FAILURE_TYPE_HINTS, FAILURE_PRIORITY, RECOVERY_REASON_TO_FAILURE_TYPE;
+var init_fit = __esm(() => {
+  FAILURE_TYPE_PATTERNS = {
+    watchdog: [
+      /watchdog.{0,40}abort/i,
+      /abort.{0,40}watchdog/i,
+      /WATCHDOG-ABORT/i,
+      /aborted by.*watchdog/i
+    ],
+    dependency: [
+      /npm ERR!/i,
+      /npm error/i,
+      /cannot find module/i,
+      /module not found/i,
+      /ERR_PNPM/i,
+      /could not resolve/i,
+      /peer dep/i,
+      /dependency.*(?:not found|missing|failed|error)/i,
+      /bun install.*(?:failed|error)/i,
+      /yarn error/i
+    ],
+    build: [
+      /\bbuild failed\b/i,
+      /\bcompilation failed\b/i,
+      /\bcompile error\b/i,
+      /\bFailed to compile\b/i,
+      /error TS\d+/i,
+      /TS\d+:\s*error\b/i,
+      /\btsc\b.*\bERROR\b/i,
+      /\bSyntaxError\b/i,
+      /\bcannot find name\b/i,
+      /\bCannot find name\b/,
+      /Module not found:.*Can't resolve/i
+    ],
+    test: [
+      /\btest[s]?\s+failed\b/i,
+      /\btests?\s+failing\b/i,
+      /\bfailing tests\b/i,
+      /\btest suite failed\b/i,
+      /\bAssertionError\b/i,
+      /\bassertion failed\b/i,
+      /\bexpected\b.{0,60}\breceived\b/i,
+      /\bexpect\s*\(.*\)\s*\.\s*to[A-Z]/,
+      /\b\d+\s+failed\b/i,
+      /^\s*FAIL\b/m
+    ],
+    deploy: [
+      /\bdeploy.*failed\b/i,
+      /\bdeployment failed\b/i,
+      /\bCI.*failed\b/i,
+      /\bgithub actions.*failed\b/i,
+      /\bdocker.*failed\b/i,
+      /\bpush rejected\b/i,
+      /\bvercel.*error\b/i,
+      /\bnetlify.*error\b/i
+    ],
+    env: [
+      /\bcommand not found\b/i,
+      /executable file not found in \$PATH/i,
+      /not found in \$PATH/i,
+      /\bpermission denied\b/i,
+      /\bno such file or directory\b/i,
+      /ENOENT:\s*no such file/i,
+      /\bbad interpreter\b/i,
+      /\bPATH.*not set\b/i,
+      /\benv.*not found\b/i
+    ]
+  };
+  FAILURE_TYPE_HINTS = {
+    watchdog: "Watchdog abort — session was aborted (wall-clock/idle/stuck); verify what landed, then re-dispatch smaller.",
+    dependency: "Dependency/npm error — check deps/install (bd, npm, bun) before retry.",
+    build: "Build/compile error — retry with build log and tsc output; route to dylan for fix.",
+    test: "Test failure — include failing test output and rerun verification.",
+    deploy: "Deploy/CI error — verify CI/deploy config before reroute.",
+    env: "Env/PATH error — check PATH and env setup before retry."
+  };
+  FAILURE_PRIORITY = [
+    "watchdog",
+    "deploy",
+    "build",
+    "dependency",
+    "test",
+    "env"
+  ];
+  RECOVERY_REASON_TO_FAILURE_TYPE = {
+    "dead-heartbeat": "watchdog",
+    suspended: "unclassified",
+    aborted: "unclassified"
+  };
+});
+
 // src/metrics.ts
 var exports_metrics = {};
 __export(exports_metrics, {
@@ -14975,26 +15138,40 @@ function buildProblemsSection(problems) {
     const label = state.toUpperCase();
     for (const e of arr) {
       const note = e.reason ? ` — ${e.reason}` : "";
-      lines.push(`- ${e.runId} · ${label}${note}`);
+      const hint = e.hint ? ` — ${e.hint}` : "";
+      lines.push(`- ${e.runId} · ${label}${note}${hint}`);
     }
   }
   for (const [state, arr] of grouped) {
     if (order.includes(state))
       continue;
     for (const e of arr) {
-      lines.push(`- ${e.runId} · ${state.toUpperCase()} — ${e.reason}`);
+      const hint = e.hint ? ` — ${e.hint}` : "";
+      lines.push(`- ${e.runId} · ${state.toUpperCase()} — ${e.reason}${hint}`);
     }
   }
   return lines.join(`
 `);
 }
-function problemsFromRecovery(recovery, watchdogProblems) {
+function problemsFromRecovery(recovery, watchdogProblems, opts) {
+  const enabled = opts?.runPathRerouteEnabled ?? isRunPathRerouteEnabled();
+  const log = opts?.log;
   const out = [];
   for (const r of recovery) {
     if (r.reason === "suspended") {
       out.push({ runId: r.runId, state: "awaiting", reason: "suspended — await.json present", lastTs: r.lastHeartbeat });
     } else if (r.reason === "dead-heartbeat") {
-      out.push({ runId: r.runId, state: "stuck", reason: `dead heartbeat — last ${r.lastHeartbeat ? new Date(r.lastHeartbeat).toISOString() : "unknown"}`, lastTs: r.lastHeartbeat });
+      const reason = `dead heartbeat — last ${r.lastHeartbeat ? new Date(r.lastHeartbeat).toISOString() : "unknown"}`;
+      const failureType = classifyFailureType(r);
+      if (enabled && failureType !== "unclassified") {
+        const hint = FAILURE_TYPE_HINTS[failureType];
+        out.push({ runId: r.runId, state: "stuck", reason, lastTs: r.lastHeartbeat, failureType, hint });
+        try {
+          log?.("warn", "tgo: run-path reroute signal emitted", { runId: r.runId, reason: r.reason, failureType });
+        } catch {}
+      } else {
+        out.push({ runId: r.runId, state: "stuck", reason, lastTs: r.lastHeartbeat });
+      }
     } else if (r.reason === "aborted") {
       out.push({ runId: r.runId, state: "aborted", reason: "aborted — terminal status", lastTs: r.lastHeartbeat });
     }
@@ -15010,6 +15187,7 @@ function problemsFromRecovery(recovery, watchdogProblems) {
 var metricsWriteInFlight;
 var init_metrics = __esm(() => {
   init_config();
+  init_fit();
 });
 
 // src/sidebar/tui.tsx

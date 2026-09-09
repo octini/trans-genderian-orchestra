@@ -115,6 +115,39 @@ const FAILURE_PRIORITY: Exclude<FailureType, "unclassified">[] = [
   "env",
 ];
 
+// ── Run-path RecoveryFlag reason table (tgo-21a) ───────────────────────────
+// Maps RecoveryFlag.reason (runs.ts:181-252 RecoveryFlag shape) → FailureType
+// so dead-heartbeat feeds rerouting like delegation-path failures.
+// dead-heartbeat → watchdog; suspended/aborted stay distinct (unclassified,
+// preserving awaiting/aborted semantics); unknown/missing → unclassified.
+// Reuses classifyFailureType only — no classifyReportFailureType/classifyRunFailureType.
+export const RECOVERY_REASON_TO_FAILURE_TYPE: Record<string, FailureType> = {
+  "dead-heartbeat": "watchdog",
+  suspended: "unclassified",
+  aborted: "unclassified",
+};
+
+/** Classify a RecoveryFlag reason string via the table; unknown/missing → unclassified. */
+export function classifyRecoveryReason(reason: unknown): FailureType {
+  if (typeof reason !== "string") return "unclassified";
+  return RECOVERY_REASON_TO_FAILURE_TYPE[reason] ?? "unclassified";
+}
+
+/**
+ * Rollout gate for run-path reroute signal (tgo-21a).
+ * Default ON so dead-heartbeat feeds rerouting; kill switch disables fast emission
+ * to prevent transient flapping. Env: TGO_RUN_PATH_REROUTE=0/false/off kills,
+ * TGO_RUN_PATH_REROUTE_KILL=1 (or TGO_DISABLE_RUN_PATH_REROUTE=1) also kills.
+ */
+export function isRunPathRerouteEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  const kill = env.TGO_RUN_PATH_REROUTE_KILL ?? env.TGO_DISABLE_RUN_PATH_REROUTE;
+  if (kill === "1" || kill === "true" || kill === "on") return false;
+  const flag = env.TGO_RUN_PATH_REROUTE;
+  if (flag === undefined || flag === "") return true;
+  if (flag === "0" || flag === "false" || flag === "off") return false;
+  return flag === "1" || flag === "true" || flag === "on";
+}
+
 /** Pure classifier: failure signature/text/status → FailureType. Accepts string or structured report/run objects. */
 export function classifyFailureType(input: unknown): FailureType {
   if (input == null) return "unclassified";
@@ -125,6 +158,15 @@ export function classifyFailureType(input: unknown): FailureType {
     const o = input as Record<string, unknown>;
     // Fast-path: explicit watchdog flag from report.ts
     if (o.watchdogAborted === true) return "watchdog";
+    // Run-path RecoveryFlag fast-path (tgo-21a; caller TaskFitController.normalize at fit.ts:306 reuses this classifier for delegation output, while run-path RecoveryFlag reasons flow here via problemsFromRecovery reuse). Shape per runs.ts RecoveryFlag.
+    if (typeof o.runId === "string" && ("hasAwaitJson" in o || "hasTerminalStatus" in o || "issueId" in o)) {
+      if (typeof o.reason === "string") {
+        const mapped = RECOVERY_REASON_TO_FAILURE_TYPE[o.reason];
+        if (mapped !== undefined) return mapped;
+        return "unclassified";
+      }
+      return "unclassified";
+    }
     // Collect text from known shapes (ParsedReport, RunEvent, RecoveryFlag, generic)
     if (typeof o.raw === "string") text += " " + o.raw;
     if (typeof o.output === "string") text += " " + o.output;

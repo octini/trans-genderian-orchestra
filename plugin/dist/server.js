@@ -15710,6 +15710,321 @@ var init_session_reuse = __esm(() => {
   hashDelegationPacket = hashFivePartPacket;
 });
 
+// src/fit.ts
+var exports_fit = {};
+__export(exports_fit, {
+  rerouteSignal: () => rerouteSignal,
+  isRunPathRerouteEnabled: () => isRunPathRerouteEnabled,
+  failureTypeLabel: () => failureTypeLabel,
+  failureTypeHint: () => failureTypeHint,
+  failureRerouteSignal: () => failureRerouteSignal,
+  detectLaneRejection: () => detectLaneRejection,
+  classifyRouting: () => classifyRouting,
+  classifyRecoveryReason: () => classifyRecoveryReason,
+  classifyFailureType: () => classifyFailureType,
+  TaskFitController: () => TaskFitController,
+  REROUTE_NOT_RETRY: () => REROUTE_NOT_RETRY,
+  RECOVERY_REASON_TO_FAILURE_TYPE: () => RECOVERY_REASON_TO_FAILURE_TYPE,
+  LANE_REJECTION_PATTERNS: () => LANE_REJECTION_PATTERNS,
+  FAILURE_TYPE_PATTERNS: () => FAILURE_TYPE_PATTERNS,
+  FAILURE_TYPE_LABELS: () => FAILURE_TYPE_LABELS,
+  FAILURE_TYPE_HINTS: () => FAILURE_TYPE_HINTS
+});
+function detectLaneRejection(output) {
+  return LANE_REJECTION_PATTERNS.some((pattern) => pattern.test(output));
+}
+function classifyRecoveryReason(reason) {
+  if (typeof reason !== "string")
+    return "unclassified";
+  return RECOVERY_REASON_TO_FAILURE_TYPE[reason] ?? "unclassified";
+}
+function isRunPathRerouteEnabled(env = process.env) {
+  const kill = env.TGO_RUN_PATH_REROUTE_KILL ?? env.TGO_DISABLE_RUN_PATH_REROUTE;
+  if (kill === "1" || kill === "true" || kill === "on")
+    return false;
+  const flag = env.TGO_RUN_PATH_REROUTE;
+  if (flag === undefined || flag === "")
+    return true;
+  if (flag === "0" || flag === "false" || flag === "off")
+    return false;
+  return flag === "1" || flag === "true" || flag === "on";
+}
+function classifyFailureType(input) {
+  if (input == null)
+    return "unclassified";
+  let text = "";
+  if (typeof input === "string") {
+    text = input;
+  } else if (typeof input === "object") {
+    const o = input;
+    if (o.watchdogAborted === true)
+      return "watchdog";
+    if (typeof o.runId === "string" && (("hasAwaitJson" in o) || ("hasTerminalStatus" in o) || ("issueId" in o))) {
+      if (typeof o.reason === "string") {
+        const mapped = RECOVERY_REASON_TO_FAILURE_TYPE[o.reason];
+        if (mapped !== undefined)
+          return mapped;
+        return "unclassified";
+      }
+      return "unclassified";
+    }
+    if (typeof o.raw === "string")
+      text += " " + o.raw;
+    if (typeof o.output === "string")
+      text += " " + o.output;
+    if (typeof o.text === "string")
+      text += " " + o.text;
+    if (typeof o.note === "string")
+      text += " " + o.note;
+    if (typeof o.cmd === "string")
+      text += " " + o.cmd;
+    if (typeof o.reason === "string")
+      text += " " + o.reason;
+    if (typeof o.status === "string")
+      text += " " + o.status;
+    if (typeof o.message === "string")
+      text += " " + o.message;
+    if (o.fields && typeof o.fields === "object") {
+      const fields = o.fields;
+      for (const v of Object.values(fields)) {
+        if (typeof v === "string")
+          text += " " + v;
+      }
+    }
+    if (!text.trim()) {
+      try {
+        text += " " + JSON.stringify(o);
+      } catch {}
+    }
+  } else {
+    text = String(input);
+  }
+  text = text.trim();
+  if (!text)
+    return "unclassified";
+  for (const type of FAILURE_PRIORITY) {
+    const patterns = FAILURE_TYPE_PATTERNS[type];
+    if (patterns.some((re) => re.test(text)))
+      return type;
+  }
+  return "unclassified";
+}
+function failureTypeHint(type) {
+  if (type === "unclassified")
+    return;
+  return FAILURE_TYPE_HINTS[type];
+}
+function failureTypeLabel(type) {
+  if (type === "unclassified")
+    return;
+  return FAILURE_TYPE_LABELS[type];
+}
+function failureRerouteSignal(failureType, seat) {
+  const target = seat ? ` for ${seat}` : "";
+  const label = failureTypeLabel(failureType);
+  const hint = failureTypeHint(failureType);
+  return [
+    `## ${REROUTE_NOT_RETRY}`,
+    `Delegation failed${target} with ${label} error.`,
+    hint,
+    "Do NOT simply retry — address the failure context above and reroute per lane-card."
+  ].join(`
+`);
+}
+function rerouteSignal(seat, failureType) {
+  const target = seat ? ` for ${seat}` : "";
+  const base = [
+    `## ${REROUTE_NOT_RETRY}`,
+    `The delegated specialist${target} rejected this task as out of its lane.`,
+    "Do NOT retry the same seat — reroute to the correct lane per the lane-card, or re-decompose."
+  ];
+  if (failureType && failureType !== "unclassified") {
+    const label = failureTypeLabel(failureType);
+    const hint = failureTypeHint(failureType);
+    if (label && hint) {
+      base.push("", `Failure type: ${label} — ${hint}`);
+    }
+  }
+  return base.join(`
+`);
+}
+function classifyRouting(input) {
+  const reasons = HEAVY_TRIGGERS.filter(([key]) => input[key] === true).map(([, reason]) => reason);
+  if (reasons.length > 0)
+    return { route: "heavy", tiny: false, reasons };
+  const tinyRequirements = [
+    [input.boundedTouchSet === true && isBoundedTouchSet(input.touchSet), "bounded touch set"],
+    [typeof input.transformation === "string" && input.transformation.trim().length > 0, "explicit transformation"],
+    [input.reversible === true, "reversible change"],
+    [input.deterministicVerification === true, "deterministic verification"]
+  ];
+  const missing = tinyRequirements.filter(([present]) => !present).map(([, reason]) => reason);
+  if (missing.length === 0)
+    return { route: "tiny", tiny: true, reasons: [] };
+  return { route: "standard", tiny: false, reasons: missing };
+}
+function isBoundedTouchSet(touchSet) {
+  return touchSet !== undefined && touchSet.length === 1 && touchSet.every((file2) => file2.trim().length > 0);
+}
+function isSuccessReport(text, report) {
+  if (report) {
+    if (report.status === "complete" || report.taxonomy?.status === "complete")
+      return true;
+    if (report.raw && /\bSTATUS:\s*(complete|done)\b/i.test(report.raw))
+      return true;
+  }
+  if (/\bSTATUS:\s*(complete|done)\b/i.test(text))
+    return true;
+  return false;
+}
+
+class TaskFitController {
+  normalize(input, output, report) {
+    if (input.tool !== "task")
+      return false;
+    if (output.output.includes(REROUTE_NOT_RETRY))
+      return false;
+    const isLane = detectLaneRejection(output.output);
+    const failureType = classifyFailureType(output.output);
+    if (isLane) {
+      const seat = input.args?.subagent_type;
+      output.output = `${output.output.trimEnd()}
+
+${rerouteSignal(seat, failureType)}`;
+      return true;
+    }
+    if (failureType !== "unclassified") {
+      if (isSuccessReport(output.output, report))
+        return false;
+      const seat = input.args?.subagent_type;
+      output.output = `${output.output.trimEnd()}
+
+${failureRerouteSignal(failureType, seat)}`;
+      return true;
+    }
+    return false;
+  }
+}
+var REROUTE_NOT_RETRY = "REROUTE-NOT-RETRY", LANE_REJECTION_PATTERNS, FAILURE_TYPE_PATTERNS, FAILURE_TYPE_LABELS, FAILURE_TYPE_HINTS, FAILURE_PRIORITY, RECOVERY_REASON_TO_FAILURE_TYPE, HEAVY_TRIGGERS;
+var init_fit = __esm(() => {
+  LANE_REJECTION_PATTERNS = [
+    /not (my|the) lane/i,
+    /out of (my|the) lane/i,
+    /wrong (seat|specialist|agent)/i,
+    /not the right (seat|specialist|agent)/i,
+    /not (a|my) (review|implementation|research|coding|writing) (task|job|role)/i,
+    /this (isn'?t|is not) (my|the|a) lane/i
+  ];
+  FAILURE_TYPE_PATTERNS = {
+    watchdog: [
+      /watchdog.{0,40}abort/i,
+      /abort.{0,40}watchdog/i,
+      /WATCHDOG-ABORT/i,
+      /aborted by.*watchdog/i
+    ],
+    dependency: [
+      /npm ERR!/i,
+      /npm error/i,
+      /cannot find module/i,
+      /module not found/i,
+      /ERR_PNPM/i,
+      /could not resolve/i,
+      /peer dep/i,
+      /dependency.*(?:not found|missing|failed|error)/i,
+      /bun install.*(?:failed|error)/i,
+      /yarn error/i
+    ],
+    build: [
+      /\bbuild failed\b/i,
+      /\bcompilation failed\b/i,
+      /\bcompile error\b/i,
+      /\bFailed to compile\b/i,
+      /error TS\d+/i,
+      /TS\d+:\s*error\b/i,
+      /\btsc\b.*\bERROR\b/i,
+      /\bSyntaxError\b/i,
+      /\bcannot find name\b/i,
+      /\bCannot find name\b/,
+      /Module not found:.*Can't resolve/i
+    ],
+    test: [
+      /\btest[s]?\s+failed\b/i,
+      /\btests?\s+failing\b/i,
+      /\bfailing tests\b/i,
+      /\btest suite failed\b/i,
+      /\bAssertionError\b/i,
+      /\bassertion failed\b/i,
+      /\bexpected\b.{0,60}\breceived\b/i,
+      /\bexpect\s*\(.*\)\s*\.\s*to[A-Z]/,
+      /\b\d+\s+failed\b/i,
+      /^\s*FAIL\b/m
+    ],
+    deploy: [
+      /\bdeploy.*failed\b/i,
+      /\bdeployment failed\b/i,
+      /\bCI.*failed\b/i,
+      /\bgithub actions.*failed\b/i,
+      /\bdocker.*failed\b/i,
+      /\bpush rejected\b/i,
+      /\bvercel.*error\b/i,
+      /\bnetlify.*error\b/i
+    ],
+    env: [
+      /\bcommand not found\b/i,
+      /executable file not found in \$PATH/i,
+      /not found in \$PATH/i,
+      /\bpermission denied\b/i,
+      /\bno such file or directory\b/i,
+      /ENOENT:\s*no such file/i,
+      /\bbad interpreter\b/i,
+      /\bPATH.*not set\b/i,
+      /\benv.*not found\b/i
+    ]
+  };
+  FAILURE_TYPE_LABELS = {
+    watchdog: "watchdog abort",
+    dependency: "dependency/npm",
+    build: "build/compile",
+    test: "test failure",
+    deploy: "deploy/CI",
+    env: "env/PATH"
+  };
+  FAILURE_TYPE_HINTS = {
+    watchdog: "Watchdog abort — session was aborted (wall-clock/idle/stuck); verify what landed, then re-dispatch smaller.",
+    dependency: "Dependency/npm error — check deps/install (bd, npm, bun) before retry.",
+    build: "Build/compile error — retry with build log and tsc output; route to dylan for fix.",
+    test: "Test failure — include failing test output and rerun verification.",
+    deploy: "Deploy/CI error — verify CI/deploy config before reroute.",
+    env: "Env/PATH error — check PATH and env setup before retry."
+  };
+  FAILURE_PRIORITY = [
+    "watchdog",
+    "deploy",
+    "build",
+    "dependency",
+    "test",
+    "env"
+  ];
+  RECOVERY_REASON_TO_FAILURE_TYPE = {
+    "dead-heartbeat": "watchdog",
+    suspended: "unclassified",
+    aborted: "unclassified"
+  };
+  HEAVY_TRIGGERS = [
+    ["ambiguity", "ambiguity"],
+    ["missingLocationOrOldValue", "missing location or old value"],
+    ["multipleInterpretationsOrFiles", "multiple interpretations or files"],
+    ["failedVerification", "failed verification"],
+    ["unexpectedDiff", "unexpected diff"],
+    ["userVisible", "user-visible impact"],
+    ["highBlastRadius", "high blast radius"],
+    ["irreversible", "irreversible impact"],
+    ["apiSchemaAuthDependencyMigrationSecurityOrDeploymentImpact", "API/schema/auth/dependency/migration/security/deployment impact"],
+    ["greenfieldOrUnfamiliar", "greenfield or unfamiliar work"],
+    ["agentEscalation", "agent escalation"]
+  ];
+});
+
 // src/metrics.ts
 var exports_metrics = {};
 __export(exports_metrics, {
@@ -15922,26 +16237,40 @@ function buildProblemsSection(problems) {
     const label = state.toUpperCase();
     for (const e of arr) {
       const note = e.reason ? ` — ${e.reason}` : "";
-      lines.push(`- ${e.runId} · ${label}${note}`);
+      const hint = e.hint ? ` — ${e.hint}` : "";
+      lines.push(`- ${e.runId} · ${label}${note}${hint}`);
     }
   }
   for (const [state, arr] of grouped) {
     if (order.includes(state))
       continue;
     for (const e of arr) {
-      lines.push(`- ${e.runId} · ${state.toUpperCase()} — ${e.reason}`);
+      const hint = e.hint ? ` — ${e.hint}` : "";
+      lines.push(`- ${e.runId} · ${state.toUpperCase()} — ${e.reason}${hint}`);
     }
   }
   return lines.join(`
 `);
 }
-function problemsFromRecovery(recovery, watchdogProblems) {
+function problemsFromRecovery(recovery, watchdogProblems, opts) {
+  const enabled = opts?.runPathRerouteEnabled ?? isRunPathRerouteEnabled();
+  const log = opts?.log;
   const out = [];
   for (const r of recovery) {
     if (r.reason === "suspended") {
       out.push({ runId: r.runId, state: "awaiting", reason: "suspended — await.json present", lastTs: r.lastHeartbeat });
     } else if (r.reason === "dead-heartbeat") {
-      out.push({ runId: r.runId, state: "stuck", reason: `dead heartbeat — last ${r.lastHeartbeat ? new Date(r.lastHeartbeat).toISOString() : "unknown"}`, lastTs: r.lastHeartbeat });
+      const reason = `dead heartbeat — last ${r.lastHeartbeat ? new Date(r.lastHeartbeat).toISOString() : "unknown"}`;
+      const failureType = classifyFailureType(r);
+      if (enabled && failureType !== "unclassified") {
+        const hint = FAILURE_TYPE_HINTS[failureType];
+        out.push({ runId: r.runId, state: "stuck", reason, lastTs: r.lastHeartbeat, failureType, hint });
+        try {
+          log?.("warn", "tgo: run-path reroute signal emitted", { runId: r.runId, reason: r.reason, failureType });
+        } catch {}
+      } else {
+        out.push({ runId: r.runId, state: "stuck", reason, lastTs: r.lastHeartbeat });
+      }
     } else if (r.reason === "aborted") {
       out.push({ runId: r.runId, state: "aborted", reason: "aborted — terminal status", lastTs: r.lastHeartbeat });
     }
@@ -15957,6 +16286,7 @@ function problemsFromRecovery(recovery, watchdogProblems) {
 var metricsWriteInFlight;
 var init_metrics = __esm(() => {
   init_config();
+  init_fit();
 });
 
 // src/runs.ts
@@ -17842,6 +18172,7 @@ class BoardController {
             scanRunsForProblems(repoRootForProblems, { now, heartbeatThresholdMs: this.runsConfig?.heartbeatThresholdMs }).catch(() => [])
           ]);
           const { problemsFromRecovery: problemsFromRecovery2 } = await Promise.resolve().then(() => (init_metrics(), exports_metrics));
+          const { isRunPathRerouteEnabled: isRunPathRerouteEnabled2 } = await Promise.resolve().then(() => (init_fit(), exports_fit));
           let watchdogProblems;
           if (this.watchdogProblemsGetter) {
             try {
@@ -17862,7 +18193,7 @@ class BoardController {
               }
             } catch {}
           }
-          const derived = problemsFromRecovery2(recovery, watchdogProblems);
+          const derived = problemsFromRecovery2(recovery, watchdogProblems, { runPathRerouteEnabled: isRunPathRerouteEnabled2(), log: this.log });
           const dedup = new Map;
           for (const p of derived)
             dedup.set(`${p.runId}:${p.state}`, p);
@@ -18779,271 +19110,8 @@ function analyzeStyleDrift(input) {
 // src/style-reinforcement.ts
 init_config();
 
-// src/fit.ts
-var REROUTE_NOT_RETRY = "REROUTE-NOT-RETRY";
-var LANE_REJECTION_PATTERNS = [
-  /not (my|the) lane/i,
-  /out of (my|the) lane/i,
-  /wrong (seat|specialist|agent)/i,
-  /not the right (seat|specialist|agent)/i,
-  /not (a|my) (review|implementation|research|coding|writing) (task|job|role)/i,
-  /this (isn'?t|is not) (my|the|a) lane/i
-];
-function detectLaneRejection(output) {
-  return LANE_REJECTION_PATTERNS.some((pattern) => pattern.test(output));
-}
-var FAILURE_TYPE_PATTERNS = {
-  watchdog: [
-    /watchdog.{0,40}abort/i,
-    /abort.{0,40}watchdog/i,
-    /WATCHDOG-ABORT/i,
-    /aborted by.*watchdog/i
-  ],
-  dependency: [
-    /npm ERR!/i,
-    /npm error/i,
-    /cannot find module/i,
-    /module not found/i,
-    /ERR_PNPM/i,
-    /could not resolve/i,
-    /peer dep/i,
-    /dependency.*(?:not found|missing|failed|error)/i,
-    /bun install.*(?:failed|error)/i,
-    /yarn error/i
-  ],
-  build: [
-    /\bbuild failed\b/i,
-    /\bcompilation failed\b/i,
-    /\bcompile error\b/i,
-    /\bFailed to compile\b/i,
-    /error TS\d+/i,
-    /TS\d+:\s*error\b/i,
-    /\btsc\b.*\bERROR\b/i,
-    /\bSyntaxError\b/i,
-    /\bcannot find name\b/i,
-    /\bCannot find name\b/,
-    /Module not found:.*Can't resolve/i
-  ],
-  test: [
-    /\btest[s]?\s+failed\b/i,
-    /\btests?\s+failing\b/i,
-    /\bfailing tests\b/i,
-    /\btest suite failed\b/i,
-    /\bAssertionError\b/i,
-    /\bassertion failed\b/i,
-    /\bexpected\b.{0,60}\breceived\b/i,
-    /\bexpect\s*\(.*\)\s*\.\s*to[A-Z]/,
-    /\b\d+\s+failed\b/i,
-    /^\s*FAIL\b/m
-  ],
-  deploy: [
-    /\bdeploy.*failed\b/i,
-    /\bdeployment failed\b/i,
-    /\bCI.*failed\b/i,
-    /\bgithub actions.*failed\b/i,
-    /\bdocker.*failed\b/i,
-    /\bpush rejected\b/i,
-    /\bvercel.*error\b/i,
-    /\bnetlify.*error\b/i
-  ],
-  env: [
-    /\bcommand not found\b/i,
-    /executable file not found in \$PATH/i,
-    /not found in \$PATH/i,
-    /\bpermission denied\b/i,
-    /\bno such file or directory\b/i,
-    /ENOENT:\s*no such file/i,
-    /\bbad interpreter\b/i,
-    /\bPATH.*not set\b/i,
-    /\benv.*not found\b/i
-  ]
-};
-var FAILURE_TYPE_LABELS = {
-  watchdog: "watchdog abort",
-  dependency: "dependency/npm",
-  build: "build/compile",
-  test: "test failure",
-  deploy: "deploy/CI",
-  env: "env/PATH"
-};
-var FAILURE_TYPE_HINTS = {
-  watchdog: "Watchdog abort — session was aborted (wall-clock/idle/stuck); verify what landed, then re-dispatch smaller.",
-  dependency: "Dependency/npm error — check deps/install (bd, npm, bun) before retry.",
-  build: "Build/compile error — retry with build log and tsc output; route to dylan for fix.",
-  test: "Test failure — include failing test output and rerun verification.",
-  deploy: "Deploy/CI error — verify CI/deploy config before reroute.",
-  env: "Env/PATH error — check PATH and env setup before retry."
-};
-var FAILURE_PRIORITY = [
-  "watchdog",
-  "deploy",
-  "build",
-  "dependency",
-  "test",
-  "env"
-];
-function classifyFailureType(input) {
-  if (input == null)
-    return "unclassified";
-  let text = "";
-  if (typeof input === "string") {
-    text = input;
-  } else if (typeof input === "object") {
-    const o = input;
-    if (o.watchdogAborted === true)
-      return "watchdog";
-    if (typeof o.raw === "string")
-      text += " " + o.raw;
-    if (typeof o.output === "string")
-      text += " " + o.output;
-    if (typeof o.text === "string")
-      text += " " + o.text;
-    if (typeof o.note === "string")
-      text += " " + o.note;
-    if (typeof o.cmd === "string")
-      text += " " + o.cmd;
-    if (typeof o.reason === "string")
-      text += " " + o.reason;
-    if (typeof o.status === "string")
-      text += " " + o.status;
-    if (typeof o.message === "string")
-      text += " " + o.message;
-    if (o.fields && typeof o.fields === "object") {
-      const fields = o.fields;
-      for (const v of Object.values(fields)) {
-        if (typeof v === "string")
-          text += " " + v;
-      }
-    }
-    if (!text.trim()) {
-      try {
-        text += " " + JSON.stringify(o);
-      } catch {}
-    }
-  } else {
-    text = String(input);
-  }
-  text = text.trim();
-  if (!text)
-    return "unclassified";
-  for (const type of FAILURE_PRIORITY) {
-    const patterns = FAILURE_TYPE_PATTERNS[type];
-    if (patterns.some((re) => re.test(text)))
-      return type;
-  }
-  return "unclassified";
-}
-function failureTypeHint(type) {
-  if (type === "unclassified")
-    return;
-  return FAILURE_TYPE_HINTS[type];
-}
-function failureTypeLabel(type) {
-  if (type === "unclassified")
-    return;
-  return FAILURE_TYPE_LABELS[type];
-}
-function failureRerouteSignal(failureType, seat) {
-  const target = seat ? ` for ${seat}` : "";
-  const label = failureTypeLabel(failureType);
-  const hint = failureTypeHint(failureType);
-  return [
-    `## ${REROUTE_NOT_RETRY}`,
-    `Delegation failed${target} with ${label} error.`,
-    hint,
-    "Do NOT simply retry — address the failure context above and reroute per lane-card."
-  ].join(`
-`);
-}
-function rerouteSignal(seat, failureType) {
-  const target = seat ? ` for ${seat}` : "";
-  const base = [
-    `## ${REROUTE_NOT_RETRY}`,
-    `The delegated specialist${target} rejected this task as out of its lane.`,
-    "Do NOT retry the same seat — reroute to the correct lane per the lane-card, or re-decompose."
-  ];
-  if (failureType && failureType !== "unclassified") {
-    const label = failureTypeLabel(failureType);
-    const hint = failureTypeHint(failureType);
-    if (label && hint) {
-      base.push("", `Failure type: ${label} — ${hint}`);
-    }
-  }
-  return base.join(`
-`);
-}
-var HEAVY_TRIGGERS = [
-  ["ambiguity", "ambiguity"],
-  ["missingLocationOrOldValue", "missing location or old value"],
-  ["multipleInterpretationsOrFiles", "multiple interpretations or files"],
-  ["failedVerification", "failed verification"],
-  ["unexpectedDiff", "unexpected diff"],
-  ["userVisible", "user-visible impact"],
-  ["highBlastRadius", "high blast radius"],
-  ["irreversible", "irreversible impact"],
-  ["apiSchemaAuthDependencyMigrationSecurityOrDeploymentImpact", "API/schema/auth/dependency/migration/security/deployment impact"],
-  ["greenfieldOrUnfamiliar", "greenfield or unfamiliar work"],
-  ["agentEscalation", "agent escalation"]
-];
-function classifyRouting(input) {
-  const reasons = HEAVY_TRIGGERS.filter(([key]) => input[key] === true).map(([, reason]) => reason);
-  if (reasons.length > 0)
-    return { route: "heavy", tiny: false, reasons };
-  const tinyRequirements = [
-    [input.boundedTouchSet === true && isBoundedTouchSet(input.touchSet), "bounded touch set"],
-    [typeof input.transformation === "string" && input.transformation.trim().length > 0, "explicit transformation"],
-    [input.reversible === true, "reversible change"],
-    [input.deterministicVerification === true, "deterministic verification"]
-  ];
-  const missing = tinyRequirements.filter(([present]) => !present).map(([, reason]) => reason);
-  if (missing.length === 0)
-    return { route: "tiny", tiny: true, reasons: [] };
-  return { route: "standard", tiny: false, reasons: missing };
-}
-function isBoundedTouchSet(touchSet) {
-  return touchSet !== undefined && touchSet.length === 1 && touchSet.every((file2) => file2.trim().length > 0);
-}
-function isSuccessReport(text, report) {
-  if (report) {
-    if (report.status === "complete" || report.taxonomy?.status === "complete")
-      return true;
-    if (report.raw && /\bSTATUS:\s*(complete|done)\b/i.test(report.raw))
-      return true;
-  }
-  if (/\bSTATUS:\s*(complete|done)\b/i.test(text))
-    return true;
-  return false;
-}
-
-class TaskFitController {
-  normalize(input, output, report) {
-    if (input.tool !== "task")
-      return false;
-    if (output.output.includes(REROUTE_NOT_RETRY))
-      return false;
-    const isLane = detectLaneRejection(output.output);
-    const failureType = classifyFailureType(output.output);
-    if (isLane) {
-      const seat = input.args?.subagent_type;
-      output.output = `${output.output.trimEnd()}
-
-${rerouteSignal(seat, failureType)}`;
-      return true;
-    }
-    if (failureType !== "unclassified") {
-      if (isSuccessReport(output.output, report))
-        return false;
-      const seat = input.args?.subagent_type;
-      output.output = `${output.output.trimEnd()}
-
-${failureRerouteSignal(failureType, seat)}`;
-      return true;
-    }
-    return false;
-  }
-}
-
 // src/delegation.ts
+init_fit();
 init_def_snapshot();
 var DELEGATION_STYLES = ["default", "prose", "conversational"];
 function isDelegationStyle(value) {
@@ -19493,6 +19561,9 @@ class SessionReconciler {
 function isPrimarySessionData(data) {
   return Boolean(data && typeof data === "object" && Object.prototype.hasOwnProperty.call(data, "parentID") && data.parentID === null);
 }
+
+// src/plugin.ts
+init_fit();
 
 // src/watchdog.ts
 init_def_snapshot();
@@ -23093,7 +23164,8 @@ var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => 
       });
       if (flags.length > 0) {
         const { problemsFromRecovery: problemsFromRecovery2 } = await Promise.resolve().then(() => (init_metrics(), exports_metrics));
-        const problems = problemsFromRecovery2(flags);
+        const { isRunPathRerouteEnabled: isRunPathRerouteEnabled2 } = await Promise.resolve().then(() => (init_fit(), exports_fit));
+        const problems = problemsFromRecovery2(flags, undefined, { runPathRerouteEnabled: isRunPathRerouteEnabled2(), log: appLog });
         try {
           board.setProblems(problems);
         } catch {}
