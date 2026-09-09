@@ -2,6 +2,12 @@
 
 All notable changes to TGO, in reverse chronological order. Versions track `plugin/package.json`.
 
+## [0.6.0] - 2026-09-09
+
+- **Run-path reroute (tgo-21a): dead-heartbeat → watchdog with flag gate + audit:** `RECOVERY_REASON_TO_FAILURE_TYPE` maps RecoveryFlag reasons to failure types (dead-heartbeat → watchdog; suspended/aborted stay unclassified, preserving awaiting/aborted semantics) reusing `classifyFailureType`; `problemsFromRecovery` enriches dead-heartbeat entries with `failureType` + `FAILURE_TYPE_HINTS` hint surfaced on the board; rollout gate `isRunPathRerouteEnabled` defaults ON with `TGO_RUN_PATH_REROUTE` / kill-switch env overrides; audit log fires on emission; new `run-path-reroute` + `fit` recovery-reason suites (bbd4214, Horowitz approve).
+- **Agreed 7 skills + surgical-diff fragment:** bundle 13 → 20 with `verify-before-claim`, `source-grounding`, `api-and-interface-design`, `code-simplification`, `finishing-a-development-branch`, `doubt-driven-development`, `security-and-hardening`; per-seat grants extended (Bernstein +2, Horowitz +3, Nas +3, Dylan +6) with `validate.ts` + prompt-baseline parity; Dylan carries the surgical-diff fragment (single-reason diffs, mirror-surrounding-style, orphans to GAPS); instrument reserve and frontend HOLD (fd3ff18, Horowitz approve).
+- **Gates:** `bun run src/validate.ts` PASSED, `bun test` 1136 pass / 0 fail, `bunx tsc --noEmit` clean.
+
 ## [0.5.1] - 2026-09-08
 
 - **Bernstein delegation restored on opencode 1.18.29 (the host drops `task` from manifests of sessions born as custom agents carrying nested `task` maps):** all seat frontmatter flattened (`bernstein`/`dylan`/`horowitz`/`nirvana` → `task: allow`; `nas` stays `task: deny`; lenses gain explicit `task: deny`) and lane discipline moved into code — pure table-driven `validateLaneAllowance(callerSeat, subagentType)` enforced in `tool.execute.before` beside the recursion gate (unknown callers fail open; violations throw `Lane violation: …`, distinct from the recursion gate's `Delegation blocked:`). Lane table mirrors the pre-1.18.29 grants exactly (`bernstein`→4 seats, `dylan`/`horowitz`→explore, `nirvana`→3 lenses, `nas`/lenses→none).
