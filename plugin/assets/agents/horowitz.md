@@ -13,6 +13,9 @@ permission:
     "*": deny
     "code-review": allow
     "diagnosing-bugs": allow
+    "verify-before-claim": allow
+    "security-and-hardening": allow
+    "doubt-driven-development": allow
   bash:
     "*": deny
     "git log*": allow

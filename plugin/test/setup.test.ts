@@ -219,22 +219,29 @@ describe("setup skill asset", () => {
 
 describe("skill bundle", () => {
   const BUNDLE = [
+    "api-and-interface-design",
     "bmad-build-auto",
     "bmad-deep-recon",
     "code-review",
+    "code-simplification",
     "diagnosing-bugs",
+    "doubt-driven-development",
+    "finishing-a-development-branch",
     "grilling",
     "implement",
     "receiving-code-review",
+    "security-and-hardening",
+    "source-grounding",
     "tdd",
     "to-questionnaire",
     "to-tickets",
     "verification-planning",
+    "verify-before-claim",
     "wayfinder",
     "wizard",
   ];
 
-  test("ships the 13-skill FINAL BUNDLE, no-clobber, on first install", async () => {
+  test("ships the 20-skill FINAL BUNDLE, no-clobber, on first install", async () => {
     const dir = tmpDir();
     const results = await copySkillBundle(dir);
     const names = results.map((r) => r.name).filter((n) => n !== "tgo-setup").sort();
@@ -264,10 +271,10 @@ describe("skill bundle", () => {
   test("per-seat skill grants match the FINAL BUNDLE", async () => {
     const agentsDir = path.join(__dirname, "..", "assets", "agents");
     const expected: Record<string, string[]> = {
-      bernstein: ["grilling", "wayfinder", "to-tickets", "bmad-build-auto", "verification-planning", "diagnosing-bugs", "to-questionnaire", "wizard"],
-      horowitz: ["code-review", "diagnosing-bugs"],
-      nas: ["bmad-deep-recon"],
-      dylan: ["implement", "tdd", "receiving-code-review", "diagnosing-bugs"],
+      bernstein: ["grilling", "wayfinder", "to-tickets", "bmad-build-auto", "verification-planning", "diagnosing-bugs", "to-questionnaire", "wizard", "verify-before-claim", "doubt-driven-development"],
+      horowitz: ["code-review", "diagnosing-bugs", "verify-before-claim", "security-and-hardening", "doubt-driven-development"],
+      nas: ["bmad-deep-recon", "verify-before-claim", "source-grounding", "doubt-driven-development"],
+      dylan: ["implement", "tdd", "receiving-code-review", "diagnosing-bugs", "verify-before-claim", "source-grounding", "api-and-interface-design", "code-simplification", "finishing-a-development-branch", "doubt-driven-development"],
     };
     for (const [seat, grants] of Object.entries(expected)) {
       const content = await readSeatContent(agentsDir, seat);

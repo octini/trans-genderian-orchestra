@@ -1,8 +1,8 @@
 {
   "_header": "Prompt assembly baseline — captures rendered seat prompt skeleton (section order + stable markers). Do not hand-edit. To update after intentional changes: UPDATE_PROMPT_BASELINE=1 bun test plugin/test/prompt-baseline.test.ts (see docs/SETUP.md). \"generated\" is an audit stamp only — unhashed and uncompared, expected to diff on every update.",
   "_normalization": "Normalized before hashing: strip dates, versions/npm versions, absolute paths/home dirs, token counts via normalizeForHash in plugin/src/prompt-baseline.ts (placeholders <DATE>/<VERSION>/<PATH>/<TOKENS>), canonicalize line endings/whitespace.",
-  "generated": "2026-09-08T23:11:32.510Z",
-  "wholeHash": "9024c1a544640923d09d8a34c5ca204fa9c17e77c662c6b64e53e89fc18b6b48",
+  "generated": "2026-09-09T03:00:44.022Z",
+  "wholeHash": "8133142b25d3874fa84c1ad46875cc3038c5a4a38719e12a3122e8574765ce17",
   "seats": {
     "bernstein.md": {
       "sections": [
@@ -12,7 +12,7 @@
         "## Delegate when (lane-card)",
         "## Example"
       ],
-      "hash": "20a236597946b7f7e22c341fd2cdcedbb32f11178ae286d7a059dae491af0aed"
+      "hash": "58fbfd25e6784e34341b051a88c0db5c18c9577c200620eeedb82d9cbd2f2489"
     },
     "cobain.md": {
       "sections": [
@@ -31,7 +31,7 @@
         "## Example",
         "## TGO house style — active every turn"
       ],
-      "hash": "61fcf92700e7daeedf68a22afa18d7689c52a8d9920f011b6b6cffd63803e09e"
+      "hash": "63d9b9e49be429785136b2421c85ac57e9aef71eb9c7bd2e6dc9189ee9cbd61b"
     },
     "grohl.md": {
       "sections": [
@@ -50,7 +50,7 @@
         "## Example",
         "## TGO house style — active every turn"
       ],
-      "hash": "fb2394fdf87b6eaa8b9dd1769c28a1475ded11b91349559e93ae6b454c63d86a"
+      "hash": "439363c4e32a8541e88c01cd3005aab18707f464dc31d7c2bb705ab4753e2d40"
     },
     "nas.md": {
       "sections": [
@@ -60,7 +60,7 @@
         "## Example",
         "## TGO house style — active every turn"
       ],
-      "hash": "6eafcfdd981c730e8a535983cf40f2b84d2df60044aa54b3cfd1da84e4b47e2f"
+      "hash": "dc3d078cd51753ec8df991a20d82e1b5a71bb62e57fbc370bf4fdf383c16185f"
     },
     "nirvana.md": {
       "sections": [

@@ -16,6 +16,9 @@ permission:
   skill:
     "*": deny
     "bmad-deep-recon": allow
+    "verify-before-claim": allow
+    "source-grounding": allow
+    "doubt-driven-development": allow
   todowrite: deny
   doom_loop: allow
   "context7_*": allow

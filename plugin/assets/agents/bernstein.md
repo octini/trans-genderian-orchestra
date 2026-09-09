@@ -19,6 +19,8 @@ permission:
     "diagnosing-bugs": allow
     "to-questionnaire": allow
     "wizard": allow
+    "verify-before-claim": allow
+    "doubt-driven-development": allow
   bash:
     "*": deny
     "git diff*": allow

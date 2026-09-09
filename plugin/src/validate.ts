@@ -208,10 +208,12 @@ const EXPECTED_SKILL_GRANTS: Record<string, string[]> = {
     "diagnosing-bugs",
     "to-questionnaire",
     "wizard",
+    "verify-before-claim",
+    "doubt-driven-development",
   ],
-  horowitz: ["code-review", "diagnosing-bugs"],
-  nas: ["bmad-deep-recon"],
-  dylan: ["implement", "tdd", "receiving-code-review", "diagnosing-bugs"],
+  horowitz: ["code-review", "diagnosing-bugs", "verify-before-claim", "security-and-hardening", "doubt-driven-development"],
+  nas: ["bmad-deep-recon", "verify-before-claim", "source-grounding", "doubt-driven-development"],
+  dylan: ["implement", "tdd", "receiving-code-review", "diagnosing-bugs", "verify-before-claim", "source-grounding", "api-and-interface-design", "code-simplification", "finishing-a-development-branch", "doubt-driven-development"],
 };
 
 export async function validateSkillGrants(): Promise<void> {
