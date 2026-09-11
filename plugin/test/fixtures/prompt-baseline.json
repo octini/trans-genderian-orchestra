@@ -1,8 +1,8 @@
 {
   "_header": "Prompt assembly baseline — captures rendered seat prompt skeleton (section order + stable markers). Do not hand-edit. To update after intentional changes: UPDATE_PROMPT_BASELINE=1 bun test plugin/test/prompt-baseline.test.ts (see docs/SETUP.md). \"generated\" is an audit stamp only — unhashed and uncompared, expected to diff on every update.",
   "_normalization": "Normalized before hashing: strip dates, versions/npm versions, absolute paths/home dirs, token counts via normalizeForHash in plugin/src/prompt-baseline.ts (placeholders <DATE>/<VERSION>/<PATH>/<TOKENS>), canonicalize line endings/whitespace.",
-  "generated": "2026-09-09T03:00:44.022Z",
-  "wholeHash": "8133142b25d3874fa84c1ad46875cc3038c5a4a38719e12a3122e8574765ce17",
+  "generated": "2026-09-11T21:34:08.786Z",
+  "wholeHash": "dbeea8efb747acbdfaa281c2073163b4475c48add7717d16035341ac7eec480c",
   "seats": {
     "bernstein.md": {
       "sections": [
@@ -12,7 +12,7 @@
         "## Delegate when (lane-card)",
         "## Example"
       ],
-      "hash": "58fbfd25e6784e34341b051a88c0db5c18c9577c200620eeedb82d9cbd2f2489"
+      "hash": "de553af60c85924db08a71c5ffb112b7685117e32434370999c150a80aebf018"
     },
     "cobain.md": {
       "sections": [

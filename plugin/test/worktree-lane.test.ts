@@ -19,9 +19,16 @@ import { validateDelegationPacket } from "../src/delegation";
 import type { RoutingClassification } from "../src/fit";
 import { TgoPlugin } from "../src/plugin";
 import { isValidBeadID } from "../src/def-snapshot";
+import { spawnSync } from "node:child_process";
 
 function tmpDir(prefix = "tgo-wt-"): string {
   return mkdtempSync(path.join(os.tmpdir(), prefix));
+}
+
+function ensureClaimedFixture(repoRoot: string, issueId: string): void {
+  spawnSync("bd", ["init", "--non-interactive", "--skip-hooks"], { cwd: repoRoot, encoding: "utf8", stdio: "ignore" });
+  spawnSync("bd", ["create", `TGO fixture ${issueId}`, "-t", "task", "-p", "2", "--id", issueId, "--force", "--json"], { cwd: repoRoot, encoding: "utf8", stdio: "ignore" });
+  spawnSync("bd", ["update", "--json", issueId, "--claim"], { cwd: repoRoot, encoding: "utf8", stdio: "ignore" });
 }
 
 const standard: RoutingClassification = { route: "standard", tiny: false, reasons: [] };
@@ -323,7 +330,7 @@ describe("worktree lane matrix — plugin hook enforcement", () => {
     await expect(before({ sessionID: "ses_delegated_no_lane", callID: "c3", tool: "edit" } as never, { args: { filePath: "/tmp/repo/src/foo.ts" } } as never)).resolves.toBeUndefined();
   });
 
-  test("lane=worktree outside worktree → auto-create + context rewrite + blocked outside / pass inside", async () => {
+  test("lane=worktree outside worktree → auto-create + context rewrite + blocked outside / pass inside", { timeout: 20000 }, async () => {
     // Use a real temp git repo for realistic auto-create
     const tmpParent = tmpDir("tgo-wt-matrix-");
     const repoRoot = path.join(tmpParent, "repo");
@@ -341,6 +348,9 @@ describe("worktree lane matrix — plugin hook enforcement", () => {
     await fs.writeFile(path.join(repoRoot, "README.md"), "# test", "utf-8");
     await run(["git", "add", "."], repoRoot);
     await run(["git", "commit", "-m", "init"], repoRoot);
+    // Live-claim gate fixture (test-side): claim tgo-123/tgo-124 in the temp repo so dispatch reaches lane behavior.
+    ensureClaimedFixture(repoRoot, "tgo-123");
+    ensureClaimedFixture(repoRoot, "tgo-124");
 
     const hooks = await TgoPlugin(baseInput({ directory: repoRoot, worktree: repoRoot, project: { worktree: repoRoot } }), {});
     const before = hooks["tool.execute.before"]!;

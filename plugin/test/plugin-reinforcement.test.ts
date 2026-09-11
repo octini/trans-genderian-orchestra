@@ -1,9 +1,21 @@
 import { describe, expect, test } from 'bun:test';
 
 import { TgoPlugin } from '../src/plugin';
-import { mkdtempSync, existsSync, rmSync } from "node:fs";
+import { mkdtempSync, existsSync, rmSync, mkdirSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import * as os from "node:os";
 import * as path from "node:path";
+
+function ensureTmpTestClaimedFixture(issueId: string): void {
+  const dir = "/tmp/tgo-test";
+  try { mkdirSync(dir, { recursive: true }); } catch {}
+  spawnSync("git", ["init"], { cwd: dir, encoding: "utf8", stdio: "ignore" });
+  spawnSync("git", ["config", "user.email", "test@test.com"], { cwd: dir, encoding: "utf8", stdio: "ignore" });
+  spawnSync("git", ["config", "user.name", "Test"], { cwd: dir, encoding: "utf8", stdio: "ignore" });
+  spawnSync("bd", ["init", "--non-interactive", "--skip-hooks"], { cwd: dir, encoding: "utf8", stdio: "ignore" });
+  spawnSync("bd", ["create", `TGO fixture ${issueId}`, "-t", "task", "-p", "2", "--id", issueId, "--force", "--json"], { cwd: dir, encoding: "utf8", stdio: "ignore" });
+  spawnSync("bd", ["update", "--json", issueId, "--claim"], { cwd: dir, encoding: "utf8", stdio: "ignore" });
+}
 
 function input() {
   return {
@@ -37,7 +49,10 @@ describe("plugin completion observer boundary", () => {
     expect(await snapshot.execute({}, { sessionID: "missing" })).toContain("only from a primary session");
   });
 
-  test("tool boundary validates tiny, standard, and heavy packets while bypassing ordinary tools", async () => {
+  test("tool boundary validates tiny, standard, and heavy packets while bypassing ordinary tools", { timeout: 20000 }, async () => {
+    // Live-claim gate fixture (test-side): claim tgo-standard/tgo-heavy in /tmp/tgo-test so dispatch passes the gate. Tiny bypass untouched.
+    ensureTmpTestClaimedFixture("tgo-standard");
+    ensureTmpTestClaimedFixture("tgo-heavy");
     const hooks = await TgoPlugin(input(), {});
     const before = hooks["tool.execute.before"]!;
     const run = (args: unknown) => before({ sessionID: "primary", callID: "call", tool: "task" } as never, { args } as never);

@@ -133,15 +133,17 @@ describe("bernstein mandate encoding", () => {
     expect(prompt).toContain("Run the exit gate");
   });
 
-  test("carries metadata-only Beads lifecycle boundaries", () => {
+  test("carries live-operator Beads lifecycle boundaries", () => {
     const prompt = readFileSync(path.join(agentsDir, "bernstein.md"), "utf-8");
-    expect(prompt).toContain("ONLY intended Beads operator in the future architecture");
-    expect(prompt).toContain("does not create, claim, close, reopen, or recover Beads issues");
+    expect(prompt).toContain("You OWN the Beads lifecycle via the `tgo_beads_*` host tools");
+    expect(prompt).toContain("tgo_beads_create");
+    expect(prompt).toContain("tgo_beads_claim");
+    expect(prompt).toContain("verify-every-claim");
+    expect(prompt).toContain("host-verified claim evidence");
     expect(prompt).toContain("Treat `issueId`, `issueStatusObserved`, `issueAssigneeObserved`, `claimExitCode`, `beadsOperator`, `exitGate`");
     expect(prompt).toContain("issueStatusObserved");
     expect(prompt).toContain("issueAssigneeObserved");
     expect(prompt).toContain("claimExitCode");
-    expect(prompt).toContain("ephemeral");
   });
 
   test("carries stagnation detection + the re-planning ladder", () => {

@@ -1,5 +1,18 @@
 import { test, expect, describe } from "bun:test";
+import { mkdirSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { TgoPlugin } from "../src/plugin";
+
+function ensureTmpTestClaimedFixture(issueId: string): void {
+  const dir = "/tmp/tgo-test";
+  try { mkdirSync(dir, { recursive: true }); } catch {}
+  spawnSync("git", ["init"], { cwd: dir, encoding: "utf8", stdio: "ignore" });
+  spawnSync("git", ["config", "user.email", "test@test.com"], { cwd: dir, encoding: "utf8", stdio: "ignore" });
+  spawnSync("git", ["config", "user.name", "Test"], { cwd: dir, encoding: "utf8", stdio: "ignore" });
+  spawnSync("bd", ["init", "--non-interactive", "--skip-hooks"], { cwd: dir, encoding: "utf8", stdio: "ignore" });
+  spawnSync("bd", ["create", `TGO fixture ${issueId}`, "-t", "task", "-p", "2", "--id", issueId, "--force", "--json"], { cwd: dir, encoding: "utf8", stdio: "ignore" });
+  spawnSync("bd", ["update", "--json", issueId, "--claim"], { cwd: dir, encoding: "utf8", stdio: "ignore" });
+}
 
 function baseInput(overrides: Record<string, unknown> = {}) {
   return {
@@ -53,7 +66,9 @@ describe("preset resolution failure propagation", () => {
     await expect(before({ sessionID: "primary", callID: "c1", tool: "task" } as never, { args } as never)).rejects.toThrow();
   });
 
-  test("host-authoritative preset failures still propagate", async () => {
+  test("host-authoritative preset failures still propagate", { timeout: 20000 }, async () => {
+    // Live-claim gate fixture (test-side): claim tgo-124 in /tmp/tgo-test so dispatch reaches the host-authoritative throw.
+    ensureTmpTestClaimedFixture("tgo-124");
     const hooks = await TgoPlugin(baseInput(), {});
     const before = hooks["tool.execute.before"]!;
     // Missing subagent_type triggers host-authoritative seat resolution failure
