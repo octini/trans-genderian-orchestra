@@ -30,6 +30,7 @@ import { authorizeLifecycleSession, evaluateClosure, verifyClaimObserved } from 
 import { lookupClaimObserved, evaluateLiveDispatchGate } from "./verify-claim";
 import { executeBeadsClaim, isClaimToolAllowed } from "./claim-tool";
 import { executeBeadsClose, isCloseToolAllowed } from "./close-tool";
+import { executeBeadsCreate, isCreateToolAllowed } from "./create-tool";
 import { shouldRunGate, applyGateToClosure, evaluateGatedClosure, gateBlockedWithError } from "./lifecycle";
 import { runExitGate } from "./exitgate/gate";
 import { loadBeadsTui, renderBeadsTui } from "./tui";
@@ -664,6 +665,29 @@ export const TgoPlugin: Plugin = async (
             repoRoot,
             isPrimary: true,
             allowed: isCloseToolAllowed((options as Record<string, unknown> | undefined)?.beadsCloseAllowed),
+            log: appLog,
+          });
+        },
+      }),
+      tgo_beads_create: tool({
+        description: "Create a Beads issue for the primary session (validated, logged ID, post-show confirm). Primary-seat only. Retry is caller-managed and non-idempotent: reconcile by title/time, never auto-delete, never reuse.",
+        args: {
+          title: tool.schema.string(),
+          description: tool.schema.string().optional(),
+          type: tool.schema.string().optional(),
+          priority: tool.schema.string().optional(),
+        },
+        async execute(args, context) {
+          const authorized = await authorizeLifecycleSession(client, context.sessionID);
+          if (!authorized) {
+            appLog("warn", "beads create denied: non-primary session");
+            throw new Error("tgo_beads_create is primary-seat only — delegated seats cannot create issues");
+          }
+          const repoRoot = directory ?? worktree ?? (project as unknown as { worktree?: string })?.worktree ?? ".";
+          return await executeBeadsCreate(args as Record<string, unknown>, {
+            repoRoot,
+            isPrimary: true,
+            allowed: isCreateToolAllowed((options as Record<string, unknown> | undefined)?.beadsCreateAllowed),
             log: appLog,
           });
         },
