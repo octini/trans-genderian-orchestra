@@ -31,6 +31,7 @@ import { lookupClaimObserved, evaluateLiveDispatchGate } from "./verify-claim";
 import { executeBeadsClaim, isClaimToolAllowed } from "./claim-tool";
 import { executeBeadsClose, isCloseToolAllowed } from "./close-tool";
 import { executeBeadsCreate, isCreateToolAllowed } from "./create-tool";
+import { executeBeadsDep, isDepToolAllowed } from "./dep-tool";
 import { shouldRunGate, applyGateToClosure, evaluateGatedClosure, gateBlockedWithError } from "./lifecycle";
 import { runExitGate } from "./exitgate/gate";
 import { loadBeadsTui, renderBeadsTui } from "./tui";
@@ -688,6 +689,28 @@ export const TgoPlugin: Plugin = async (
             repoRoot,
             isPrimary: true,
             allowed: isCreateToolAllowed((options as Record<string, unknown> | undefined)?.beadsCreateAllowed),
+            log: appLog,
+          });
+        },
+      }),
+      tgo_beads_dep: tool({
+        description: "Wire a Beads dependency for the primary session (verify-first, post-list confirm). Primary-seat only.",
+        args: {
+          issueId: tool.schema.string(),
+          dependsOnId: tool.schema.string(),
+          type: tool.schema.string().optional(),
+        },
+        async execute(args, context) {
+          const authorized = await authorizeLifecycleSession(client, context.sessionID);
+          if (!authorized) {
+            appLog("warn", "beads dep denied: non-primary session");
+            throw new Error("tgo_beads_dep is primary-seat only — delegated seats cannot wire dependencies");
+          }
+          const repoRoot = directory ?? worktree ?? (project as unknown as { worktree?: string })?.worktree ?? ".";
+          return await executeBeadsDep(args as Record<string, unknown>, {
+            repoRoot,
+            isPrimary: true,
+            allowed: isDepToolAllowed((options as Record<string, unknown> | undefined)?.beadsDepAllowed),
             log: appLog,
           });
         },
