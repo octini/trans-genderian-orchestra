@@ -28,6 +28,7 @@ import {
 } from "./worktree-lane";
 import { authorizeLifecycleSession, evaluateClosure, verifyClaimObserved } from "./lifecycle";
 import { lookupClaimObserved, evaluateLiveDispatchGate } from "./verify-claim";
+import { executeBeadsClaim, isClaimToolAllowed } from "./claim-tool";
 import { shouldRunGate, applyGateToClosure, evaluateGatedClosure, gateBlockedWithError } from "./lifecycle";
 import { runExitGate } from "./exitgate/gate";
 import { loadBeadsTui, renderBeadsTui } from "./tui";
@@ -623,6 +624,26 @@ export const TgoPlugin: Plugin = async (
             return "Beads snapshot is available only from a primary session.";
           }
           return renderBeadsTui(await loadBeadsTui(runBd));
+        },
+      }),
+      tgo_beads_claim: tool({
+        description: "Claim a Beads issue for the primary session (verify-first, claim-if-unowned). Primary-seat only.",
+        args: {
+          issueId: tool.schema.string(),
+        },
+        async execute(args, context) {
+          const authorized = await authorizeLifecycleSession(client, context.sessionID);
+          if (!authorized) {
+            appLog("warn", "beads claim denied: non-primary session");
+            throw new Error("tgo_beads_claim is primary-seat only — delegated seats cannot claim issues");
+          }
+          const repoRoot = directory ?? worktree ?? (project as unknown as { worktree?: string })?.worktree ?? ".";
+          return await executeBeadsClaim(args as Record<string, unknown>, {
+            repoRoot,
+            isPrimary: true,
+            allowed: isClaimToolAllowed((options as Record<string, unknown> | undefined)?.beadsClaimAllowed),
+            log: appLog,
+          });
         },
       }),
       tgo_wait_for_user: tool({
