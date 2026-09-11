@@ -12,12 +12,12 @@ You don’t need to install two things or wire two configs. A single `opencode p
 opencode plugin trans-genderian-orchestra -g
 ```
 
-Under the hood that’s one npm package (`trans-genderian-orchestra@0.5.1`) with dual-package exports since v0.1.5 — `"./server" → "./dist/server.js"` for the board that lives in chat, and `"./tui" → "./dist/tui.js"` for the sidebar you see on the right. The host-resolved peers (`solid-js`, `@opentui/solid`, `@opentui/core`) are shared, not bundled twice. On the server the plugin hooks `experimental.chat.messages.transform` and `experimental.chat.system.transform` in `dist/server.js`; in the TUI it calls `slots.register` at `order 450` in `tui.jsonc` (right between the built-in Todo at `400` and Modified Files at `500`) in `dist/tui.js`. The interactive sidebar itself arrived in 0.1.6 — 0.1.5 shipped the dual exports and the renderer-only `tgo_beads_snapshot` tool, not the live sidebar.
+Under the hood that’s one npm package (`trans-genderian-orchestra@0.7.0`) with dual-package exports since v0.1.5 — `"./server" → "./dist/server.js"` for the board that lives in chat, and `"./tui" → "./dist/tui.js"` for the sidebar you see on the right. The host-resolved peers (`solid-js`, `@opentui/solid`, `@opentui/core`) are shared, not bundled twice. On the server the plugin hooks `experimental.chat.messages.transform` and `experimental.chat.system.transform` in `dist/server.js`; in the TUI it calls `slots.register` at `order 450` in `tui.jsonc` (right between the built-in Todo at `400` and Modified Files at `500`) in `dist/tui.js`. The interactive sidebar itself arrived in 0.1.6 — 0.1.5 shipped the dual exports and the renderer-only `tgo_beads_snapshot` tool, not the live sidebar.
 
 If you’d rather declare it explicitly, the manual `opencode.jsonc` form works just as well:
 
 ```json
-{ "plugin": ["trans-genderian-orchestra@0.5.1"] }
+{ "plugin": ["trans-genderian-orchestra@0.7.0"] }
 ```
 
 OpenCode installs the package and its peers. Restart opencode and you’re globally ready. That’s the whole manual step — everything else is lazy.
@@ -103,7 +103,7 @@ Either way, deduplication lives in one place: `SetupController` in `plugin/src/s
 - **Idempotent + per-repo.** A repo that already has `.beads/` and both markers is never re-touched.
 - **Granular.** Each of the three steps is conditional on its own signal (`.beads/` presence, Beads block, TGO markers) rather than a single “inited” flag.
 - **Zero user input.** Tracker → beads, labels → default triage, monorepo → auto-detected (single-context). Personal choices are deferred, not required.
-- **Host-honest.** `bd init --directory` remains unsupported and `bd -C` still fails with `cannot use -C directory …: no beads project found` — setup uses `.cwd(directory)` from the target repository and reports what the subprocess actually did. Board reads don’t authorize lifecycle writes — the plugin stays metadata-only (`beadsLifecycle.allowed: false`) until host-mediated lifecycle is proven.
+- **Host-honest.** `bd init --directory` remains unsupported and `bd -C` still fails with `cannot use -C directory …: no beads project found` — setup uses `.cwd(directory)` from the target repository and reports what the subprocess actually did. Board reads don’t authorize lifecycle writes — only the primary lineage plus a live lookup gates dispatch; Bernstein operates the lifecycle through the six `tgo_beads_*` host tools (automated recovery stays manual).
 
 The `tgo-setup` skill at `skills/tgo-setup/SKILL.md` (copied into the config dir at install) documents the same steps and offers the manual path if you ever want it.
 

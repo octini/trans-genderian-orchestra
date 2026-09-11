@@ -62,7 +62,7 @@ Two boundaries are absolute:
 - **The doing-boundary.** Bernstein never modifies a file, however trivial; any change goes to Dylan via a beads issue. He may read, run verification (`git diff`/`status`, lint, test), run `bd`, delegate, and reconcile. "Delegate the doing, keep the deciding."
 - **Routing scales with blast radius.** Tiny/mechanical work gets a minimal spec, a direct Dylan dispatch, and a fast verify. Standard multi-step work gets the full Five-part Spec and normal wave dispatch. Judgment-heavy or high-blast-radius work gets the full pipeline: grilling/wayfinder for shape, the band for risk, review before merge. The heavy pipeline is reserved, not the default for small work.
 
-His future Beads operating rules (single-writer: create before delegating, claim at dispatch, close only on verified completion) live in `docs/spec/beads-integration.md`; the current plugin host validates metadata only. Board reads do not authorize lifecycle actions; bd init --directory is unsupported, bd -C fails, must use .cwd(directory). Plugin remains metadata-only (beadsLifecycle.allowed:false) until host boundary validated. Tiny routing retains its documented bypass.
+His Beads operating rules (single-writer: create before delegating, claim at dispatch, close only on verified completion) live in `docs/spec/beads-integration.md` and ship as six primary-gated host tools (`tgo_beads_*`, verify-first, default-on with an explicit-`false` kill switch; see `docs/spec/beads-operator-a.md`). Board reads do not authorize lifecycle actions; bd init --directory is unsupported, bd -C fails, must use .cwd(directory). Automated recovery stays manual. Tiny routing retains its documented bypass.
 
 ## Structured output contracts
 

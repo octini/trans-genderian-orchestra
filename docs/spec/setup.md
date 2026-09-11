@@ -41,7 +41,7 @@ These guardrails do not authorize lifecycle writes. `bd init --directory` remain
 
 - TGO attempts `bd init` and `bd setup opencode` from the target repository when the host exposes the `bd` CLI (auto-installed when `config.setup.autoInstallBeads` is left on). Subprocess `{ exitCode, stdout, stderr }` is preserved; a nonzero result is reported as a `failed` setup rather than silently accepted. A missing CLI without an installer returns `no-bd`.
 - The official `bd setup opencode` managed Beads block (guidance only; decided 2026-08-05) and TGO’s thin `AGENTS.md` advice layer are merged with the existing file — no-clobber, so user content stays intact. A repo with `.beads/` and both marker blocks is never re-touched.
-- A host-supported `.beads/` store may be initialized. The plugin does not read issues or perform Beads create, claim, close, reopen, recovery, or authorization operations. `bd init --directory` is unsupported; `bd -C` fails — setup must use `.cwd(directory)`; host-mediated lifecycle validation remains future work until the OpenCode host boundary is proven. Board reads do not authorize lifecycle actions; the plugin remains metadata-only (`beadsLifecycle.allowed: false`).
+- A host-supported `.beads/` store may be initialized. Bernstein-owned create, claim, close, dep, update, and reopen run through six primary-gated host tools (`tgo_beads_*`, verify-first, default-on; automated recovery stays manual). `bd init --directory` is unsupported; `bd -C` fails — setup must use `.cwd(directory)`; board reads do not authorize lifecycle actions.
 
 ## 5. What it looks like from the outside
 

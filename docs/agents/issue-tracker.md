@@ -1,10 +1,10 @@
 # Issue tracker: Beads
 
-Issues and PRDs for this repo are tracked in beads (`bd`). The commands below are contributor-side or host-dependent CLI workflow; the current TGO plugin validates lifecycle metadata only and does not perform these Beads writes. Bernstein-owned create/claim/close lifecycle integration remains follow-up work.
+Issues and PRDs for this repo are tracked in beads (`bd`). The commands below are contributor-side or host-dependent CLI workflow; delegated seats never run them directly — Bernstein operates the same lifecycle through the six primary-gated `tgo_beads_*` host tools.
 
 ## Workflow
 
-All contributor-side beads operations are `bd` CLI commands run via the `bash` tool. There is no `bd` tool and no beads MCP server; the opencode-beads plugin's own context explicitly says to call `bd` through bash. This does not make live Beads lifecycle available to the current TGO plugin host.
+All contributor-side beads operations are `bd` CLI commands run via the `bash` tool. There is no `bd` tool and no beads MCP server; the opencode-beads plugin's own context explicitly says to call `bd` through bash. Delegated seats never run these directly — Bernstein operates the same lifecycle through the six primary-gated `tgo_beads_*` host tools.
 
 - `bd prime` — **host-dependent contributor CLI** for workflow context and command guidance; it is not run by the current TGO plugin.
 - `bd ready` — **contributor-side CLI** to find available work (no blockers, not claimed).
@@ -17,11 +17,11 @@ All contributor-side beads operations are `bd` CLI commands run via the `bash` t
 
 ## When a skill says "publish to the issue tracker"
 
-Run `bd create "title" -t <type> -p <priority>` via bash as a contributor-side operation; the current plugin does not create the issue.
+Run `bd create "title" -t <type> -p <priority>` via bash as a contributor-side operation; delegated seats never create issues directly — Bernstein publishes through the `tgo_beads_*` host tools.
 
 ## When a skill says "fetch the relevant ticket"
 
-Run `bd show <id>` via bash as a contributor-side operation; the current plugin does not perform the lookup.
+Run `bd show <id>` via bash as a contributor-side operation; delegated seats never look up directly — Bernstein verifies through the `tgo_beads_*` host tools.
 
 ## Wayfinding operations
 

@@ -1,6 +1,6 @@
 # TGO Spec — Beads-Native Integration
 
-Status: **read-only board support / lifecycle follow-up**. When host setup supports `bd`, the current plugin may render a read-only Beads-derived board from `bd list`, `bd ready`, `bd blocked`, and `bd memories`; it does not perform Bernstein-owned lifecycle operations. Create, claim, close, reopen, recovery, and authorization remain disabled or unproven. Source decision: `docs/wayfinder/decisions.md` (tgo-a6r.18). Related ADRs: `docs/adr/0005-beads.md`. Parked investigations: see decisions log §PARKED INVESTIGATIONS (opencode-beads fork vs official beads opencode support; disabling `todowrite`).
+Status: **read-only board + Bernstein operator tools (0.7.0)**. When host setup supports `bd`, the plugin renders a read-only Beads-derived board from `bd list`, `bd ready`, `bd blocked`, and `bd memories`, and Bernstein operates the lifecycle through six primary-gated host tools (`tgo_beads_*`, verify-first, default-on with explicit-`false` kill switch; see `docs/spec/beads-operator-a.md`). Automated recovery creation stays manual. Source decision: `docs/wayfinder/decisions.md` (tgo-a6r.18). Related ADRs: `docs/adr/0005-beads.md`. Parked investigations: see decisions log §PARKED INVESTIGATIONS (opencode-beads fork vs official beads opencode support; disabling `todowrite`).
 
 ## 1. Coupling: scoped deep integration
 
@@ -94,13 +94,13 @@ The command proves that the real host can launch an isolated primary session and
 | Boundary | Result | Evidence |
 |---|---|---|
 | Disposable `bd` read/claim/close | Proven | Disposable CLI probe (`mkdtempSync`): `open` → `in_progress` with `assignee: ryangking` + `claimExitCode 0` → `closed`, with `{exitCode, stdout, stderr}` diagnostics |
-| Claim-before-execution linkage | Proven via disposable probe; plugin remains metadata-only | Delegation packet now requires `issueStatusObserved: "in_progress"`, `issueAssigneeObserved` truthy, `claimExitCode: 0`; forged `issueClaimed:true` without observed status is rejected (`delegation.test.ts`, `lifecycle.test.ts`); live claim verified in `beads-probe.test.ts` disposable `mkdtempSync(os.tmpdir()/tgo-bd-probe-*)`; plugin validation is metadata-only diagnostic until host write path proven — no live plugin-mediated `bd` claim |
+| Claim-before-execution linkage | Proven live via verify-every-claim gate | Delegation packet requires `issueStatusObserved: "in_progress"`, `issueAssigneeObserved` truthy, `claimExitCode: 0`; the host `bd show --json` lookup (`plugin/src/verify-claim.ts`) verifies the triple before every non-tiny spawn and backs pre/post verification in all six `tgo_beads_*` tools; forged `issueClaimed:true` without observed status is rejected (`delegation.test.ts`, `lifecycle.test.ts`) |
 | Missing/invalid claim observation | Proven to fail | `bd show --json <missing>` and `bd update --json <nonexistent> --claim` yield non-zero exit and are treated as failed precondition; double-claim remains `in_progress` or errors without forging (`beads-probe.test.ts`) |
 | Isolated real OpenCode launch | Proven | OpenCode `1.18.18`, exit `0`, JSON stdout, empty stderr |
 | `session.created` primary filtering | Proven by plugin source and isolated setup tests; live event record not exposed by this probe | `parentID` gate in `src/plugin.ts` (`parentID===null`); setup tests |
 | Child-session filtering | Unproven at this boundary | No real delegation was invoked |
 | Forged `beadsOperator` / forged `issueClaimed` authorization | Rejected; host lineage is required and child/missing identity fails closed; observed fields required | `plugin-reinforcement.test.ts`; metadata is not authorization; `issueClaimed` alone is rejected |
-| Plugin-mediated issue lookup/claim/close/recovery | Unproven and disabled | `beadsLifecycle.allowed: false`; no lifecycle subprocess path; remains `metadata-only` until host boundary validated |
+| Plugin-mediated issue lookup/claim/close/dep/update/reopen | Live, default-on | Six `tgo_beads_*` host tools, primary-gated, verify-first with post-write confirm; per-tool `*_ALLOWED_DEFAULT = true` with explicit-`false` kill switch (`host.allowed=false` denies); automated recovery creation stays manual (no recovery tool built) |
 | Tiny task lifecycle operation | Proven absent in plugin hook test | Tiny closure metadata omits `beadsLifecycle`; no lifecycle write is enabled |
 | Board reads authorize writes | Explicitly not authorized | Board is read-only; `bd -C` and `bd init --directory` unsupported; `.cwd(directory)` for setup only |
 

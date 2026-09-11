@@ -8,7 +8,7 @@ Status: **spec** (buildable). Source decisions: `docs/wayfinder/decisions.md` (t
 
 - Routing, delegation, and seat behavior live in **config/prompts** (agent `.md` files, permission graph, presets). The plugin never reimplements control flow.
 - The routing implementation exposes one `tiny` / `standard` / `heavy` classification result. It is a conservative input to delegation and closure enforcement; the plugin does not close or reopen Beads issues. This classifier only supplies the routing result. Downstream tiny bypass and heavy-pipeline promotion wiring is a later slice.
-- The **plugin core observes lifecycle metadata and state** — four core runtime hooks (see §4), plus an opt-in completion observer that is inert by default and does not claim production context or lineage, plus the plugin `config` hook that applies the active preset at load (see `docs/spec/features.md` §5). It does not perform Beads lifecycle writes.
+- The **plugin core observes lifecycle metadata and state** — four core runtime hooks (see §4), plus an opt-in completion observer that is inert by default and does not claim production context or lineage, plus the plugin `config` hook that applies the active preset at load (see `docs/spec/features.md` §5). It verifies every claim live and performs Bernstein-owned Beads lifecycle writes only through six primary-gated host tools (`tgo_beads_*`, default-on with explicit-`false` kill switch; automated recovery stays manual).
 - Everything else (roster, models, prompts, permissions, presets) is configuration, built from templates at install/build time.
 
 ## 2. Roster mapping
@@ -44,7 +44,7 @@ verification, and assigns recovery as retry, reroute, escalate, or user-clarific
 Watchdog-aborted output is never a completion signal: it is classified for reroute.
 Parsing does not verify, claim, close, or reopen Beads issues. `closureGate` is
 metadata for Bernstein's later lifecycle operation; the actual lifecycle boundary
-is a follow-up, not a capability of this plugin hook path. Failed-gate recovery is metadata-only until host write path proven (plugin does not close/reopen/recover) — the `closureGate` `recovery` derives from `report.recovery` (`watchdog`→`reroute`, `blocked`/`escalate`, else `retry`/`user-clarification`) and no live `bd` calls are made; see `docs/spec/beads-integration.md` § Failed-gate recovery. bd init --directory is unsupported; bd -C fails, must use .cwd(directory). Plugin remains metadata-only until host boundary validated.
+is a follow-up, not a capability of this plugin hook path. Automated failed-gate recovery stays manual (the plugin never auto-closes, auto-reopens, or auto-creates recovery issues) — the `closureGate` `recovery` derives from `report.recovery` (`watchdog`→`reroute`, `blocked`/`escalate`, else `retry`/`user-clarification`); close/reopen of verified issues go through the primary-gated `tgo_beads_*` tools; see `docs/spec/beads-integration.md` § Failed-gate recovery. bd init --directory is unsupported; bd -C fails, must use .cwd(directory).
 
 ### 3.3 State
 

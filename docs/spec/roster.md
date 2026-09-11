@@ -33,19 +33,19 @@ Standing rule (all seats): **effectiveness over theming.** Names are naming/UX d
 
 Per-role model routing via presets (see `docs/spec/features.md` §5): named seat→model/variant maps. Three built-ins: **balanced / cheap / frontier**. **Applied at plugin load** from the active preset (config hook), never mid-task — OpenCode 1.18.13's `task` tool takes no model parameter and a subagent without an explicit `model` inherits the parent's model, so per-seat models are fixed for the session.
 
-**Concrete presets (decided 2026-08-05, Go + free Zen models; balanced amended 2026-08-16, tgo-5a6; unified 2026-08-21, tgo-5ga):**
+**Concrete presets (decided 2026-08-05, Go + free Zen models; balanced amended 2026-08-16, tgo-5a6; unified 2026-08-21, tgo-5ga; balanced split 2026-09-11, b61fa21):**
 
 | Seat | Balanced | Cheap | Frontier |
 |---|---|---|---|
-| Bernstein | `opencode-go/muse-spark-1.3-contributor` (xhigh) | `opencode-go/muse-spark-1.3-contributor` (xhigh) | `opencode-go/glm-5.3` (max) |
-| Horowitz | `opencode-go/muse-spark-1.3-contributor` (xhigh) | `opencode-go/muse-spark-1.3-contributor` (xhigh) | `opencode-go/kimi-k3` (max) |
+| Bernstein | `opencode-go/glm-5.3-flash` (max) | `opencode-go/muse-spark-1.3-contributor` (xhigh) | `opencode-go/glm-5.3` (max) |
+| Horowitz | `opencode-go/glm-5.3-flash` (max) | `opencode-go/muse-spark-1.3-contributor` (xhigh) | `opencode-go/kimi-k3` (max) |
 | Nas | `opencode-go/muse-spark-1.3-contributor` (xhigh) | `opencode-go/muse-spark-1.3-contributor` (xhigh) | `opencode-go/muse-spark-1.3-contributor` (xhigh) |
 | Dylan | `opencode-go/muse-spark-1.3-contributor` (xhigh) | `opencode-go/muse-spark-1.3-contributor` (xhigh) | `opencode-go/muse-spark-1.3-contributor` (xhigh) |
-| Nirvana synth | `opencode-go/muse-spark-1.3-contributor` (xhigh) | `opencode-go/muse-spark-1.3-contributor` (xhigh) | `opencode-go/grok-4.6` (xhigh) |
+| Nirvana synth | `opencode-go/glm-5.3-flash` (max) | `opencode-go/muse-spark-1.3-contributor` (xhigh) | `opencode-go/grok-4.6` (xhigh) |
 | Band members | `opencode-go/muse-spark-1.3-contributor` (xhigh) | `opencode-go/muse-spark-1.3-contributor` (xhigh) | `opencode-go/muse-spark-1.3-contributor` (xhigh) |
 
 **Rationale:**
-- **Balanced = Muse Spark on every seat (xhigh)** — identical to cheap for the time being (2026-09-06, option A); all six balanced entries route to `muse-spark-1.3-contributor` at effort `xhigh` (226,600/mo cap). Verified in `~/.cache/opencode/models.json`: Muse Spark tops out at `xhigh` (no `max`).
+- **Balanced = split routing** — Bernstein/Horowitz/Nirvana-synth → `glm-5.3-flash` (max); Nas/Dylan/band-members → `muse-spark-1.3-contributor` (xhigh); cheap remains all-Spark.
 - **Cheap = Muse Spark on every seat** (xhigh): all six cheap entries route to `muse-spark-1.3-contributor` at effort `xhigh`.
 - **Frontier = best-performance-period (light month)** — Bernstein → `glm-5.3` (max, best Go agentic); Horowitz → `kimi-k3` (max, best Go long-horizon coder); Nirvana → `grok-4.6` (xhigh, best knowledge-work synth); Dylan/Nas/band-members → `muse-spark-1.3-contributor` (xhigh). Kimi K3 and GLM-5.3 support `max`; Grok 4.6 tops out at `xhigh`. Frontier caps are tight (Grok 4.6 = 845, Kimi K3 = 490, GLM-5.3 = 1,080 req/mo).
 - **Nas = the eyes** (read-only researcher; vision delegation per model capability): Bernstein delegates vision tasks to Nas on demand — the slim Observer pattern, with **Nas read-only** (confirmed: slim's Observer is read-only, no write access needed). **Implemented (2026-08-11, tgo-dqa):** Bernstein's prompt carries the vision rule both ways — anything needing sight goes to Nas when his model lacks vision; when his model HAS vision (frontier Kimi K3), he reads images himself and only delegates vision work that's research/recon. Nas's prompt identifies him as "the eyes" so he accepts sight tasks in the structured report format.
@@ -61,7 +61,7 @@ Bernstein is the single orchestrator. In addition to §1-4, his mandate carries 
 4. **Stagnation detection.** In deepwork mode: repeated-identical-action detection + periodic progress checks (3 identical actions → intervene; periodic check every N steps), layered on the existing hard bounds (max phases, token budget, checkpoint cadence).
 5. **Adaptive re-planning levels.** Bernstein's failure response gains light/medium/heavy: tweak params → reorder deps → full re-decomposition, layered on the escalation ladder.
 
-His beads operating rules (single-writer) are specified in `docs/spec/beads-integration.md`. Board reads do not authorize lifecycle actions; bd init --directory is unsupported, bd -C fails, must use .cwd(directory). Plugin remains metadata-only (beadsLifecycle.allowed:false) until host boundary validated. Tiny routing retains its documented bypass.
+His beads operating rules (single-writer) are specified in `docs/spec/beads-integration.md` and ship as six primary-gated host tools (see `docs/spec/beads-operator-a.md`). Board reads do not authorize lifecycle actions; bd init --directory is unsupported, bd -C fails, must use .cwd(directory). Automated recovery stays manual. Tiny routing retains its documented bypass.
 
 **The doing-boundary (decided 2026-08-05):** Bernstein's boundary is **absolute** — he never modifies a file, however trivial; any change goes to Dylan via a beads issue. He may read, run verification (git diff/status, lint, test), run `bd`, delegate, and reconcile. Vision tasks go to Nas (per model presets §4). "Delegate the doing, keep the deciding" made structural (fusion).
 

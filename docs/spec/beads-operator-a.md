@@ -161,3 +161,7 @@ The earlier read gap is closed: `bd blocked`, `bd memories`, `bd remember`, and 
 - Phase 2 "Gate writes behind `allowed: true` (today `beadsLifecycle.allowed: false` ...). Flip to `allowed: true` only after the Phase 1 exit gate" → flipped in `6e24908`: per-tool `*_ALLOWED_DEFAULT = true` with explicit-`false` kill switch.
 - Exit-gate checkbox "`grep bd create` over `plugin/src` shows zero host spawns" → superseded by design: `plugin/src/create-tool.ts` now spawns `bd create` on the primary-seat host path (frozen worker-skill prohibition is unaffected).
 - Non-goal "no automated recovery creation in this spec. Recovery creation stays `allowed: false` until Phase 1 proves the verify path" → Phase 1 passed and enablement shipped, but no automated-recovery tool was built; the `allowed:false` posture for recovery persists (see §3).
+
+### 5. 0.7.0 publish state
+
+0.7.0 ships all six tools default-on (per-tool `*_ALLOWED_DEFAULT = true`, explicit-`false` kill switch); history adds `7ddd989` (update/reopen, default-true) and `b61fa21` (balanced split routing + dist rebuilt). `tgo-arf` is filed for per-lens band models (investigation open, user decision pending); band-members stays one shared entry per preset until decided. Automated recovery stays manual: no recovery tool; orphan recovery is explicit re-claim/re-delegate.

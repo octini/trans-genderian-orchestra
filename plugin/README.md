@@ -36,7 +36,7 @@ One npm package exposes both via dual-package exports since v0.1.5 (`exports "./
 If you prefer to wire it by hand, this also works in `opencode.jsonc`:
 
 ```json
-{ "plugin": ["trans-genderian-orchestra@0.5.1"] }
+{ "plugin": ["trans-genderian-orchestra@0.7.0"] }
 ```
 
 Restart opencode after it installs. That’s the global layer done.
@@ -100,7 +100,7 @@ Lean check, if you like receipts: `grep -c slots.register plugin/dist/server.js`
 
 Bernstein sketches the work as a dependency-ordered DAG, sends each piece out with a five-part spec (Objective / Files / Interfaces / Constraints / Verification), and waits for a structured report back (STATUS / CHANGES / VERIFIED / GAPS). The verification line is the promise you can hold him to — tests pass, lint clean, or the work isn’t closed. Specialists stay in their lane because the host makes them: Dylan is the only seat that can touch files, Nas never gets `bash` or `task` at all, Horowitz can read but not write, and Nirvana is tool-less by design.
 
-The Background Job Board is the view that follows you through all of this. Each turn the plugin re-derives a short board snapshot from Beads — `bd list`, `bd ready`, `bd blocked`, `bd memories` when the host exposes them — and shares it with the model as context. It’s read-only context, not a license to write. Creating, claiming, closing, reopening, or recovering beads outside that read path stays disabled until the host boundary for lifecycle writes is proven; the current plugin stays metadata-only there (`beadsLifecycle.allowed: false`).
+The Background Job Board is the view that follows you through all of this. Each turn the plugin re-derives a short board snapshot from Beads — `bd list`, `bd ready`, `bd blocked`, `bd memories` when the host exposes them — and shares it with the model as context. It’s read-only context, not a write license. Board reads never authorize a session or any lifecycle action — only the host-observable primary lineage plus a live lookup gates dispatch. Bernstein operates the lifecycle through six primary-gated host tools (`tgo_beads_create/claim/close/dep/update/reopen`: verify-first, default-on with an explicit-`false` kill switch); automated recovery stays manual.
 
 - **Session reuse** — follow-up delegations continue the same subagent session (`task_id`) instead of spawning fresh; context-size guarded; state in `.tgo/sessions.json`.
 - **Progress files** — per-issue `.tgo/<issueId>/progress.md` (Objective / Touch set / Decisions / Blockers / Status) written by Dylan, read by Bernstein/Horowitz; survives session end.
@@ -171,7 +171,7 @@ There’s also a human voice for the docs themselves. The shipped `tgo-prose` an
 
 TGO keeps its dependency surface small and explicit. The installer checks for each of these and installs what’s missing (`--deps auto | check | skip`):
 
-- **beads** (`bd` CLI) — the work-unit store the board reads from. Bernstein is the intended single writer in the future; today the board reads `bd list --all`, `bd ready`, and friends, and writes stay out of scope.
+- **beads** (`bd` CLI) — the work-unit store behind the board. Bernstein is its single writer through six primary-gated host tools (`tgo_beads_*`: create before delegating, verify-every-claim at dispatch, close only on verified completion). The board itself reads `bd list --all`, `bd ready`, and friends for context.
 - **AFT** — the symbol-aware code tools (`aft_*`, `ast_grep_*`). Dylan’s day-to-day. Installed via `npx @cortexkit/aft@latest setup` (`plugin/src/deps.ts`); self-updates by default when present (`@cortexkit/aft-opencode@latest`, `auto_update` defaults `true`) and TGO only auto-fixes an existing exact version pin to `@latest` on install / plugin registration (partial pins like `@0.38` and ranges like `@^0.38.0` are intentionally untouched).
 - **magic-context** — quiet, cross-session recall (`ctx_*`) that the installer wires end to end, with the historian always following the active preset's Dylan model + variant (reconciled on every startup and install; `magicContext.historianSync: "off"` disables). Includes the TUI sidebar. Self-updates by default (`@cortexkit/opencode-magic-context@latest`, `auto_update` defaults `true` — TGO auto-fills `auto_update:true` when absent, never clobbers `false`).
 - **context7** — the one external MCP for docs lookup (`context7_*`), given to Nas and Dylan.

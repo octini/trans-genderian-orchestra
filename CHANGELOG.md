@@ -2,6 +2,13 @@
 
 All notable changes to TGO, in reverse chronological order. Versions track `plugin/package.json`.
 
+## [0.7.0] - 2026-09-11
+
+- **Bernstein bead-operator suite (Spec A Phase 2, default-on):** six primary-seat-only host tools — `tgo_beads_create` (fc2c8bf), `tgo_beads_claim` (a2855e0), `tgo_beads_close` (310288b), `tgo_beads_dep` (bdd022c), `tgo_beads_update` + `tgo_beads_reopen` (7ddd989) — each verify-first with post-write confirm, `VALID_BEAD_ID` gating, explicit `repoRoot` cwd (never `bd -C`), `execFile` argv spawn, and host-log diagnostics. Enabled by default with an explicit-`false` kill switch (6e24908). Automated recovery stays manual (no recovery tool; orphan recovery is explicit re-claim/re-delegate).
+- **Verify-every-claim gate (Phase 1, da9a495):** live `bd show --json` lookup threads explicit cwd; dispatch requires observed `in_progress` + truthy assignee + `claimExitCode 0`; forged `issueClaimed`/`beadsOperator` rejected. Worker skills frozen (to-tickets + wayfinder propose ticket bodies, never publish); Bernstein seat refreshed (`bd blocked`/`memories`/`remember`/`forget` reads + live-operator wording).
+- **Balanced preset split routing (b61fa21):** balanced Bernstein/Horowitz/Nirvana-synth → `glm-5.3-flash` (max), Nas/Dylan/band-members stay `muse-spark-1.3-contributor` (xhigh); cheap remains all-Spark; frontier untouched; dist rebuilt.
+- **Gates:** `bun test` 1230 pass / 6 fail (pre-existing on clean HEAD — seat-baseline/claim-path suites, under review), preset+config suites 37 pass / 0 fail, `bunx tsc --noEmit` clean, `bun run src/validate.ts` PASSED.
+
 ## [0.6.0] - 2026-09-09
 
 - **Run-path reroute (tgo-21a): dead-heartbeat → watchdog with flag gate + audit:** `RECOVERY_REASON_TO_FAILURE_TYPE` maps RecoveryFlag reasons to failure types (dead-heartbeat → watchdog; suspended/aborted stay unclassified, preserving awaiting/aborted semantics) reusing `classifyFailureType`; `problemsFromRecovery` enriches dead-heartbeat entries with `failureType` + `FAILURE_TYPE_HINTS` hint surfaced on the board; rollout gate `isRunPathRerouteEnabled` defaults ON with `TGO_RUN_PATH_REROUTE` / kill-switch env overrides; audit log fires on emission; new `run-path-reroute` + `fit` recovery-reason suites (bbd4214, Horowitz approve).
