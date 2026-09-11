@@ -84,12 +84,12 @@ describe("isPresetName", () => {
 });
 
 describe("applyPreset", () => {
-  test("routes balanced seats to Muse Spark (identical to cheap)", async () => {
+  test("routes balanced seats: Flash/max on bernstein/horowitz/nirvana, Spark/xhigh elsewhere", async () => {
     const cfg = await loadTgoConfig({ preset: "balanced" });
     const balanced = cfg.presets!.balanced;
-    expect(balanced.bernstein).toEqual({ model: "opencode-go/muse-spark-1.3-contributor", variant: "xhigh" });
-    expect(balanced.horowitz).toEqual({ model: "opencode-go/muse-spark-1.3-contributor", variant: "xhigh" });
-    expect(balanced.nirvana).toEqual({ model: "opencode-go/muse-spark-1.3-contributor", variant: "xhigh" });
+    expect(balanced.bernstein).toEqual({ model: "opencode-go/glm-5.3-flash", variant: "max" });
+    expect(balanced.horowitz).toEqual({ model: "opencode-go/glm-5.3-flash", variant: "max" });
+    expect(balanced.nirvana).toEqual({ model: "opencode-go/glm-5.3-flash", variant: "max" });
     expect(balanced.dylan).toEqual({ model: "opencode-go/muse-spark-1.3-contributor", variant: "xhigh" });
     expect(balanced.nas).toEqual({ model: "opencode-go/muse-spark-1.3-contributor", variant: "xhigh" });
     expect(balanced["band-members"]).toEqual({ model: "opencode-go/muse-spark-1.3-contributor", variant: "xhigh" });

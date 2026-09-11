@@ -31,16 +31,16 @@ Seat→model maps are called **presets**: named data files, not code, so model-n
 
 | Seat | Balanced | Cheap | Frontier |
 |---|---|---|---|
-| Bernstein | `opencode-go/muse-spark-1.3-contributor` (xhigh) | `opencode-go/muse-spark-1.3-contributor` (xhigh) | `opencode-go/glm-5.3` (max) |
-| Horowitz | `opencode-go/muse-spark-1.3-contributor` (xhigh) | `opencode-go/muse-spark-1.3-contributor` (xhigh) | `opencode-go/kimi-k3` (max) |
+| Bernstein | `opencode-go/glm-5.3-flash` (max) | `opencode-go/muse-spark-1.3-contributor` (xhigh) | `opencode-go/glm-5.3` (max) |
+| Horowitz | `opencode-go/glm-5.3-flash` (max) | `opencode-go/muse-spark-1.3-contributor` (xhigh) | `opencode-go/kimi-k3` (max) |
 | Nas | `opencode-go/muse-spark-1.3-contributor` (xhigh) | `opencode-go/muse-spark-1.3-contributor` (xhigh) | `opencode-go/muse-spark-1.3-contributor` (xhigh) |
 | Dylan | `opencode-go/muse-spark-1.3-contributor` (xhigh) | `opencode-go/muse-spark-1.3-contributor` (xhigh) | `opencode-go/muse-spark-1.3-contributor` (xhigh) |
-| Nirvana synth | `opencode-go/muse-spark-1.3-contributor` (xhigh) | `opencode-go/muse-spark-1.3-contributor` (xhigh) | `opencode-go/grok-4.6` (xhigh) |
+| Nirvana synth | `opencode-go/glm-5.3-flash` (max) | `opencode-go/muse-spark-1.3-contributor` (xhigh) | `opencode-go/grok-4.6` (xhigh) |
 | Band members | `opencode-go/muse-spark-1.3-contributor` (xhigh) | `opencode-go/muse-spark-1.3-contributor` (xhigh) | `opencode-go/muse-spark-1.3-contributor` (xhigh) |
 
 The routing rationale, from the spec:
 
-- **Balanced = Muse Spark on every seat (xhigh)** — identical to cheap for the time being (2026-09-06, option A); all six balanced entries route to `muse-spark-1.3-contributor` at effort `xhigh` (226,600/mo cap).
+- **Balanced = split routing** — Bernstein/Horowitz/Nirvana-synth → `glm-5.3-flash` (max); Nas/Dylan/band-members → `muse-spark-1.3-contributor` (xhigh); cheap remains all-Spark.
 - **Cheap = Muse Spark on every seat (xhigh)** — the 226,600/mo cap makes cost a non-issue; all six cheap entries route to `muse-spark-1.3-contributor` at effort `xhigh`.
 - **Frontier = best-performance-period (light month)** — Bernstein → `glm-5.3` (max, best Go agentic); Horowitz → `kimi-k3` (max, best Go long-horizon coder); Nirvana → `grok-4.6` (xhigh, best knowledge-work synth); Dylan/Nas/band-members → `muse-spark-1.3-contributor` (xhigh). Frontier caps are tight (Grok 4.6 = 845, Kimi K3 = 490, GLM-5.3 = 1,080 req/mo) — assume a light-usage month; they throttle if a frontier month gets heavy.
 - **Variant support (verified in `~/.cache/opencode/models.json`):** Muse Spark and Grok 4.6 top out at `xhigh` (no `max`); `glm-5.3` and `kimi-k3` support `max`.

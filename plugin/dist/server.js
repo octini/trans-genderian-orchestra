@@ -21081,6 +21081,261 @@ function evaluateClosure(route, lifecycle, report) {
   };
 }
 
+// src/verify-claim.ts
+init_config();
+init_def_snapshot();
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+var runFile = promisify(execFile);
+var VERIFY_TIMEOUT_MS = 1e4;
+function failedObserved(exitCode, stdout, stderr) {
+  return { status: undefined, assignee: undefined, exitCode, stdout, stderr };
+}
+function exitCodeOf(error51) {
+  if (error51 && typeof error51 === "object") {
+    const err = error51;
+    const exitCode = typeof err.code === "number" ? err.code : 1;
+    const stdout = typeof err.stdout === "string" ? err.stdout : undefined;
+    const stderr = typeof err.stderr === "string" ? err.stderr : undefined;
+    return { exitCode, stdout, stderr };
+  }
+  return { exitCode: 1 };
+}
+function beadFromShowJson(parsed) {
+  if (Array.isArray(parsed))
+    return parsed[0] ?? undefined;
+  if (parsed && typeof parsed === "object") {
+    if ("error" in parsed)
+      return;
+    return parsed;
+  }
+  return;
+}
+async function lookupClaimObserved(issueId, repoRoot) {
+  if (typeof repoRoot !== "string" || repoRoot.trim().length === 0) {
+    return failedObserved(1, "", "explicit repoRoot is required; ambient cwd is never used");
+  }
+  const cwd = repoRoot;
+  if (typeof issueId !== "string")
+    return failedObserved(1, "", "issueId must be a string");
+  const id = issueId.trim();
+  if (id.length === 0 || !isValidBeadID(id)) {
+    return failedObserved(1, "", `invalid issueId ${JSON.stringify(issueId)} — must match VALID_BEAD_ID`);
+  }
+  try {
+    const { stdout, stderr } = await runFile("bd", ["show", "--json", id], {
+      cwd,
+      env: BD_ENV,
+      timeout: VERIFY_TIMEOUT_MS,
+      encoding: "utf8",
+      maxBuffer: 8 * 1024 * 1024
+    });
+    const trimmed = (stdout ?? "").trim();
+    let parsed;
+    try {
+      parsed = trimmed.length > 0 ? JSON.parse(trimmed) : undefined;
+    } catch {
+      return { status: undefined, assignee: undefined, exitCode: 1, stdout, stderr };
+    }
+    const bead = beadFromShowJson(parsed);
+    if (!bead)
+      return { status: undefined, assignee: undefined, exitCode: 1, stdout, stderr };
+    const status = typeof bead.status === "string" ? bead.status : undefined;
+    const assignee = typeof bead.assignee === "string" ? bead.assignee : undefined;
+    return { status, assignee, exitCode: 0, stdout, stderr };
+  } catch (error51) {
+    const { exitCode, stdout, stderr } = exitCodeOf(error51);
+    try {
+      if (stdout && stdout.trim().length > 0) {
+        const bead = beadFromShowJson(JSON.parse(stdout.trim()));
+        if (bead) {
+          const status = typeof bead.status === "string" ? bead.status : undefined;
+          const assignee = typeof bead.assignee === "string" ? bead.assignee : undefined;
+          return { status, assignee, exitCode, stdout, stderr };
+        }
+      }
+    } catch {}
+    return failedObserved(exitCode, stdout, stderr);
+  }
+}
+function evaluateLiveDispatchGate(packet, observed) {
+  const missing = [];
+  const diagnostics = [];
+  const issueLabel = typeof packet.issueId === "string" && packet.issueId.trim() ? packet.issueId.trim() : "open";
+  if (packet.beadsOperator !== "Bernstein") {
+    missing.push("beadsOperator=Bernstein");
+    diagnostics.push(`beadsOperator must be Bernstein; got ${JSON.stringify(packet.beadsOperator)}.`);
+  }
+  const packetTriple = packet.issueStatusObserved === "in_progress" && typeof packet.issueAssigneeObserved === "string" && packet.issueAssigneeObserved.trim().length > 0 && packet.claimExitCode === 0;
+  if (packet.issueStatusObserved !== "in_progress") {
+    missing.push("issueStatusObserved:in_progress");
+    diagnostics.push(`issueStatusObserved must be "in_progress" (observed claim status); got ${JSON.stringify(packet.issueStatusObserved)}.`);
+  }
+  if (typeof packet.issueAssigneeObserved !== "string" || !packet.issueAssigneeObserved.trim()) {
+    missing.push("issueAssigneeObserved");
+    diagnostics.push("issueAssigneeObserved must be a non-empty assignee from observed claim.");
+  }
+  if (packet.claimExitCode !== 0) {
+    missing.push("claimExitCode:0");
+    diagnostics.push(`claimExitCode must be 0 (observed claim exit code); got ${JSON.stringify(packet.claimExitCode)}.`);
+  }
+  if (packet.issueClaimed === true && !packetTriple) {
+    diagnostics.push("issueClaimed is forgeable asserted metadata; observed claim fields (issueStatusObserved, issueAssigneeObserved, claimExitCode) are required and must reflect live bd state.");
+  }
+  if (observed.exitCode !== 0) {
+    missing.push("live:claimExitCode:0");
+    diagnostics.push(`live lookup exited ${observed.exitCode} (failed precondition); got status ${JSON.stringify(observed.status)}.`);
+  }
+  if (observed.status !== "in_progress") {
+    missing.push("live:issueStatusObserved:in_progress");
+    diagnostics.push(`live status must be "in_progress"; got ${JSON.stringify(observed.status)}.`);
+  }
+  if (typeof observed.assignee !== "string" || !observed.assignee.trim()) {
+    missing.push("live:issueAssigneeObserved");
+    diagnostics.push(`live assignee must be non-empty; got ${JSON.stringify(observed.assignee)}.`);
+  }
+  const allowed = missing.length === 0;
+  if (!allowed) {
+    diagnostics.push(`Keep issue ${issueLabel} open; live observed status=${JSON.stringify(observed.status)} assignee=${JSON.stringify(observed.assignee)} exit=${observed.exitCode}; satisfy: ${missing.join(", ")}. Retry, reroute, escalate, or request user-clarification.`);
+  }
+  return { allowed, missing, diagnostics, observed, recovery: allowed ? undefined : "retry" };
+}
+
+// src/claim-tool.ts
+init_config();
+init_def_snapshot();
+import { execFile as execFile2 } from "node:child_process";
+import { promisify as promisify2 } from "node:util";
+var runFile2 = promisify2(execFile2);
+var CLAIM_TIMEOUT_MS = 1e4;
+var CLAIM_TOOL_ALLOWED_DEFAULT = true;
+function isClaimToolAllowed(override) {
+  if (override === false)
+    return false;
+  if (override === true)
+    return true;
+  if (typeof process !== "undefined" && process.env?.TGO_BEADS_CLAIM_ALLOWED === "1")
+    return true;
+  return CLAIM_TOOL_ALLOWED_DEFAULT;
+}
+function deny(log, level, message, extra) {
+  try {
+    log(level, message, extra);
+  } catch {}
+  throw new Error(message);
+}
+function claimErrorMessage(error51) {
+  if (error51 && typeof error51 === "object") {
+    const err = error51;
+    if (typeof err.stderr === "string" && err.stderr.trim().length > 0) {
+      const line2 = err.stderr.split(/\r?\n/).find((it) => it.trim().length > 0);
+      if (line2)
+        return line2.trim();
+    }
+    if (err.code === "ENOENT")
+      return "bd not found on PATH";
+    if (typeof err.message === "string" && err.message.trim().length > 0) {
+      const line2 = err.message.split(/\r?\n/).find((it) => it.trim().length > 0);
+      if (line2)
+        return line2.trim();
+    }
+  }
+  return String(error51);
+}
+async function defaultSpawnClaim(args, cwd) {
+  const { stdout, stderr } = await runFile2("bd", args, {
+    cwd,
+    env: BD_ENV,
+    timeout: CLAIM_TIMEOUT_MS,
+    encoding: "utf8",
+    maxBuffer: 8 * 1024 * 1024
+  });
+  return { stdout: stdout ?? "", stderr: stderr ?? "" };
+}
+async function executeBeadsClaim(toolArgs, host) {
+  const log = host.log ?? (() => {});
+  const spawn = host.spawnClaim ?? defaultSpawnClaim;
+  const lookup = host.lookup ?? lookupClaimObserved;
+  if (!host.allowed) {
+    deny(log, "error", "tgo_beads_claim denied: claim writes are disabled (allowed:false)", {
+      allowed: false
+    });
+  }
+  if (!host.isPrimary) {
+    deny(log, "warn", "tgo_beads_claim denied: primary-seat only — delegated seats cannot claim issues");
+  }
+  if (typeof host.repoRoot !== "string" || host.repoRoot.trim().length === 0) {
+    deny(log, "error", "tgo_beads_claim denied: explicit repoRoot is required; ambient cwd is never used");
+  }
+  const cwd = host.repoRoot;
+  const rawId = toolArgs?.issueId;
+  if (typeof rawId !== "string") {
+    deny(log, "warn", `tgo_beads_claim denied: invalid issueId ${JSON.stringify(rawId)} — must match VALID_BEAD_ID`);
+  }
+  const id = rawId.trim();
+  if (id.length === 0 || !isValidBeadID(id)) {
+    deny(log, "warn", `tgo_beads_claim denied: invalid issueId ${JSON.stringify(rawId)} — must match VALID_BEAD_ID ${VALID_BEAD_ID.source}`, {
+      issueId: rawId
+    });
+  }
+  let pre;
+  try {
+    pre = await lookup(id, cwd);
+  } catch (error51) {
+    deny(log, "error", `tgo_beads_claim denied for ${id}: pre-claim lookup failed: ${String(error51)}`, {
+      issueId: id
+    });
+  }
+  if (pre.exitCode !== 0) {
+    deny(log, "error", `tgo_beads_claim denied for ${id}: pre-claim lookup failed (exit ${pre.exitCode}, failed precondition); refusing write`, {
+      issueId: id,
+      claimExitCode: pre.exitCode,
+      stderr: (pre.stderr ?? "").trim().slice(0, 400)
+    });
+  }
+  if (pre.status === "in_progress" && typeof pre.assignee === "string" && pre.assignee.trim().length > 0) {
+    try {
+      log("info", `beads claim already owned for ${id}: owner ${pre.assignee} — no overwrite`, {
+        issueId: id,
+        assignee: pre.assignee
+      });
+    } catch {}
+    return `already claimed ${id}: owner ${pre.assignee} — no overwrite (verify-first, retry safe)`;
+  }
+  try {
+    await spawn(["update", id, "--claim"], cwd);
+  } catch (error51) {
+    deny(log, "error", `tgo_beads_claim write failed for ${id}: ${claimErrorMessage(error51)}`, {
+      issueId: id
+    });
+  }
+  let post;
+  try {
+    post = await lookup(id, cwd);
+  } catch (error51) {
+    deny(log, "error", `tgo_beads_claim unverified for ${id}: post-claim lookup failed: ${String(error51)}`, {
+      issueId: id
+    });
+  }
+  if (post.exitCode !== 0 || post.status !== "in_progress" || typeof post.assignee !== "string" || post.assignee.trim().length === 0) {
+    deny(log, "error", `tgo_beads_claim unverified for ${id}: post-claim owner confirm failed (status=${JSON.stringify(post.status)} assignee=${JSON.stringify(post.assignee)} exit=${post.exitCode})`, { issueId: id, observedStatus: post.status, observedAssignee: post.assignee, claimExitCode: post.exitCode });
+  }
+  const owner = post.assignee.trim();
+  try {
+    log("info", `beads claim observed for ${id}: owner ${owner} (status in_progress)`, {
+      issueId: id,
+      assignee: owner
+    });
+  } catch {}
+  return `claimed ${id}: owner ${owner} (status in_progress, verified by re-show)`;
+}
+
+// src/close-tool.ts
+init_config();
+init_def_snapshot();
+import { execFile as execFile3 } from "node:child_process";
+import { promisify as promisify3 } from "node:util";
+
 // src/exitgate/profile.ts
 import * as fs17 from "node:fs/promises";
 import * as path18 from "node:path";
@@ -21731,6 +21986,983 @@ Create with: bd create --deps discovered-from:${input.issueId}`,
     profile,
     skipped: false
   };
+}
+
+// src/exitgate/close-gate.ts
+async function checkCloseGate(repoRoot, issueId, specText) {
+  const syntheticComplete = parseTaskReport(`STATUS: complete
+CHANGES: close via sidebar
+VERIFIED: exit gate: true; close check
+GAPS: none`);
+  const gate = await runExitGate({ repoRoot, issueId, specText: specText ?? "", report: syntheticComplete });
+  if (gate.blocked) {
+    return { allowed: false, gate };
+  }
+  return { allowed: true, gate };
+}
+function blockedCloseMessage(gate) {
+  const reason = gate.reason ?? "CRITICAL gate findings";
+  const comp = gate.compensation ? ` — compensation: ${gate.compensation.title} (discovered-from:${gate.compensation.discoveredFrom}) — bd create --deps discovered-from:${gate.compensation.discoveredFrom}` : "";
+  return `close blocked: ${gate.reasonCode} — ${reason}${comp}`;
+}
+
+// src/close-tool.ts
+var runFile3 = promisify3(execFile3);
+var CLOSE_TIMEOUT_MS = 1e4;
+var CLOSE_REASON_MAX = 500;
+var CLOSE_TOOL_ALLOWED_DEFAULT = true;
+function isCloseToolAllowed(override) {
+  if (override === false)
+    return false;
+  if (override === true)
+    return true;
+  if (typeof process !== "undefined" && process.env?.TGO_BEADS_CLOSE_ALLOWED === "1")
+    return true;
+  return CLOSE_TOOL_ALLOWED_DEFAULT;
+}
+function deny2(log, level, message, extra) {
+  try {
+    log(level, message, extra);
+  } catch {}
+  throw new Error(message);
+}
+function closeErrorMessage(error51) {
+  if (error51 && typeof error51 === "object") {
+    const err = error51;
+    if (typeof err.stderr === "string" && err.stderr.trim().length > 0) {
+      const line2 = err.stderr.split(/\r?\n/).find((it) => it.trim().length > 0);
+      if (line2)
+        return line2.trim();
+    }
+    if (err.code === "ENOENT")
+      return "bd not found on PATH";
+    if (typeof err.message === "string" && err.message.trim().length > 0) {
+      const line2 = err.message.split(/\r?\n/).find((it) => it.trim().length > 0);
+      if (line2)
+        return line2.trim();
+    }
+  }
+  return String(error51);
+}
+async function defaultSpawnClose(args, cwd) {
+  const { stdout, stderr } = await runFile3("bd", args, {
+    cwd,
+    env: BD_ENV,
+    timeout: CLOSE_TIMEOUT_MS,
+    encoding: "utf8",
+    maxBuffer: 8 * 1024 * 1024
+  });
+  return { stdout: stdout ?? "", stderr: stderr ?? "" };
+}
+async function defaultCheckGate(repoRoot, issueId, specText) {
+  return checkCloseGate(repoRoot, issueId, specText);
+}
+function specTextFromShowStdout(stdout) {
+  try {
+    if (!stdout || stdout.trim().length === 0)
+      return "";
+    const parsed = JSON.parse(stdout.trim());
+    const bead = Array.isArray(parsed) ? parsed[0] : parsed;
+    if (!bead || typeof bead !== "object")
+      return "";
+    if ("error" in bead)
+      return "";
+    const description = bead.description;
+    return typeof description === "string" ? description : "";
+  } catch {
+    return "";
+  }
+}
+async function executeBeadsClose(toolArgs, host) {
+  const log = host.log ?? (() => {});
+  const spawn = host.spawnClose ?? defaultSpawnClose;
+  const lookup = host.lookup ?? lookupClaimObserved;
+  const checkGate = host.checkGate ?? defaultCheckGate;
+  if (!host.allowed) {
+    deny2(log, "error", "tgo_beads_close denied: close writes are disabled (allowed:false)", {
+      allowed: false
+    });
+  }
+  if (!host.isPrimary) {
+    deny2(log, "warn", "tgo_beads_close denied: primary-seat only — delegated seats cannot close issues");
+  }
+  if (typeof host.repoRoot !== "string" || host.repoRoot.trim().length === 0) {
+    deny2(log, "error", "tgo_beads_close denied: explicit repoRoot is required; ambient cwd is never used");
+  }
+  const cwd = host.repoRoot;
+  const rawId = toolArgs?.issueId;
+  if (typeof rawId !== "string") {
+    deny2(log, "warn", `tgo_beads_close denied: invalid issueId ${JSON.stringify(rawId)} — must match VALID_BEAD_ID`);
+  }
+  const id = rawId.trim();
+  if (id.length === 0 || !isValidBeadID(id)) {
+    deny2(log, "warn", `tgo_beads_close denied: invalid issueId ${JSON.stringify(rawId)} — must match VALID_BEAD_ID ${VALID_BEAD_ID.source}`, {
+      issueId: rawId
+    });
+  }
+  const rawReason = toolArgs?.reason;
+  if (typeof rawReason !== "string") {
+    deny2(log, "warn", `tgo_beads_close denied for ${id}: invalid reason ${JSON.stringify(rawReason)} — reason must be a non-empty string`, {
+      issueId: id
+    });
+  }
+  const reason = rawReason.trim();
+  if (reason.length === 0) {
+    deny2(log, "warn", `tgo_beads_close denied for ${id}: invalid reason — reason must be a non-empty string`, {
+      issueId: id
+    });
+  }
+  if (reason.length > CLOSE_REASON_MAX) {
+    deny2(log, "warn", `tgo_beads_close denied for ${id}: invalid reason — reason too long (≤${CLOSE_REASON_MAX} chars)`, {
+      issueId: id
+    });
+  }
+  let pre;
+  try {
+    pre = await lookup(id, cwd);
+  } catch (error51) {
+    deny2(log, "error", `tgo_beads_close denied for ${id}: pre-close lookup failed: ${String(error51)}`, {
+      issueId: id
+    });
+  }
+  if (pre.exitCode !== 0) {
+    deny2(log, "error", `tgo_beads_close denied for ${id}: pre-close lookup failed (exit ${pre.exitCode}, failed precondition); refusing write`, {
+      issueId: id,
+      claimExitCode: pre.exitCode,
+      stderr: (pre.stderr ?? "").trim().slice(0, 400)
+    });
+  }
+  if (pre.status === "closed") {
+    try {
+      log("info", `beads close already closed for ${id} — no-op (never reopen)`, {
+        issueId: id
+      });
+    } catch {}
+    return `already closed ${id} — no-op (never reopen)`;
+  }
+  if (pre.status !== "in_progress" || typeof pre.assignee !== "string" || pre.assignee.trim().length === 0) {
+    deny2(log, "error", `tgo_beads_close denied for ${id}: claim unverified (status=${JSON.stringify(pre.status)} assignee=${JSON.stringify(pre.assignee)} exit=${pre.exitCode}) — close requires verified claim`, { issueId: id, observedStatus: pre.status, observedAssignee: pre.assignee, claimExitCode: pre.exitCode });
+  }
+  const specText = specTextFromShowStdout(pre.stdout);
+  let gate;
+  try {
+    gate = await checkGate(cwd, id, specText);
+  } catch (error51) {
+    deny2(log, "error", `tgo_beads_close denied for ${id}: gate evaluation error: ${String(error51)}`, {
+      issueId: id
+    });
+  }
+  if (!gate.allowed) {
+    let detail = typeof gate.message === "string" && gate.message.trim().length > 0 ? gate.message : "";
+    if (!detail && gate.gate && typeof gate.gate === "object") {
+      try {
+        detail = blockedCloseMessage(gate.gate);
+      } catch {
+        detail = "";
+      }
+    }
+    deny2(log, "error", `tgo_beads_close denied for ${id}: close blocked by exit gate${detail ? ` — ${detail}` : ""}`, {
+      issueId: id
+    });
+  }
+  try {
+    await spawn(["close", id, "--reason", reason], cwd);
+  } catch (error51) {
+    deny2(log, "error", `tgo_beads_close write failed for ${id}: ${closeErrorMessage(error51)}`, {
+      issueId: id
+    });
+  }
+  let post;
+  try {
+    post = await lookup(id, cwd);
+  } catch (error51) {
+    deny2(log, "error", `tgo_beads_close unverified for ${id}: post-close lookup failed: ${String(error51)}`, {
+      issueId: id
+    });
+  }
+  if (post.exitCode !== 0 || post.status !== "closed") {
+    deny2(log, "error", `tgo_beads_close unverified for ${id}: post-close confirm failed (status=${JSON.stringify(post.status)} exit=${post.exitCode})`, { issueId: id, observedStatus: post.status, claimExitCode: post.exitCode });
+  }
+  try {
+    log("info", `beads close observed for ${id}: closed (reason: ${reason})`, {
+      issueId: id
+    });
+  } catch {}
+  return `closed ${id}: verified closed (reason: ${reason})`;
+}
+
+// src/create-tool.ts
+init_config();
+init_def_snapshot();
+import { execFile as execFile4 } from "node:child_process";
+import { promisify as promisify4 } from "node:util";
+var runFile4 = promisify4(execFile4);
+var CREATE_TIMEOUT_MS = 1e4;
+var CREATE_TITLE_MAX = 200;
+var CREATE_DESCRIPTION_MAX = 2000;
+var CREATE_TYPES = ["task", "bug", "feature", "epic", "chore"];
+var CREATE_PRIORITIES = ["0", "1", "2", "3", "4"];
+var CREATE_TOOL_ALLOWED_DEFAULT = true;
+function isCreateToolAllowed(override) {
+  if (override === false)
+    return false;
+  if (override === true)
+    return true;
+  if (typeof process !== "undefined" && process.env?.TGO_BEADS_CREATE_ALLOWED === "1")
+    return true;
+  return CREATE_TOOL_ALLOWED_DEFAULT;
+}
+function deny3(log, level, message, extra) {
+  try {
+    log(level, message, extra);
+  } catch {}
+  throw new Error(message);
+}
+function createErrorMessage(error51) {
+  if (error51 && typeof error51 === "object") {
+    const err = error51;
+    if (typeof err.stderr === "string" && err.stderr.trim().length > 0) {
+      const line2 = err.stderr.split(/\r?\n/).find((it) => it.trim().length > 0);
+      if (line2)
+        return line2.trim();
+    }
+    if (err.code === "ENOENT")
+      return "bd not found on PATH";
+    if (typeof err.message === "string" && err.message.trim().length > 0) {
+      const line2 = err.message.split(/\r?\n/).find((it) => it.trim().length > 0);
+      if (line2)
+        return line2.trim();
+    }
+  }
+  return String(error51);
+}
+async function defaultSpawnCreate(args, cwd) {
+  const { stdout, stderr } = await runFile4("bd", args, {
+    cwd,
+    env: BD_ENV,
+    timeout: CREATE_TIMEOUT_MS,
+    encoding: "utf8",
+    maxBuffer: 8 * 1024 * 1024
+  });
+  return { stdout: stdout ?? "", stderr: stderr ?? "" };
+}
+function createdIdFromCreateStdout(stdout) {
+  try {
+    const trimmed = (stdout ?? "").trim();
+    if (trimmed.length === 0)
+      return;
+    const parsed = JSON.parse(trimmed);
+    const bead = Array.isArray(parsed) ? parsed[0] : parsed;
+    if (!bead || typeof bead !== "object")
+      return;
+    if ("error" in bead)
+      return;
+    const id = bead.id;
+    return typeof id === "string" && id.trim().length > 0 ? id.trim() : undefined;
+  } catch {
+    return;
+  }
+}
+async function executeBeadsCreate(toolArgs, host) {
+  const log = host.log ?? (() => {});
+  const spawn = host.spawnCreate ?? defaultSpawnCreate;
+  const lookup = host.lookup ?? lookupClaimObserved;
+  if (!host.allowed) {
+    deny3(log, "error", "tgo_beads_create denied: create writes are disabled (allowed:false)", {
+      allowed: false
+    });
+  }
+  if (!host.isPrimary) {
+    deny3(log, "warn", "tgo_beads_create denied: primary-seat only — delegated seats cannot create issues");
+  }
+  if (typeof host.repoRoot !== "string" || host.repoRoot.trim().length === 0) {
+    deny3(log, "error", "tgo_beads_create denied: explicit repoRoot is required; ambient cwd is never used");
+  }
+  const cwd = host.repoRoot;
+  const rawTitle = toolArgs?.title;
+  if (typeof rawTitle !== "string") {
+    deny3(log, "warn", `tgo_beads_create denied: invalid title ${JSON.stringify(rawTitle)} — title must be a non-empty string (≤${CREATE_TITLE_MAX} chars)`);
+  }
+  const title = rawTitle.trim();
+  if (title.length === 0) {
+    deny3(log, "warn", "tgo_beads_create denied: invalid title — title must be a non-empty string", {
+      title: rawTitle
+    });
+  }
+  if (title.length > CREATE_TITLE_MAX) {
+    deny3(log, "warn", `tgo_beads_create denied: invalid title — title too long (≤${CREATE_TITLE_MAX} chars)`, {
+      titleLength: title.length
+    });
+  }
+  const rawDescription = toolArgs?.description;
+  let description = "";
+  if (rawDescription !== undefined && rawDescription !== null) {
+    if (typeof rawDescription !== "string") {
+      deny3(log, "warn", `tgo_beads_create denied: invalid description ${JSON.stringify(rawDescription)} — description must be a string (≤${CREATE_DESCRIPTION_MAX} chars)`);
+    }
+    description = rawDescription;
+    if (description.length > CREATE_DESCRIPTION_MAX) {
+      deny3(log, "warn", `tgo_beads_create denied: invalid description — description too long (≤${CREATE_DESCRIPTION_MAX} chars)`, {
+        descriptionLength: description.length
+      });
+    }
+  }
+  const rawType = toolArgs?.type;
+  let type = "task";
+  if (rawType !== undefined && rawType !== null && String(rawType).trim().length > 0) {
+    if (typeof rawType !== "string" || !CREATE_TYPES.includes(rawType.trim())) {
+      deny3(log, "warn", `tgo_beads_create denied: invalid type ${JSON.stringify(rawType)} — must be one of ${CREATE_TYPES.join("|")}`);
+    }
+    type = rawType.trim();
+  } else if (typeof rawType === "string") {
+    deny3(log, "warn", `tgo_beads_create denied: invalid type ${JSON.stringify(rawType)} — must be one of ${CREATE_TYPES.join("|")}`);
+  }
+  const rawPriority = toolArgs?.priority;
+  let priority = "2";
+  if (rawPriority !== undefined && rawPriority !== null && String(rawPriority).trim().length > 0) {
+    const normalized = String(rawPriority).trim();
+    if (!CREATE_PRIORITIES.includes(normalized)) {
+      deny3(log, "warn", `tgo_beads_create denied: invalid priority ${JSON.stringify(rawPriority)} — must be one of ${CREATE_PRIORITIES.join("|")}`);
+    }
+    priority = normalized;
+  } else if (typeof rawPriority === "string" && rawPriority.trim().length === 0 || typeof rawPriority === "number" && !Number.isInteger(rawPriority)) {
+    deny3(log, "warn", `tgo_beads_create denied: invalid priority ${JSON.stringify(rawPriority)} — must be one of ${CREATE_PRIORITIES.join("|")}`);
+  }
+  const args = ["create", `--title=${title}`];
+  if (description.length > 0)
+    args.push(`--description=${description}`);
+  args.push("-t", type, "-p", priority, "--json");
+  let stdout = "";
+  try {
+    const result = await spawn(args, cwd);
+    stdout = result.stdout ?? "";
+  } catch (error51) {
+    deny3(log, "error", `tgo_beads_create write failed: ${createErrorMessage(error51)}`);
+  }
+  const createdId = createdIdFromCreateStdout(stdout);
+  if (!createdId || !isValidBeadID(createdId)) {
+    deny3(log, "error", `tgo_beads_create unverified: create returned no usable issue id — refusing confirm (stdout: ${JSON.stringify(stdout.trim().slice(0, 200))}, must match VALID_BEAD_ID ${VALID_BEAD_ID.source})`);
+  }
+  const newId = createdId;
+  try {
+    log("info", `beads create observed for ${newId}: title ${JSON.stringify(title)} (type ${type}, priority ${priority})`, {
+      issueId: newId,
+      title,
+      type,
+      priority
+    });
+  } catch {}
+  let post;
+  try {
+    post = await lookup(newId, cwd);
+  } catch (error51) {
+    deny3(log, "error", `tgo_beads_create unverified for ${newId}: post-create lookup failed: ${String(error51)}`, {
+      issueId: newId
+    });
+  }
+  if (post.exitCode !== 0) {
+    deny3(log, "error", `tgo_beads_create unverified for ${newId}: post-create confirm failed (exit ${post.exitCode}, failed precondition); reconcile by title/time, never auto-delete`, {
+      issueId: newId,
+      claimExitCode: post.exitCode,
+      stderr: (post.stderr ?? "").trim().slice(0, 400)
+    });
+  }
+  return `created ${newId}: title ${JSON.stringify(title)} (type ${type}, priority ${priority}, verified by re-show)`;
+}
+
+// src/dep-tool.ts
+init_config();
+init_def_snapshot();
+import { execFile as execFile5 } from "node:child_process";
+import { promisify as promisify5 } from "node:util";
+var runFile5 = promisify5(execFile5);
+var DEP_TIMEOUT_MS = 1e4;
+var DEP_TYPE_ALLOWLIST = [
+  "blocks",
+  "tracks",
+  "related",
+  "parent-child",
+  "discovered-from",
+  "until",
+  "caused-by",
+  "validates",
+  "relates-to",
+  "supersedes"
+];
+var DEP_TYPE_DEFAULT = "blocks";
+function isDepType(value) {
+  return typeof value === "string" && DEP_TYPE_ALLOWLIST.includes(value);
+}
+var DEP_TOOL_ALLOWED_DEFAULT = true;
+function isDepToolAllowed(override) {
+  if (override === false)
+    return false;
+  if (override === true)
+    return true;
+  if (typeof process !== "undefined" && process.env?.TGO_BEADS_DEP_ALLOWED === "1")
+    return true;
+  return DEP_TOOL_ALLOWED_DEFAULT;
+}
+function deny4(log, level, message, extra) {
+  try {
+    log(level, message, extra);
+  } catch {}
+  throw new Error(message);
+}
+function depErrorMessage(error51) {
+  if (error51 && typeof error51 === "object") {
+    const err = error51;
+    if (typeof err.stderr === "string" && err.stderr.trim().length > 0) {
+      const line2 = err.stderr.split(/\r?\n/).find((it) => it.trim().length > 0);
+      if (line2)
+        return line2.trim();
+    }
+    if (err.code === "ENOENT")
+      return "bd not found on PATH";
+    if (typeof err.message === "string" && err.message.trim().length > 0) {
+      const line2 = err.message.split(/\r?\n/).find((it) => it.trim().length > 0);
+      if (line2)
+        return line2.trim();
+    }
+  }
+  return String(error51);
+}
+async function defaultSpawnDep(args, cwd) {
+  const { stdout, stderr } = await runFile5("bd", args, {
+    cwd,
+    env: BD_ENV,
+    timeout: DEP_TIMEOUT_MS,
+    encoding: "utf8",
+    maxBuffer: 8 * 1024 * 1024
+  });
+  return { stdout: stdout ?? "", stderr: stderr ?? "" };
+}
+function parseDepList(stdout) {
+  try {
+    const trimmed = (stdout ?? "").trim();
+    if (trimmed.length === 0)
+      return;
+    const parsed = JSON.parse(trimmed);
+    if (!Array.isArray(parsed))
+      return;
+    return parsed.filter((it) => !!it && typeof it === "object" && !("error" in it)).filter((it) => typeof it.id === "string").map((it) => ({
+      id: it.id,
+      ...typeof it.dependency_type === "string" ? { dependency_type: it.dependency_type } : {}
+    }));
+  } catch {
+    return;
+  }
+}
+async function defaultListDeps(issueId, cwd) {
+  try {
+    const { stdout, stderr } = await runFile5("bd", ["dep", "list", issueId, "--json"], {
+      cwd,
+      env: BD_ENV,
+      timeout: DEP_TIMEOUT_MS,
+      encoding: "utf8",
+      maxBuffer: 8 * 1024 * 1024
+    });
+    const deps = parseDepList(stdout ?? "");
+    if (!deps)
+      return { exitCode: 1, deps: [], stdout, stderr };
+    return { exitCode: 0, deps, stdout, stderr };
+  } catch (error51) {
+    if (error51 && typeof error51 === "object") {
+      const err = error51;
+      const exitCode = typeof err.code === "number" ? err.code : 1;
+      const stdout = typeof err.stdout === "string" ? err.stdout : undefined;
+      const stderr = typeof err.stderr === "string" ? err.stderr : undefined;
+      return { exitCode, deps: [], stdout, stderr };
+    }
+    return { exitCode: 1, deps: [] };
+  }
+}
+function invalidIdMessage(raw) {
+  return `must match VALID_BEAD_ID ${VALID_BEAD_ID.source}`;
+}
+async function executeBeadsDep(toolArgs, host) {
+  const log = host.log ?? (() => {});
+  const spawn = host.spawnDep ?? defaultSpawnDep;
+  const lookup = host.lookup ?? lookupClaimObserved;
+  const listDeps = host.listDeps ?? defaultListDeps;
+  if (!host.allowed) {
+    deny4(log, "error", "tgo_beads_dep denied: dep writes are disabled (allowed:false)", {
+      allowed: false
+    });
+  }
+  if (!host.isPrimary) {
+    deny4(log, "warn", "tgo_beads_dep denied: primary-seat only — delegated seats cannot wire dependencies");
+  }
+  if (typeof host.repoRoot !== "string" || host.repoRoot.trim().length === 0) {
+    deny4(log, "error", "tgo_beads_dep denied: explicit repoRoot is required; ambient cwd is never used");
+  }
+  const cwd = host.repoRoot;
+  const rawFrom = toolArgs?.issueId;
+  if (typeof rawFrom !== "string") {
+    deny4(log, "warn", `tgo_beads_dep denied: invalid issueId ${JSON.stringify(rawFrom)} — ${invalidIdMessage(rawFrom)}`);
+  }
+  const from = rawFrom.trim();
+  if (from.length === 0 || !isValidBeadID(from)) {
+    deny4(log, "warn", `tgo_beads_dep denied: invalid issueId ${JSON.stringify(rawFrom)} — ${invalidIdMessage(rawFrom)}`, {
+      issueId: rawFrom
+    });
+  }
+  const rawTo = toolArgs?.dependsOnId;
+  if (typeof rawTo !== "string") {
+    deny4(log, "warn", `tgo_beads_dep denied for ${from}: invalid dependsOnId ${JSON.stringify(rawTo)} — ${invalidIdMessage(rawTo)}`, {
+      issueId: from
+    });
+  }
+  const to = rawTo.trim();
+  if (to.length === 0 || !isValidBeadID(to)) {
+    deny4(log, "warn", `tgo_beads_dep denied for ${from}: invalid dependsOnId ${JSON.stringify(rawTo)} — ${invalidIdMessage(rawTo)}`, {
+      issueId: from,
+      dependsOnId: rawTo
+    });
+  }
+  if (from === to) {
+    deny4(log, "warn", `tgo_beads_dep denied for ${from}: self-edge refused — issueId and dependsOnId must differ`, {
+      issueId: from
+    });
+  }
+  const rawType = toolArgs?.type;
+  let type = DEP_TYPE_DEFAULT;
+  if (rawType !== undefined) {
+    if (!isDepType(rawType)) {
+      deny4(log, "warn", `tgo_beads_dep denied for ${from}: invalid type ${JSON.stringify(rawType)} — must be one of ${DEP_TYPE_ALLOWLIST.join("|")}`, {
+        issueId: from,
+        dependsOnId: to
+      });
+    }
+    type = rawType;
+  }
+  for (const endpoint of [from, to]) {
+    let pre;
+    try {
+      pre = await lookup(endpoint, cwd);
+    } catch (error51) {
+      deny4(log, "error", `tgo_beads_dep denied for ${from} -> ${to}: pre-dep lookup failed for ${endpoint}: ${String(error51)}`, {
+        issueId: from,
+        dependsOnId: to
+      });
+    }
+    if (pre.exitCode !== 0) {
+      deny4(log, "error", `tgo_beads_dep denied for ${from} -> ${to}: pre-dep lookup failed for ${endpoint} (exit ${pre.exitCode}, failed precondition); refusing write`, {
+        issueId: from,
+        dependsOnId: to,
+        claimExitCode: pre.exitCode,
+        stderr: (pre.stderr ?? "").trim().slice(0, 400)
+      });
+    }
+  }
+  const args = type === DEP_TYPE_DEFAULT && rawType === undefined ? ["dep", "add", from, to] : ["dep", "add", from, to, "--type", type];
+  try {
+    await spawn(args, cwd);
+  } catch (error51) {
+    deny4(log, "error", `tgo_beads_dep write failed for ${from} -> ${to}: ${depErrorMessage(error51)}`, {
+      issueId: from,
+      dependsOnId: to
+    });
+  }
+  let post;
+  try {
+    post = await listDeps(from, cwd);
+  } catch (error51) {
+    deny4(log, "error", `tgo_beads_dep unverified for ${from} -> ${to}: post-dep list failed: ${String(error51)}`, {
+      issueId: from,
+      dependsOnId: to
+    });
+  }
+  const edge = post.exitCode === 0 ? post.deps.find((it) => it.id === to && (rawType === undefined || it.dependency_type === type)) : undefined;
+  if (post.exitCode !== 0 || !edge) {
+    deny4(log, "error", `tgo_beads_dep unverified for ${from} -> ${to}: post-dep edge confirm failed (exit=${post.exitCode} type=${type})`, { issueId: from, dependsOnId: to, depType: type, claimExitCode: post.exitCode });
+  }
+  try {
+    log("info", `beads dep observed for ${from} -> ${to}: depends on ${to} (type ${edge.dependency_type ?? type})`, {
+      issueId: from,
+      dependsOnId: to,
+      depType: edge.dependency_type ?? type
+    });
+  } catch {}
+  return `wired ${from} depends on ${to} (type ${edge.dependency_type ?? type}, verified by dep list)`;
+}
+
+// src/update-tool.ts
+init_config();
+init_def_snapshot();
+import { execFile as execFile6 } from "node:child_process";
+import { promisify as promisify6 } from "node:util";
+var runFile6 = promisify6(execFile6);
+var UPDATE_TIMEOUT_MS = 1e4;
+var UPDATE_TITLE_MAX = 200;
+var UPDATE_DESCRIPTION_MAX = 2000;
+var UPDATE_TYPES = ["task", "bug", "feature", "epic", "chore"];
+var UPDATE_PRIORITIES = ["0", "1", "2", "3", "4"];
+var UPDATE_TOOL_ALLOWED_DEFAULT = true;
+function isUpdateToolAllowed(override) {
+  if (override === false)
+    return false;
+  if (override === true)
+    return true;
+  if (typeof process !== "undefined" && process.env?.TGO_BEADS_UPDATE_ALLOWED === "1")
+    return true;
+  return UPDATE_TOOL_ALLOWED_DEFAULT;
+}
+function deny5(log, level, message, extra) {
+  try {
+    log(level, message, extra);
+  } catch {}
+  throw new Error(message);
+}
+function updateErrorMessage(error51) {
+  if (error51 && typeof error51 === "object") {
+    const err = error51;
+    if (typeof err.stderr === "string" && err.stderr.trim().length > 0) {
+      const line2 = err.stderr.split(/\r?\n/).find((it) => it.trim().length > 0);
+      if (line2)
+        return line2.trim();
+    }
+    if (err.code === "ENOENT")
+      return "bd not found on PATH";
+    if (typeof err.message === "string" && err.message.trim().length > 0) {
+      const line2 = err.message.split(/\r?\n/).find((it) => it.trim().length > 0);
+      if (line2)
+        return line2.trim();
+    }
+  }
+  return String(error51);
+}
+async function defaultSpawnUpdate(args, cwd) {
+  const { stdout, stderr } = await runFile6("bd", args, {
+    cwd,
+    env: BD_ENV,
+    timeout: UPDATE_TIMEOUT_MS,
+    encoding: "utf8",
+    maxBuffer: 8 * 1024 * 1024
+  });
+  return { stdout: stdout ?? "", stderr: stderr ?? "" };
+}
+function beadFromUpdateShowStdout(stdout) {
+  try {
+    const trimmed = (stdout ?? "").trim();
+    if (trimmed.length === 0)
+      return;
+    const parsed = JSON.parse(trimmed);
+    const bead = Array.isArray(parsed) ? parsed[0] : parsed;
+    if (!bead || typeof bead !== "object")
+      return;
+    if ("error" in bead)
+      return;
+    return bead;
+  } catch {
+    return;
+  }
+}
+function invalidIdMessage2(raw) {
+  return `must match VALID_BEAD_ID ${VALID_BEAD_ID.source}`;
+}
+async function executeBeadsUpdate(toolArgs, host) {
+  const log = host.log ?? (() => {});
+  const spawn = host.spawnUpdate ?? defaultSpawnUpdate;
+  const lookup = host.lookup ?? lookupClaimObserved;
+  if (!host.allowed) {
+    deny5(log, "error", "tgo_beads_update denied: update writes are disabled (allowed:false)", {
+      allowed: false
+    });
+  }
+  if (!host.isPrimary) {
+    deny5(log, "warn", "tgo_beads_update denied: primary-seat only — delegated seats cannot edit issues");
+  }
+  if (typeof host.repoRoot !== "string" || host.repoRoot.trim().length === 0) {
+    deny5(log, "error", "tgo_beads_update denied: explicit repoRoot is required; ambient cwd is never used");
+  }
+  const cwd = host.repoRoot;
+  const rawId = toolArgs?.issueId;
+  if (typeof rawId !== "string") {
+    deny5(log, "warn", `tgo_beads_update denied: invalid issueId ${JSON.stringify(rawId)} — ${invalidIdMessage2(rawId)}`);
+  }
+  const id = rawId.trim();
+  if (id.length === 0 || !isValidBeadID(id)) {
+    deny5(log, "warn", `tgo_beads_update denied: invalid issueId ${JSON.stringify(rawId)} — ${invalidIdMessage2(rawId)}`, {
+      issueId: rawId
+    });
+  }
+  const rawTitle = toolArgs?.title;
+  let title;
+  if (rawTitle !== undefined && rawTitle !== null) {
+    if (typeof rawTitle !== "string") {
+      deny5(log, "warn", `tgo_beads_update denied for ${id}: invalid title ${JSON.stringify(rawTitle)} — title must be a non-empty string (≤${UPDATE_TITLE_MAX} chars)`, {
+        issueId: id
+      });
+    }
+    const trimmed = rawTitle.trim();
+    if (trimmed.length === 0) {
+      deny5(log, "warn", `tgo_beads_update denied for ${id}: invalid title — title must be a non-empty string`, {
+        issueId: id
+      });
+    }
+    if (trimmed.length > UPDATE_TITLE_MAX) {
+      deny5(log, "warn", `tgo_beads_update denied for ${id}: invalid title — title too long (≤${UPDATE_TITLE_MAX} chars)`, {
+        issueId: id,
+        titleLength: trimmed.length
+      });
+    }
+    title = trimmed;
+  }
+  const rawDescription = toolArgs?.description;
+  let description;
+  if (rawDescription !== undefined && rawDescription !== null) {
+    if (typeof rawDescription !== "string") {
+      deny5(log, "warn", `tgo_beads_update denied for ${id}: invalid description ${JSON.stringify(rawDescription)} — description must be a string (≤${UPDATE_DESCRIPTION_MAX} chars)`, {
+        issueId: id
+      });
+    }
+    if (rawDescription.length > UPDATE_DESCRIPTION_MAX) {
+      deny5(log, "warn", `tgo_beads_update denied for ${id}: invalid description — description too long (≤${UPDATE_DESCRIPTION_MAX} chars)`, {
+        issueId: id,
+        descriptionLength: rawDescription.length
+      });
+    }
+    description = rawDescription;
+  }
+  const rawPriority = toolArgs?.priority;
+  let priority;
+  if (rawPriority !== undefined && rawPriority !== null && String(rawPriority).trim().length > 0) {
+    const normalized = String(rawPriority).trim();
+    if (!UPDATE_PRIORITIES.includes(normalized)) {
+      deny5(log, "warn", `tgo_beads_update denied for ${id}: invalid priority ${JSON.stringify(rawPriority)} — must be one of ${UPDATE_PRIORITIES.join("|")}`, {
+        issueId: id
+      });
+    }
+    priority = normalized;
+  } else if (rawPriority !== undefined && rawPriority !== null) {
+    deny5(log, "warn", `tgo_beads_update denied for ${id}: invalid priority ${JSON.stringify(rawPriority)} — must be one of ${UPDATE_PRIORITIES.join("|")}`, {
+      issueId: id
+    });
+  }
+  const rawType = toolArgs?.type;
+  let type;
+  if (rawType !== undefined && rawType !== null && String(rawType).trim().length > 0) {
+    if (typeof rawType !== "string" || !UPDATE_TYPES.includes(rawType.trim())) {
+      deny5(log, "warn", `tgo_beads_update denied for ${id}: invalid type ${JSON.stringify(rawType)} — must be one of ${UPDATE_TYPES.join("|")}`, {
+        issueId: id
+      });
+    }
+    type = rawType.trim();
+  } else if (typeof rawType === "string") {
+    deny5(log, "warn", `tgo_beads_update denied for ${id}: invalid type ${JSON.stringify(rawType)} — must be one of ${UPDATE_TYPES.join("|")}`, {
+      issueId: id
+    });
+  }
+  const edited = [];
+  if (title !== undefined)
+    edited.push("title");
+  if (description !== undefined)
+    edited.push("description");
+  if (priority !== undefined)
+    edited.push("priority");
+  if (type !== undefined)
+    edited.push("type");
+  if (edited.length === 0) {
+    deny5(log, "warn", `tgo_beads_update denied for ${id}: no fields to edit — provide at least one of title|description|priority|type`, {
+      issueId: id
+    });
+  }
+  let pre;
+  try {
+    pre = await lookup(id, cwd);
+  } catch (error51) {
+    deny5(log, "error", `tgo_beads_update denied for ${id}: pre-update lookup failed: ${String(error51)}`, {
+      issueId: id
+    });
+  }
+  if (pre.exitCode !== 0) {
+    deny5(log, "error", `tgo_beads_update denied for ${id}: pre-update lookup failed (exit ${pre.exitCode}, failed precondition); refusing write`, {
+      issueId: id,
+      claimExitCode: pre.exitCode,
+      stderr: (pre.stderr ?? "").trim().slice(0, 400)
+    });
+  }
+  if (pre.status === "closed") {
+    deny5(log, "warn", `tgo_beads_update denied for ${id}: issue is closed — reopen first with tgo_beads_reopen before editing living-spec fields (never mutate closed)`, {
+      issueId: id
+    });
+  }
+  const args = ["update", id];
+  if (title !== undefined)
+    args.push(`--title=${title}`);
+  if (description !== undefined)
+    args.push(`--description=${description}`);
+  if (priority !== undefined)
+    args.push(`--priority=${priority}`);
+  if (type !== undefined)
+    args.push(`--type=${type}`);
+  try {
+    await spawn(args, cwd);
+  } catch (error51) {
+    deny5(log, "error", `tgo_beads_update write failed for ${id}: ${updateErrorMessage(error51)}`, {
+      issueId: id
+    });
+  }
+  let post;
+  try {
+    post = await lookup(id, cwd);
+  } catch (error51) {
+    deny5(log, "error", `tgo_beads_update unverified for ${id}: post-update lookup failed: ${String(error51)}`, {
+      issueId: id
+    });
+  }
+  const bead = beadFromUpdateShowStdout(post.stdout);
+  const confirmed = post.exitCode === 0 && !!bead && (title === undefined || bead.title === title) && (description === undefined || (bead.description ?? "") === description) && (priority === undefined || String(bead.priority) === priority) && (type === undefined || bead.issue_type === type);
+  if (!confirmed) {
+    deny5(log, "error", `tgo_beads_update unverified for ${id}: post-update field confirm failed (exit=${post.exitCode} fields=${edited.join(",")})`, { issueId: id, fields: edited, claimExitCode: post.exitCode });
+  }
+  try {
+    log("info", `beads update observed for ${id}: edited ${edited.join(",")} (verified by re-show)`, {
+      issueId: id,
+      fields: edited
+    });
+  } catch {}
+  return `updated ${id}: edited ${edited.join(",")} (verified by re-show)`;
+}
+
+// src/reopen-tool.ts
+init_config();
+init_def_snapshot();
+import { execFile as execFile7 } from "node:child_process";
+import { promisify as promisify7 } from "node:util";
+var runFile7 = promisify7(execFile7);
+var REOPEN_TIMEOUT_MS = 1e4;
+var REOPEN_TOOL_ALLOWED_DEFAULT = true;
+function isReopenToolAllowed(override) {
+  if (override === false)
+    return false;
+  if (override === true)
+    return true;
+  if (typeof process !== "undefined" && process.env?.TGO_BEADS_REOPEN_ALLOWED === "1")
+    return true;
+  return REOPEN_TOOL_ALLOWED_DEFAULT;
+}
+function deny6(log, level, message, extra) {
+  try {
+    log(level, message, extra);
+  } catch {}
+  throw new Error(message);
+}
+function reopenErrorMessage(error51) {
+  if (error51 && typeof error51 === "object") {
+    const err = error51;
+    if (typeof err.stderr === "string" && err.stderr.trim().length > 0) {
+      const line2 = err.stderr.split(/\r?\n/).find((it) => it.trim().length > 0);
+      if (line2)
+        return line2.trim();
+    }
+    if (err.code === "ENOENT")
+      return "bd not found on PATH";
+    if (typeof err.message === "string" && err.message.trim().length > 0) {
+      const line2 = err.message.split(/\r?\n/).find((it) => it.trim().length > 0);
+      if (line2)
+        return line2.trim();
+    }
+  }
+  return String(error51);
+}
+async function defaultSpawnReopen(args, cwd) {
+  const { stdout, stderr } = await runFile7("bd", args, {
+    cwd,
+    env: BD_ENV,
+    timeout: REOPEN_TIMEOUT_MS,
+    encoding: "utf8",
+    maxBuffer: 8 * 1024 * 1024
+  });
+  return { stdout: stdout ?? "", stderr: stderr ?? "" };
+}
+async function executeBeadsReopen(toolArgs, host) {
+  const log = host.log ?? (() => {});
+  const spawn = host.spawnReopen ?? defaultSpawnReopen;
+  const lookup = host.lookup ?? lookupClaimObserved;
+  if (!host.allowed) {
+    deny6(log, "error", "tgo_beads_reopen denied: reopen writes are disabled (allowed:false)", {
+      allowed: false
+    });
+  }
+  if (!host.isPrimary) {
+    deny6(log, "warn", "tgo_beads_reopen denied: primary-seat only — delegated seats cannot reopen issues");
+  }
+  if (typeof host.repoRoot !== "string" || host.repoRoot.trim().length === 0) {
+    deny6(log, "error", "tgo_beads_reopen denied: explicit repoRoot is required; ambient cwd is never used");
+  }
+  const cwd = host.repoRoot;
+  const rawId = toolArgs?.issueId;
+  if (typeof rawId !== "string") {
+    deny6(log, "warn", `tgo_beads_reopen denied: invalid issueId ${JSON.stringify(rawId)} — must match VALID_BEAD_ID`);
+  }
+  const id = rawId.trim();
+  if (id.length === 0 || !isValidBeadID(id)) {
+    deny6(log, "warn", `tgo_beads_reopen denied: invalid issueId ${JSON.stringify(rawId)} — must match VALID_BEAD_ID ${VALID_BEAD_ID.source}`, {
+      issueId: rawId
+    });
+  }
+  let pre;
+  try {
+    pre = await lookup(id, cwd);
+  } catch (error51) {
+    deny6(log, "error", `tgo_beads_reopen denied for ${id}: pre-reopen lookup failed: ${String(error51)}`, {
+      issueId: id
+    });
+  }
+  if (pre.exitCode !== 0) {
+    deny6(log, "error", `tgo_beads_reopen denied for ${id}: pre-reopen lookup failed (exit ${pre.exitCode}, failed precondition); refusing write`, {
+      issueId: id,
+      claimExitCode: pre.exitCode,
+      stderr: (pre.stderr ?? "").trim().slice(0, 400)
+    });
+  }
+  if (pre.status === "open") {
+    try {
+      log("info", `beads reopen already open for ${id} — no-op (never re-write)`, {
+        issueId: id
+      });
+    } catch {}
+    return `already open ${id} — no-op (never re-write)`;
+  }
+  if (pre.status === "in_progress") {
+    deny6(log, "warn", `tgo_beads_reopen denied for ${id}: issue is in_progress (owner ${JSON.stringify(pre.assignee)}) — reopening would demote a live claim and lose the owner; claim stays intact`, {
+      issueId: id,
+      observedStatus: pre.status,
+      observedAssignee: pre.assignee
+    });
+  }
+  if (pre.status !== "closed") {
+    deny6(log, "warn", `tgo_beads_reopen denied for ${id}: only closed issues may be reopened (status=${JSON.stringify(pre.status)})`, {
+      issueId: id,
+      observedStatus: pre.status
+    });
+  }
+  try {
+    await spawn(["reopen", id], cwd);
+  } catch (error51) {
+    deny6(log, "error", `tgo_beads_reopen write failed for ${id}: ${reopenErrorMessage(error51)}`, {
+      issueId: id
+    });
+  }
+  let post;
+  try {
+    post = await lookup(id, cwd);
+  } catch (error51) {
+    deny6(log, "error", `tgo_beads_reopen unverified for ${id}: post-reopen lookup failed: ${String(error51)}`, {
+      issueId: id
+    });
+  }
+  if (post.exitCode !== 0 || post.status !== "open") {
+    deny6(log, "error", `tgo_beads_reopen unverified for ${id}: post-reopen confirm failed (status=${JSON.stringify(post.status)} exit=${post.exitCode})`, { issueId: id, observedStatus: post.status, claimExitCode: post.exitCode });
+  }
+  try {
+    log("info", `beads reopen observed for ${id}: open (verified by re-show)`, {
+      issueId: id
+    });
+  } catch {}
+  return `reopened ${id}: verified open (verified by re-show)`;
 }
 
 // src/tui.ts
@@ -22894,19 +24126,6 @@ function formatReplayResult(r) {
   return `step replay ${r.runId}#${r.stepIndex}: tool=${o.tool} ok=${o.ok} inputHash=${r.inputHash}${extras ? ` ${extras}` : ""}`;
 }
 
-// src/exitgate/close-gate.ts
-async function checkCloseGate(repoRoot, issueId, specText) {
-  const syntheticComplete = parseTaskReport(`STATUS: complete
-CHANGES: close via sidebar
-VERIFIED: exit gate: true; close check
-GAPS: none`);
-  const gate = await runExitGate({ repoRoot, issueId, specText: specText ?? "", report: syntheticComplete });
-  if (gate.blocked) {
-    return { allowed: false, gate };
-  }
-  return { allowed: true, gate };
-}
-
 // src/plugin.ts
 import * as path25 from "node:path";
 import * as os5 from "node:os";
@@ -23390,6 +24609,136 @@ var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => 
             return "Beads snapshot is available only from a primary session.";
           }
           return renderBeadsTui(await loadBeadsTui(runBd));
+        }
+      }),
+      tgo_beads_claim: tool({
+        description: "Claim a Beads issue for the primary session (verify-first, claim-if-unowned). Primary-seat only.",
+        args: {
+          issueId: tool.schema.string()
+        },
+        async execute(args, context) {
+          const authorized = await authorizeLifecycleSession(client, context.sessionID);
+          if (!authorized) {
+            appLog("warn", "beads claim denied: non-primary session");
+            throw new Error("tgo_beads_claim is primary-seat only — delegated seats cannot claim issues");
+          }
+          const repoRoot = directory ?? worktree ?? project?.worktree ?? ".";
+          return await executeBeadsClaim(args, {
+            repoRoot,
+            isPrimary: true,
+            allowed: isClaimToolAllowed(options?.beadsClaimAllowed),
+            log: appLog
+          });
+        }
+      }),
+      tgo_beads_close: tool({
+        description: "Close a Beads issue for the primary session (verify-first, gate-checked). Primary-seat only.",
+        args: {
+          issueId: tool.schema.string(),
+          reason: tool.schema.string()
+        },
+        async execute(args, context) {
+          const authorized = await authorizeLifecycleSession(client, context.sessionID);
+          if (!authorized) {
+            appLog("warn", "beads close denied: non-primary session");
+            throw new Error("tgo_beads_close is primary-seat only — delegated seats cannot close issues");
+          }
+          const repoRoot = directory ?? worktree ?? project?.worktree ?? ".";
+          return await executeBeadsClose(args, {
+            repoRoot,
+            isPrimary: true,
+            allowed: isCloseToolAllowed(options?.beadsCloseAllowed),
+            log: appLog
+          });
+        }
+      }),
+      tgo_beads_create: tool({
+        description: "Create a Beads issue for the primary session (validated, logged ID, post-show confirm). Primary-seat only. Retry is caller-managed and non-idempotent: reconcile by title/time, never auto-delete, never reuse.",
+        args: {
+          title: tool.schema.string(),
+          description: tool.schema.string().optional(),
+          type: tool.schema.string().optional(),
+          priority: tool.schema.string().optional()
+        },
+        async execute(args, context) {
+          const authorized = await authorizeLifecycleSession(client, context.sessionID);
+          if (!authorized) {
+            appLog("warn", "beads create denied: non-primary session");
+            throw new Error("tgo_beads_create is primary-seat only — delegated seats cannot create issues");
+          }
+          const repoRoot = directory ?? worktree ?? project?.worktree ?? ".";
+          return await executeBeadsCreate(args, {
+            repoRoot,
+            isPrimary: true,
+            allowed: isCreateToolAllowed(options?.beadsCreateAllowed),
+            log: appLog
+          });
+        }
+      }),
+      tgo_beads_dep: tool({
+        description: "Wire a Beads dependency for the primary session (verify-first, post-list confirm). Primary-seat only.",
+        args: {
+          issueId: tool.schema.string(),
+          dependsOnId: tool.schema.string(),
+          type: tool.schema.string().optional()
+        },
+        async execute(args, context) {
+          const authorized = await authorizeLifecycleSession(client, context.sessionID);
+          if (!authorized) {
+            appLog("warn", "beads dep denied: non-primary session");
+            throw new Error("tgo_beads_dep is primary-seat only — delegated seats cannot wire dependencies");
+          }
+          const repoRoot = directory ?? worktree ?? project?.worktree ?? ".";
+          return await executeBeadsDep(args, {
+            repoRoot,
+            isPrimary: true,
+            allowed: isDepToolAllowed(options?.beadsDepAllowed),
+            log: appLog
+          });
+        }
+      }),
+      tgo_beads_update: tool({
+        description: "Edit living-spec fields of a Beads issue for the primary session (verify-first, closed-refused, post-show confirm). Primary-seat only.",
+        args: {
+          issueId: tool.schema.string(),
+          title: tool.schema.string().optional(),
+          description: tool.schema.string().optional(),
+          priority: tool.schema.string().optional(),
+          type: tool.schema.string().optional()
+        },
+        async execute(args, context) {
+          const authorized = await authorizeLifecycleSession(client, context.sessionID);
+          if (!authorized) {
+            appLog("warn", "beads update denied: non-primary session");
+            throw new Error("tgo_beads_update is primary-seat only — delegated seats cannot edit issues");
+          }
+          const repoRoot = directory ?? worktree ?? project?.worktree ?? ".";
+          return await executeBeadsUpdate(args, {
+            repoRoot,
+            isPrimary: true,
+            allowed: isUpdateToolAllowed(options?.beadsUpdateAllowed),
+            log: appLog
+          });
+        }
+      }),
+      tgo_beads_reopen: tool({
+        description: "Reopen a closed Beads issue for the primary session (verify-first, closed-only, post-show confirm). Primary-seat only.",
+        args: {
+          issueId: tool.schema.string()
+        },
+        async execute(args, context) {
+          const authorized = await authorizeLifecycleSession(client, context.sessionID);
+          if (!authorized) {
+            appLog("warn", "beads reopen denied: non-primary session");
+            throw new Error("tgo_beads_reopen is primary-seat only — delegated seats cannot reopen issues");
+          }
+          const repoRoot = directory ?? worktree ?? project?.worktree ?? ".";
+          return await executeBeadsReopen(args, {
+            repoRoot,
+            isPrimary: true,
+            allowed: isReopenToolAllowed(options?.beadsReopenAllowed),
+            log: appLog
+          });
         }
       }),
       tgo_wait_for_user: tool({
@@ -24023,6 +25372,15 @@ ${truncated}`, synthetic: true }] }
         const authorized = await authorizeLifecycleSession(client, input.sessionID);
         if (!authorized) {
           throw new Error("Beads lifecycle packets are allowed only from an identified primary session.");
+        }
+        const rawPacket = output?.args?.delegationPacket;
+        const verifyRoot = directory ?? worktree ?? project?.worktree ?? ".";
+        const observed = await lookupClaimObserved(rawPacket?.issueId, verifyRoot);
+        const verdict = evaluateLiveDispatchGate(rawPacket ?? {}, observed);
+        if (!verdict.allowed) {
+          const issueLabel = typeof rawPacket?.issueId === "string" && rawPacket.issueId.trim() ? rawPacket.issueId.trim() : "open";
+          appLog("error", "live claim verification failed", { issueId: issueLabel, observedStatus: observed.status, observedAssignee: observed.assignee, claimExitCode: observed.exitCode, diagnostics: verdict.diagnostics });
+          throw new Error(`Live claim verification failed for ${issueLabel}: ${verdict.diagnostics.join(" ")} Keep issue ${issueLabel} open; retry, reroute, escalate, or request user-clarification.`);
         }
       }
       let manifestRefusal;
