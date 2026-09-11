@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { evaluateClosure, verifyClaimObserved } from "../src/lifecycle";
+import { evaluateLiveDispatchGate } from "../src/verify-claim";
 import { parseTaskReport } from "../src/report";
 
 const complete = parseTaskReport("STATUS: complete\nCHANGES: x\nVERIFIED: exit gate: true\nGAPS: none");
@@ -180,5 +181,20 @@ describe("closure metadata validation", () => {
     const watchdogGate = evaluateClosure("standard", lifecycle, watchdogReport);
     expect(watchdogGate.recovery).toBe("reroute");
     expect(watchdogGate.recovery).not.toBe("retry");
+  });
+});
+
+describe("live dispatch gate blocks close/dispatch on open or missing live state", () => {
+  const packet = { issueId: "tgo-1", issueStatusObserved: "in_progress", issueAssigneeObserved: "ryangking", claimExitCode: 0, beadsOperator: "Bernstein" };
+  test("live in_progress passes; live open/missing blocks with keep-open recovery", () => {
+    expect(evaluateLiveDispatchGate(packet, { status: "in_progress", assignee: "ryangking", exitCode: 0 }).allowed).toBe(true);
+    const open = evaluateLiveDispatchGate(packet, { status: "open", assignee: undefined, exitCode: 0 });
+    expect(open.allowed).toBe(false);
+    expect(open.recovery).toBe("retry");
+    expect(open.diagnostics.join(" ")).toContain("Keep issue tgo-1 open");
+    expect(open.diagnostics.join(" ")).toMatch(/retry|reroute|escalate|user-clarification/);
+    const missing = evaluateLiveDispatchGate(packet, { status: undefined, assignee: undefined, exitCode: 1 });
+    expect(missing.allowed).toBe(false);
+    expect(missing.missing).toEqual(expect.arrayContaining(["live:claimExitCode:0", "live:issueStatusObserved:in_progress", "live:issueAssigneeObserved"]));
   });
 });

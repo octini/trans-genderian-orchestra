@@ -1,12 +1,14 @@
 ---
 name: wayfinder
-description: Plan a huge chunk of work — more than one agent session can hold — as a shared map of decision tickets on the beads tracker, and resolve them one at a time until the way to the destination is clear.
+description: Plan a huge chunk of work — more than one agent session can hold — as a proposed shared map of decision tickets for Bernstein to publish to the beads tracker, and resolve them one at a time until the way to the destination is clear.
 disable-model-invocation: true
 ---
 
 # Wayfinder
 
-A loose idea has arrived — too big for one agent session, and wrapped in fog. Wayfinding finds the way from here to the **destination**: chart the route as a **shared map** on the beads tracker, then work its **decision tickets** — questions whose resolution is a decision, not a slice of a build — one at a time until the route is clear.
+A loose idea has arrived — too big for one agent session, and wrapped in fog. Wayfinding finds the way from here to the **destination**: chart the route as a **shared map proposal** for Bernstein to publish to the beads tracker, then work its **decision tickets** — questions whose resolution is a decision, not a slice of a build — one at a time until the route is clear.
+
+Worker freeze: output map and ticket bodies plus blocking edges (or resolutions) for Bernstein; publishing/claiming/closing is Bernstein-owned via the future host path — never run `bd create`, `bd update`, `bd close`, `bd reopen`, `bd dep add`, or `bd remember` yourself. Contributor-side reads (`bd list/show/ready/search/prime`) stay allowed.
 
 ## Plan, don't do
 
@@ -14,11 +16,11 @@ Wayfinder is **planning** by default: each ticket resolves a decision, and the m
 
 ## Refer by name
 
-Every map and ticket is a beads issue, so it has a **name** — its title. In everything the human reads, refer to it by that name, never by a bare id or number.
+Every proposed map and ticket becomes a beads issue once Bernstein publishes it, so it has a **name** — its title. In everything the human reads, refer to it by that name, never by a bare id or number.
 
 ## The map
 
-Create one beads issue labelled `wayfinder:map` — the canonical artifact. Its tickets are **child issues** of the map.
+Propose one beads issue labelled `wayfinder:map` for Bernstein to publish — the canonical artifact proposal. Its tickets are proposed **child issues** of the map.
 
 **The map body:**
 
@@ -47,7 +49,7 @@ Create one beads issue labelled `wayfinder:map` — the canonical artifact. Its 
 <the decision or investigation this ticket resolves>
 ```
 
-Each ticket carries a `wayfinder:<type>` label — `research`, `prototype`, `grilling`, or `task`. A session **claims** a ticket (`bd update <id> --claim`) **before** any work, so concurrent sessions skip it. Blocking uses beads' native `bd dep add` edges — the frontier is the open, unblocked, unclaimed children.
+Each ticket carries a `wayfinder:<type>` label — `research`, `prototype`, `grilling`, or `task`. A session proposes a ticket claim for Bernstein — do not run `bd update <id> --claim` yourself before any work; Bernstein owns claiming via the future host path so concurrent sessions skip claimed tickets. Blocking is proposed with beads' native `bd dep add` edges (propose, do not run `bd dep add` yourself) — the frontier is the open, unblocked, unclaimed children.
 
 ## Ticket types
 
@@ -74,15 +76,15 @@ Two modes. Either way, **never resolve more than one ticket per session** — ex
 
 1. **Name the destination.** Run a `grilling` session to pin down what this map is finding its way to. The destination fixes scope, so it's settled first.
 2. **Map the frontier.** Grill again, **breadth-first**: fan out across the whole space, surfacing the open decisions and first steps takeable now. If this surfaces no fog — the way is already clear and small enough for one session — stop; you don't need a map.
-3. **Create the map** (`wayfinder:map`): Destination + Notes filled, Decisions-so-far empty, fog sketched into Not yet specified.
-4. **Create the tickets you can specify now** as children of the map, then wire blocking edges in a second pass (`bd dep add`).
-5. **Fire the research tickets** — for each, delegate to Nas in parallel, capturing findings back to the ticket.
+3. **Propose the map** (`wayfinder:map`) for Bernstein to publish: Destination + Notes filled, Decisions-so-far empty, fog sketched into Not yet specified.
+4. **Propose the tickets you can specify now** as children of the map for Bernstein to publish, then propose blocking edges for a second pass (propose `bd dep add` wiring — do not run it yourself).
+5. **Propose the research tickets for firing** — for each, propose delegation to Nas in parallel, capturing findings as proposed text for Bernstein to record (do not mutate tickets yourself).
 6. Stop — charting is one session's work; it hand-resolves nothing.
 
 ### Work through the map
 
 1. Load the **map** — the low-res view, not every ticket body.
-2. Choose the ticket. If the user named one, use it. Otherwise take the first frontier ticket. **Claim it** before any work.
+2. Choose the ticket. If the user named one, use it. Otherwise take the first frontier ticket. Propose its claim for Bernstein (do not run `bd update` yourself) before any work.
 3. Resolve it — zoom into related/closed tickets on demand; invoke the skills the Notes block names. In doubt, use `grilling`.
-4. Record the resolution: post the answer as a resolution comment, **close** the issue (`bd close <id>`), and append a context pointer to the map's Decisions so far.
-5. Add newly-surfaced tickets (create-then-wire); graduate any fog the answer made specifiable. If the answer reveals a ticket sits beyond the destination, rule it **out of scope** rather than resolving it on the route.
+4. Record the resolution as proposed text for Bernstein: draft the answer as a proposed resolution comment plus a proposed context pointer for the map's Decisions so far — do not run `bd close <id>` yourself; closing is Bernstein-owned.
+5. Propose newly-surfaced tickets (propose bodies plus blocking edges for Bernstein to publish — do not run `bd create` or `bd dep add` yourself); graduate any fog the answer made specifiable. If the answer reveals a ticket sits beyond the destination, rule it **out of scope** rather than resolving it on the route.

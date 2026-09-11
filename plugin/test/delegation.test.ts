@@ -10,6 +10,7 @@ import {
   resolveEffectiveVoiceCardId,
 } from "../src/delegation";
 import type { RoutingClassification } from "../src/fit";
+import { evaluateLiveDispatchGate } from "../src/verify-claim";
 
 const standard: RoutingClassification = { route: "standard", tiny: false, reasons: [] };
 const heavy: RoutingClassification = { route: "heavy", tiny: false, reasons: ["ambiguity"] };
@@ -238,5 +239,41 @@ describe("validateDelegationPacket style field (T4)", () => {
     expect(resolveEffectiveVoiceCardId({ packetStyle: "default" })).toBe("tgo-default");
     expect(resolveEffectiveVoiceCardId({})).toBe("tgo-default");
     expect(resolveEffectiveVoiceCardId({ packetStyle: "invalid" })).toBe("tgo-default");
+  });
+});
+
+describe("host-verify precondition for dispatch (Phase 1 live gate)", () => {
+  const packetBase = {
+    issueId: "tgo-test",
+    issueStatusObserved: "in_progress" as const,
+    issueAssigneeObserved: "ryangking",
+    claimExitCode: 0 as const,
+    beadsOperator: "Bernstein" as const,
+  };
+  test("live in_progress + assignee + exit 0 passes the dispatch gate", () => {
+    const verdict = evaluateLiveDispatchGate(packetBase, { status: "in_progress", assignee: "ryangking", exitCode: 0 });
+    expect(verdict.allowed).toBe(true);
+    expect(verdict.missing).toEqual([]);
+  });
+  test("live open/missing or wrong operator fails closed with actionable diagnostics", () => {
+    const liveOpen = evaluateLiveDispatchGate(packetBase, { status: "open", assignee: undefined, exitCode: 0 });
+    expect(liveOpen.allowed).toBe(false);
+    expect(liveOpen.missing).toContain("live:issueStatusObserved:in_progress");
+    expect(liveOpen.diagnostics.join(" ")).toContain("Keep issue");
+    const missing = evaluateLiveDispatchGate(packetBase, { status: undefined, assignee: undefined, exitCode: 1 });
+    expect(missing.allowed).toBe(false);
+    expect(missing.missing).toContain("live:claimExitCode:0");
+    const wrongOperator = evaluateLiveDispatchGate(
+      { ...packetBase, beadsOperator: "Dylan" },
+      { status: "in_progress", assignee: "ryangking", exitCode: 0 },
+    );
+    expect(wrongOperator.allowed).toBe(false);
+    expect(wrongOperator.missing).toContain("beadsOperator=Bernstein");
+    const forged = evaluateLiveDispatchGate(
+      { ...packetBase, issueStatusObserved: "open", claimExitCode: 1, issueClaimed: true },
+      { status: "open", assignee: undefined, exitCode: 0 },
+    );
+    expect(forged.allowed).toBe(false);
+    expect(forged.diagnostics.join(" ")).toContain("forgeable");
   });
 });

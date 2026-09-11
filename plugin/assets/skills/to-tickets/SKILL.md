@@ -1,12 +1,12 @@
 ---
 name: to-tickets
-description: Break a plan, spec, or the current conversation into a set of tracer-bullet tickets, each declaring its blocking edges, published to the beads tracker.
+description: Break a plan, spec, or the current conversation into a set of tracer-bullet tickets, each declaring its blocking edges, proposed for Bernstein to publish to the beads tracker.
 disable-model-invocation: true
 ---
 
 # To Tickets
 
-Break a plan, spec, or conversation into **tickets** — tracer-bullet vertical slices, each declaring the tickets that **block** it. Published to the beads tracker.
+Break a plan, spec, or conversation into **tickets** — tracer-bullet vertical slices, each declaring the tickets that **block** it. Proposed for Bernstein to publish to the beads tracker.
 
 ## Process
 
@@ -49,13 +49,15 @@ Ask the user:
 
 Iterate until the user approves the breakdown.
 
-### 5. Publish to beads
+### 5. Propose beads tickets (Bernstein publishes)
 
-Publish the approved tickets with `bd create`, in dependency order (blockers first) so each ticket's blocking edges can reference real ids. Wire the edges with `bd dep add` in a second pass. Apply the `ready-for-agent` triage label unless instructed otherwise — the tickets are agent-grabbable by construction.
+Output the approved tickets as proposed ticket bodies plus blocking edges for Bernstein — do not run `bd create` and do not run `bd dep add` yourself. Order the proposals in dependency order (blockers first) so Bernstein can publish each ticket's blocking edges against real ids, wiring the edges in a second pass. Propose the `ready-for-agent` triage label unless instructed otherwise — the tickets are agent-grabbable by construction.
 
 Work the **frontier**: any ticket whose blockers are all done. For a purely linear chain that means top to bottom.
 
 Do NOT close or modify any parent issue.
+
+Publishing/claiming/closing is Bernstein-owned via the future host path; workers never run `bd create`, `bd update`, `bd close`, `bd reopen`, `bd dep add`, or `bd remember` themselves. Contributor-side reads (`bd list/show/ready/search/prime`) stay allowed.
 
 **Ticket template:**
 

@@ -27,6 +27,7 @@ import {
   type Lane,
 } from "./worktree-lane";
 import { authorizeLifecycleSession, evaluateClosure, verifyClaimObserved } from "./lifecycle";
+import { lookupClaimObserved, evaluateLiveDispatchGate } from "./verify-claim";
 import { shouldRunGate, applyGateToClosure, evaluateGatedClosure, gateBlockedWithError } from "./lifecycle";
 import { runExitGate } from "./exitgate/gate";
 import { loadBeadsTui, renderBeadsTui } from "./tui";
@@ -1265,6 +1266,19 @@ export const TgoPlugin: Plugin = async (
         const authorized = await authorizeLifecycleSession(client, input.sessionID);
         if (!authorized) {
           throw new Error("Beads lifecycle packets are allowed only from an identified primary session.");
+        }
+        // Phase 1 verify-every-claim: live read-only lookup with explicit cwd
+        // threaded from host input. Rejects forged packets; no spawn proceeds
+        // on failure. Read-only (show only); show rewrites last-touched and
+        // the board re-walk absorbs that perturbation.
+        const rawPacket = (output?.args as Record<string, unknown> | undefined)?.delegationPacket as Record<string, unknown> | undefined;
+        const verifyRoot = directory ?? worktree ?? (project as unknown as { worktree?: string })?.worktree ?? ".";
+        const observed = await lookupClaimObserved(rawPacket?.issueId, verifyRoot);
+        const verdict = evaluateLiveDispatchGate((rawPacket ?? {}) as { issueId?: unknown; issueStatusObserved?: unknown; issueAssigneeObserved?: unknown; claimExitCode?: unknown; beadsOperator?: unknown; issueClaimed?: unknown }, observed);
+        if (!verdict.allowed) {
+          const issueLabel = typeof rawPacket?.issueId === "string" && (rawPacket.issueId as string).trim() ? (rawPacket.issueId as string).trim() : "open";
+          appLog("error", "live claim verification failed", { issueId: issueLabel, observedStatus: observed.status, observedAssignee: observed.assignee, claimExitCode: observed.exitCode, diagnostics: verdict.diagnostics });
+          throw new Error(`Live claim verification failed for ${issueLabel}: ${verdict.diagnostics.join(" ")} Keep issue ${issueLabel} open; retry, reroute, escalate, or request user-clarification.`);
         }
       }
       // tgo-dw5: manifest onDispatch + messageFilter — additive, zero-overhead when missing (crowded hook path: clearly-named)
