@@ -101,3 +101,63 @@ Add host-mediated lifecycle writes only after Phase 1 proves the verify path:
 - [x] Forged-claim test rejects (`issueClaimed:true` without observed triple fails; live-`open` packet fails host lookup).
 - [x] Worker-skill freeze landed (to-tickets + wayfinder propose but never run `bd` writes).
 - [x] `bd show` verify path threads cwd explicitly (no `bd -C`, no ambient-cwd fallback).
+
+## Build record (post-spec)
+
+Spec-recording only: this section records what was built after the spec above was written. Earlier sections are frozen and stay byte-identical; corrections to superseded lines appear only here (§4 below).
+
+### 1. Tool inventory and enablement
+
+Six primary-seat-only host tools were built (Phase 2), each verify-first with post-write confirm, `VALID_BEAD_ID` gating, explicit `repoRoot` cwd (never ambient cwd, never `bd -C`), `execFile` argv spawn with `BD_ENV`, and diagnostics via host log:
+
+| Tool | Verb wrapped | Default | Kill switch |
+| --- | --- | --- | --- |
+| `tgo_beads_claim` (`plugin/src/claim-tool.ts`) | `bd update <id> --claim` (only when pre-`show` lookup reports unowned; already-owned returns no-overwrite; post-`show` owner confirm) | `CLAIM_TOOL_ALLOWED_DEFAULT = true` | `host.allowed=false` denies; `isClaimToolAllowed(false)` wins; env `TGO_BEADS_CLAIM_ALLOWED=1` forces on |
+| `tgo_beads_close` (`plugin/src/close-tool.ts`) | `bd close <id> --reason <reason>` (pre-`show` claim-verified + `checkCloseGate` pass required; already-closed returns never-reopen no-op; post-`show` closed confirm; reason non-empty, ≤`CLOSE_REASON_MAX` 500) | `CLOSE_TOOL_ALLOWED_DEFAULT = true` | `host.allowed=false` denies; `isCloseToolAllowed(false)` wins; env `TGO_BEADS_CLOSE_ALLOWED=1` forces on |
+| `tgo_beads_create` (`plugin/src/create-tool.ts`) | `bd create --title=<t> [--description=<d>] -t <type> -p <priority> --json` (validate-first; created id logged to host log as recovery record, then post-`show` exists confirm; non-idempotent retry, caller reconciles by title/time) | `CREATE_TOOL_ALLOWED_DEFAULT = true` (type default `task` from `task|bug|feature|epic|chore`, priority default `2` from `0-4`, title ≤200, description ≤2000) | `host.allowed=false` denies; `isCreateToolAllowed(false)` wins; env `TGO_BEADS_CREATE_ALLOWED=1` forces on |
+| `tgo_beads_dep` (`plugin/src/dep-tool.ts`) | `bd dep add <issueId> <dependsOnId> [--type <type>]` (both endpoints pre-`show` verified; self-edge refused; post `dep list <issueId> --json` edge confirm; same-type duplicate is a native no-op so crash-retry converges) | `DEP_TOOL_ALLOWED_DEFAULT = true` (type default `blocks`; allowlist `blocks|tracks|related|parent-child|discovered-from|until|caused-by|validates|relates-to|supersedes` — stricter than `bd`, which persists arbitrary type strings) | `host.allowed=false` denies; `isDepToolAllowed(false)` wins; env `TGO_BEADS_DEP_ALLOWED=1` forces on |
+| `tgo_beads_update` (`plugin/src/update-tool.ts`) | `bd update <id> [--title=<t>] [--description=<d>] [--priority=<p>] [--type=<t>]` (provided living-spec fields only, each as a single `--flag=<value>` argv element; at least one field required; pre-`show` verified; refuses `closed` with reopen-first hint; post-`show` field confirm) | `UPDATE_TOOL_ALLOWED_DEFAULT = true` | `host.allowed=false` denies; `isUpdateToolAllowed(false)` wins; env `TGO_BEADS_UPDATE_ALLOWED=1` forces on |
+| `tgo_beads_reopen` (`plugin/src/reopen-tool.ts`) | `bd reopen <id>` (closed-only; `open` returns a logged no-op with zero spawn; `in_progress` denied so the live claim stays intact, never demotes; post-`show` open confirm; explicit calls only, never auto-recovery) | `REOPEN_TOOL_ALLOWED_DEFAULT = true` | `host.allowed=false` denies; `isReopenToolAllowed(false)` wins; env `TGO_BEADS_REOPEN_ALLOWED=1` forces on |
+
+Verify-every-claim gate: `plugin/src/verify-claim.ts` (`lookupClaimObserved` live `bd show --json` read-only lookup + `evaluateLiveDispatchGate` packet/live triple check; recovery `retry`). All six tools reuse its lookup for pre/post verification.
+
+Skill freeze (Phase 0, still in force): `plugin/assets/skills/to-tickets/SKILL.md` §5 — workers output proposed ticket bodies plus blocking edges, "do not run `bd create` and do not run `bd dep add` yourself"; `plugin/assets/skills/wayfinder/SKILL.md` — "Worker freeze: output map and ticket bodies plus blocking edges (or resolutions) for Bernstein", never run `bd create/update/close/reopen/dep add/remember` (contributor-side reads `bd list/show/ready/search/prime` stay allowed).
+
+Enablement history (`git log --oneline`, real SHAs/subjects):
+
+- `da9a495` feat(beads): Spec A Phase 1 — verify-every-claim gate + worker skill freeze
+- `a2855e0` feat(beads): Spec A Phase 2 claim slice — tgo_beads_claim primary-gated tool
+- `310288b` feat(beads): Spec A Phase 2 close slice — tgo_beads_close primary-gated tool
+- `fc2c8bf` feat(beads): Spec A Phase 2 create slice — tgo_beads_create primary-gated tool
+- `6e24908` feat(beads): enable Bernstein bead tools by default (allowed:true) with explicit-false kill switch — defaults flipped to `allowed:true` after the Phase 1 gate went green
+- `bdd022c` feat(beads): Spec A dep slice — tgo_beads_dep primary-gated tool (landed on top of the enablement commit, so the dep tool was born enabled-by-default)
+
+### 2. Read-gap closure: reality check
+
+The Bernstein seat allowlist (`plugin/assets/agents/bernstein.md`) as it now reads permits exactly these `bd` commands — quoted verbatim:
+
+```yaml
+    "bd list*": allow
+    "bd show*": allow
+    "bd ready*": allow
+    "bd search*": allow
+    "bd blocked*": allow
+    "bd memories*": allow
+    "bd remember*": allow
+    "bd forget*": allow
+```
+
+The earlier read gap is closed: `bd blocked`, `bd memories`, `bd remember`, and `bd forget` are present in the seat file as quoted above (bash `"*": deny` otherwise). (The prose-nudge rule in the same file references `bd remember --key tgo.preset` as a user-facing note.) Board reads still never authorize anything per the CANNOT-prove semantics above; only the host-observable `parentID===null` lineage plus live lookup gates dispatch.
+
+### 3. Deliberately-out list
+
+- `bd reopen`: built as `tgo_beads_reopen` (`plugin/src/reopen-tool.ts`), closed-only — `open` returns a logged no-op with zero spawn, `in_progress` is denied so the live claim stays intact (never demotes), and only `closed` proceeds to `bd reopen` with post-`show` open confirm. Explicit calls only, never auto-recovery: the spec's reopen-demotion reason stands as the guard rationale — reopen is not valid failed-gate recovery, so automated failed-gate recovery stays manual.
+- Automated failed-gate recovery: still `allowed:false` in effect — no recovery tool was built. Gate failures keep the issue open and surface retry/reroute/escalate/user-clarification (`plugin/src/verify-claim.ts` recovery verdict); orphan-claim/orphan-create recovery stays explicit Bernstein re-claim/re-delegate, never auto-close/auto-reuse.
+- `bd sync`: human-only per the conservative git policy. No sync tool exists; no delegated path runs it.
+
+### 4. Corrections to superseded spec lines (appended, earlier text untouched)
+
+- Phase 2 "Either a custom tool ... or the `tool.execute.before` veto path performs `bd create` / `bd update --claim` / `bd close`" → built as six custom tools (`tgo_beads_claim/close/create/dep/update/reopen`); `dep add`, `update`, and `reopen` were added beyond the original create/claim/close trio (see `bdd022c` above for the dep slice).
+- Phase 2 "Gate writes behind `allowed: true` (today `beadsLifecycle.allowed: false` ...). Flip to `allowed: true` only after the Phase 1 exit gate" → flipped in `6e24908`: per-tool `*_ALLOWED_DEFAULT = true` with explicit-`false` kill switch.
+- Exit-gate checkbox "`grep bd create` over `plugin/src` shows zero host spawns" → superseded by design: `plugin/src/create-tool.ts` now spawns `bd create` on the primary-seat host path (frozen worker-skill prohibition is unaffected).
+- Non-goal "no automated recovery creation in this spec. Recovery creation stays `allowed: false` until Phase 1 proves the verify path" → Phase 1 passed and enablement shipped, but no automated-recovery tool was built; the `allowed:false` posture for recovery persists (see §3).

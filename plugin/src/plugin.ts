@@ -32,6 +32,8 @@ import { executeBeadsClaim, isClaimToolAllowed } from "./claim-tool";
 import { executeBeadsClose, isCloseToolAllowed } from "./close-tool";
 import { executeBeadsCreate, isCreateToolAllowed } from "./create-tool";
 import { executeBeadsDep, isDepToolAllowed } from "./dep-tool";
+import { executeBeadsUpdate, isUpdateToolAllowed } from "./update-tool";
+import { executeBeadsReopen, isReopenToolAllowed } from "./reopen-tool";
 import { shouldRunGate, applyGateToClosure, evaluateGatedClosure, gateBlockedWithError } from "./lifecycle";
 import { runExitGate } from "./exitgate/gate";
 import { loadBeadsTui, renderBeadsTui } from "./tui";
@@ -711,6 +713,50 @@ export const TgoPlugin: Plugin = async (
             repoRoot,
             isPrimary: true,
             allowed: isDepToolAllowed((options as Record<string, unknown> | undefined)?.beadsDepAllowed),
+            log: appLog,
+          });
+        },
+      }),
+      tgo_beads_update: tool({
+        description: "Edit living-spec fields of a Beads issue for the primary session (verify-first, closed-refused, post-show confirm). Primary-seat only.",
+        args: {
+          issueId: tool.schema.string(),
+          title: tool.schema.string().optional(),
+          description: tool.schema.string().optional(),
+          priority: tool.schema.string().optional(),
+          type: tool.schema.string().optional(),
+        },
+        async execute(args, context) {
+          const authorized = await authorizeLifecycleSession(client, context.sessionID);
+          if (!authorized) {
+            appLog("warn", "beads update denied: non-primary session");
+            throw new Error("tgo_beads_update is primary-seat only — delegated seats cannot edit issues");
+          }
+          const repoRoot = directory ?? worktree ?? (project as unknown as { worktree?: string })?.worktree ?? ".";
+          return await executeBeadsUpdate(args as Record<string, unknown>, {
+            repoRoot,
+            isPrimary: true,
+            allowed: isUpdateToolAllowed((options as Record<string, unknown> | undefined)?.beadsUpdateAllowed),
+            log: appLog,
+          });
+        },
+      }),
+      tgo_beads_reopen: tool({
+        description: "Reopen a closed Beads issue for the primary session (verify-first, closed-only, post-show confirm). Primary-seat only.",
+        args: {
+          issueId: tool.schema.string(),
+        },
+        async execute(args, context) {
+          const authorized = await authorizeLifecycleSession(client, context.sessionID);
+          if (!authorized) {
+            appLog("warn", "beads reopen denied: non-primary session");
+            throw new Error("tgo_beads_reopen is primary-seat only — delegated seats cannot reopen issues");
+          }
+          const repoRoot = directory ?? worktree ?? (project as unknown as { worktree?: string })?.worktree ?? ".";
+          return await executeBeadsReopen(args as Record<string, unknown>, {
+            repoRoot,
+            isPrimary: true,
+            allowed: isReopenToolAllowed((options as Record<string, unknown> | undefined)?.beadsReopenAllowed),
             log: appLog,
           });
         },
