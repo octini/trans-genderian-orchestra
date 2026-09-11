@@ -34,10 +34,11 @@ export interface ClaimToolHost {
   lookup?: (issueId: unknown, repoRoot: unknown) => Promise<LiveClaimObserved>;
 }
 
-/** Per-tool gate: claim writes stay off unless explicitly enabled (dev/test path). */
-export const CLAIM_TOOL_ALLOWED_DEFAULT = false;
+/** Per-tool gate: claim writes stay on unless explicitly disabled (override false). */
+export const CLAIM_TOOL_ALLOWED_DEFAULT = true;
 
 export function isClaimToolAllowed(override?: unknown): boolean {
+  if (override === false) return false;
   if (override === true) return true;
   if (typeof process !== "undefined" && process.env?.TGO_BEADS_CLAIM_ALLOWED === "1") return true;
   return CLAIM_TOOL_ALLOWED_DEFAULT;

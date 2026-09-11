@@ -49,10 +49,11 @@ export interface CreateToolHost {
   lookup?: (issueId: unknown, repoRoot: unknown) => Promise<LiveClaimObserved>;
 }
 
-/** Per-tool gate: create writes stay off unless explicitly enabled (dev/test path). */
-export const CREATE_TOOL_ALLOWED_DEFAULT = false;
+/** Per-tool gate: create writes stay on unless explicitly disabled (override false). */
+export const CREATE_TOOL_ALLOWED_DEFAULT = true;
 
 export function isCreateToolAllowed(override?: unknown): boolean {
+  if (override === false) return false;
   if (override === true) return true;
   if (typeof process !== "undefined" && process.env?.TGO_BEADS_CREATE_ALLOWED === "1") return true;
   return CREATE_TOOL_ALLOWED_DEFAULT;

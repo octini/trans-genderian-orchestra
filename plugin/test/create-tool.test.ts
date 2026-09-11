@@ -77,12 +77,12 @@ function createStdoutFor(id: string): string {
 }
 
 describe("create-only primary-gated tool (Phase 2 final slice)", () => {
-  test("allowed flag defaults to denied with dev/test enable path", () => {
+  test("allowed flag defaults to allowed with dev/test enable path", () => {
     const saved = process.env.TGO_BEADS_CREATE_ALLOWED;
     try {
       delete process.env.TGO_BEADS_CREATE_ALLOWED;
-      expect(isCreateToolAllowed()).toBe(false);
-      expect(isCreateToolAllowed(undefined)).toBe(false);
+      expect(isCreateToolAllowed()).toBe(true);
+      expect(isCreateToolAllowed(undefined)).toBe(true);
       expect(isCreateToolAllowed(false)).toBe(false);
       expect(isCreateToolAllowed(true)).toBe(true);
       process.env.TGO_BEADS_CREATE_ALLOWED = "1";

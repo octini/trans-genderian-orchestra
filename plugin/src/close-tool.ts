@@ -45,10 +45,11 @@ export interface CloseToolHost {
   checkGate?: (repoRoot: string, issueId: string, specText: string) => Promise<CloseGateResult>;
 }
 
-/** Per-tool gate: close writes stay off unless explicitly enabled (dev/test path). */
-export const CLOSE_TOOL_ALLOWED_DEFAULT = false;
+/** Per-tool gate: close writes stay on unless explicitly disabled (override false). */
+export const CLOSE_TOOL_ALLOWED_DEFAULT = true;
 
 export function isCloseToolAllowed(override?: unknown): boolean {
+  if (override === false) return false;
   if (override === true) return true;
   if (typeof process !== "undefined" && process.env?.TGO_BEADS_CLOSE_ALLOWED === "1") return true;
   return CLOSE_TOOL_ALLOWED_DEFAULT;

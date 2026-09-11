@@ -62,12 +62,12 @@ function makeDisposable(): string {
 }
 
 describe("claim-only primary-gated tool (Phase 2 cheapest slice)", () => {
-  test("allowed flag defaults to denied with dev/test enable path", () => {
+  test("allowed flag defaults to allowed with dev/test enable path", () => {
     const saved = process.env.TGO_BEADS_CLAIM_ALLOWED;
     try {
       delete process.env.TGO_BEADS_CLAIM_ALLOWED;
-      expect(isClaimToolAllowed()).toBe(false);
-      expect(isClaimToolAllowed(undefined)).toBe(false);
+      expect(isClaimToolAllowed()).toBe(true);
+      expect(isClaimToolAllowed(undefined)).toBe(true);
       expect(isClaimToolAllowed(false)).toBe(false);
       expect(isClaimToolAllowed(true)).toBe(true);
       process.env.TGO_BEADS_CLAIM_ALLOWED = "1";

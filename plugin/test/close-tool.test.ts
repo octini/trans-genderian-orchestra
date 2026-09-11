@@ -70,12 +70,12 @@ function makeDisposable(): string {
 }
 
 describe("close-only primary-gated tool (Phase 2 second slice)", () => {
-  test("allowed flag defaults to denied with dev/test enable path", () => {
+  test("allowed flag defaults to allowed with dev/test enable path", () => {
     const saved = process.env.TGO_BEADS_CLOSE_ALLOWED;
     try {
       delete process.env.TGO_BEADS_CLOSE_ALLOWED;
-      expect(isCloseToolAllowed()).toBe(false);
-      expect(isCloseToolAllowed(undefined)).toBe(false);
+      expect(isCloseToolAllowed()).toBe(true);
+      expect(isCloseToolAllowed(undefined)).toBe(true);
       expect(isCloseToolAllowed(false)).toBe(false);
       expect(isCloseToolAllowed(true)).toBe(true);
       process.env.TGO_BEADS_CLOSE_ALLOWED = "1";
