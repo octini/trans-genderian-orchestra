@@ -525,6 +525,16 @@ describe("classifyFailureType — run-path RecoveryFlag fast-path (tgo-21a)", ()
     expect(classifyFailureType({ note: "watchdog abort: idle", tool: "task", issueId: "tgo-1" })).toBe("watchdog");
   });
 
+  test("isRunPathRerouteEnabled: default on, kill switch off", () => {
+    expect(isRunPathRerouteEnabled({} as any)).toBe(true);
+    expect(isRunPathRerouteEnabled({ TGO_RUN_PATH_REROUTE: "1" } as any)).toBe(true);
+    expect(isRunPathRerouteEnabled({ TGO_RUN_PATH_REROUTE: "0" } as any)).toBe(false);
+    expect(isRunPathRerouteEnabled({ TGO_RUN_PATH_REROUTE: "false" } as any)).toBe(false);
+    expect(isRunPathRerouteEnabled({ TGO_RUN_PATH_REROUTE_KILL: "1" } as any)).toBe(false);
+    expect(isRunPathRerouteEnabled({ TGO_DISABLE_RUN_PATH_REROUTE: "1" } as any)).toBe(false);
+  });
+});
+
 describe("capLensTaskOutput (tgo-4r5)", () => {
   test("truncates overlong lens output with the marker", () => {
     for (const lens of ["cobain", "grohl", "novoselic"]) {
@@ -555,16 +565,6 @@ describe("capLensTaskOutput (tgo-4r5)", () => {
     const out: TaskFitOutput = { title: "bash", output: "z".repeat(LENS_OUTPUT_CAP_CHARS + 1), metadata: {} };
     expect(capLensTaskOutput({ tool: "bash", sessionID: "s1", callID: "c1", args: { subagent_type: "cobain" } }, out)).toBe(false);
     expect(out.output).toBe("z".repeat(LENS_OUTPUT_CAP_CHARS + 1));
-  });
-});
-
-  test("isRunPathRerouteEnabled: default on, kill switch off", () => {
-    expect(isRunPathRerouteEnabled({} as any)).toBe(true);
-    expect(isRunPathRerouteEnabled({ TGO_RUN_PATH_REROUTE: "1" } as any)).toBe(true);
-    expect(isRunPathRerouteEnabled({ TGO_RUN_PATH_REROUTE: "0" } as any)).toBe(false);
-    expect(isRunPathRerouteEnabled({ TGO_RUN_PATH_REROUTE: "false" } as any)).toBe(false);
-    expect(isRunPathRerouteEnabled({ TGO_RUN_PATH_REROUTE_KILL: "1" } as any)).toBe(false);
-    expect(isRunPathRerouteEnabled({ TGO_DISABLE_RUN_PATH_REROUTE: "1" } as any)).toBe(false);
   });
 });
 
