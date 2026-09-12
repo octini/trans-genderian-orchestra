@@ -221,7 +221,10 @@
         "nas": { "$ref": "#/definitions/modelRef" },
         "nirvana": { "$ref": "#/definitions/modelRef" },
         "dylan": { "$ref": "#/definitions/modelRef" },
-        "band-members": { "$ref": "#/definitions/modelRef" }
+        "band-members": { "$ref": "#/definitions/modelRef" },
+        "cobain": { "$ref": "#/definitions/modelRef" },
+        "grohl": { "$ref": "#/definitions/modelRef" },
+        "novoselic": { "$ref": "#/definitions/modelRef" }
       },
       "required": ["bernstein", "horowitz", "nas", "dylan", "nirvana", "band-members"],
       "additionalProperties": false

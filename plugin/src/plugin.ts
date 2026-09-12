@@ -1530,17 +1530,23 @@ export const TgoPlugin: Plugin = async (
             if (!seatName || seatName.trim().length === 0) {
               throw new Error(`host-authoritative seat resolution failed for preset "${activePreset}" — subagent_type missing`);
             }
-            // Resolve model from ACTIVE preset — exact dispatch, no fallback to other models
+            // Resolve model (+ variant) from ACTIVE preset — exact dispatch, no fallback to other models.
+            // Per-lens override wins when present (direct lens key first); lenses without a key fall back to band-members.
             let model: string | undefined;
-            const presetMap = (config.presets as Record<string, Record<string, { model: string }>>)?.[activePreset];
+            let variant: string | undefined;
+            const presetMap = (config.presets as Record<string, Record<string, { model: string; variant?: string }>>)?.[activePreset];
             if (!presetMap) {
               throw new Error(`host-authoritative model resolution failed for preset "${activePreset}" seat "${seatName}" — preset not found`);
             }
             const direct = presetMap[seatName as string];
-            if (direct?.model) model = direct.model;
-            else if (["cobain", "grohl", "novoselic"].includes(seatName) && presetMap["band-members"]?.model) {
+            if (direct?.model) {
+              model = direct.model;
+              variant = direct.variant;
+            } else if (["cobain", "grohl", "novoselic"].includes(seatName) && presetMap["band-members"]?.model) {
               model = presetMap["band-members"].model;
+              variant = presetMap["band-members"].variant;
             }
+            if (typeof variant !== "string" || variant.length === 0) variant = undefined;
             if (!model || model === "unknown" || model.trim().length === 0) {
               throw new Error(`host-authoritative model resolution failed for preset "${activePreset}" seat "${seatName}"`);
             }
@@ -1571,6 +1577,7 @@ export const TgoPlugin: Plugin = async (
               seatFrontmatter,
               seatFileFound,
               model,
+              variant,
               preset: activePreset,
               useLatestDefinitions: useLatest,
             });

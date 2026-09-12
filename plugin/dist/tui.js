@@ -14648,7 +14648,36 @@ function safeWarn(log, message, extra) {
     log("warn", message, extra);
   } catch {}
 }
-var BD_ENV, SEATS, PRESET_NAMES, modelRef, seatPreset, boardConfig, styleConfig, setupConfig, watchdogConfig, sessionReuseConfig, terminationConfig, selfUpdateConfig, runsConfig, metricsConfig, recursionConfig, costConfig, magicContextConfig, tgoConfigSchema;
+function assertValidSeatPreset(seatMap, presetLabel) {
+  if (!seatMap || typeof seatMap !== "object")
+    return;
+  const lensKeys = new Set(BAND_LENS_SEATS);
+  for (const [seat, ref] of Object.entries(seatMap)) {
+    if (!ref || typeof ref !== "object")
+      continue;
+    const model = ref.model;
+    const variant = ref.variant;
+    if (typeof model !== "string" || model.length === 0) {
+      throw new Error(`preset "${presetLabel}" seat "${seat}": model must be a non-empty string`);
+    }
+    const allowed = SELECTABLE_VARIANTS[model];
+    if (!allowed) {
+      if (lensKeys.has(seat)) {
+        throw new Error(`preset "${presetLabel}" seat "${seat}": unknown model "${model}" for per-lens override (known: ${Object.keys(SELECTABLE_VARIANTS).join(", ")})`);
+      }
+      continue;
+    }
+    if (variant === undefined)
+      continue;
+    if (typeof variant !== "string" || variant.length === 0) {
+      throw new Error(`preset "${presetLabel}" seat "${seat}" model "${model}": variant must be a non-empty string when present`);
+    }
+    if (!allowed.includes(variant)) {
+      throw new Error(`preset "${presetLabel}" seat "${seat}" model "${model}": unknown variant "${variant}" (selectable: ${allowed.join("/")})`);
+    }
+  }
+}
+var BD_ENV, SEATS, BAND_LENS_SEATS, SELECTABLE_VARIANTS, PRESET_NAMES, modelRef, seatPreset, boardConfig, styleConfig, setupConfig, watchdogConfig, sessionReuseConfig, terminationConfig, selfUpdateConfig, runsConfig, metricsConfig, recursionConfig, costConfig, magicContextConfig, tgoConfigSchema;
 var init_config = __esm(() => {
   init_zod();
   BD_ENV = {
@@ -14664,6 +14693,12 @@ var init_config = __esm(() => {
     "nirvana",
     "band-members"
   ];
+  BAND_LENS_SEATS = ["cobain", "grohl", "novoselic"];
+  SELECTABLE_VARIANTS = {
+    "opencode-go/muse-spark-1.3-contributor": ["minimal", "low", "medium", "high", "xhigh"],
+    "opencode-go/deepseek-v4.1-flash": ["high", "max"],
+    "opencode-go/qwen3.8-flash": ["none", "high"]
+  };
   PRESET_NAMES = ["balanced", "cheap", "frontier"];
   modelRef = exports_external.object({
     model: exports_external.string().min(1),
@@ -14675,7 +14710,16 @@ var init_config = __esm(() => {
     nas: modelRef,
     dylan: modelRef,
     nirvana: modelRef,
-    "band-members": modelRef
+    "band-members": modelRef,
+    cobain: modelRef.optional(),
+    grohl: modelRef.optional(),
+    novoselic: modelRef.optional()
+  }).strict().superRefine((val, ctx) => {
+    try {
+      assertValidSeatPreset(val, "preset");
+    } catch (err) {
+      ctx.addIssue({ code: exports_external.ZodIssueCode.custom, message: String(err?.message ?? err) });
+    }
   });
   boardConfig = exports_external.object({
     enabled: exports_external.boolean().default(true),

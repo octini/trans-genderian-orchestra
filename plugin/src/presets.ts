@@ -1,11 +1,15 @@
-import { PRESET_NAMES, SEATS, safeWarn, type TgoConfig } from "./config";
+import { PRESET_NAMES, SEATS, BAND_LENS_SEATS, assertValidSeatPreset, safeWarn, type TgoConfig } from "./config";
+
+export { BAND_LENS_SEATS };
 
 export const PRESET_MEMORY_KEY = "tgo.preset";
 export const BD_MEMORIES_COMMAND = "bd memories --json";
 
 // The "band-members" preset entry maps to the three lens agents (see
 // docs/spec/band.md §4) — there is no single "band-members" seat.
-export const BAND_LENS_SEATS = ["cobain", "grohl", "novoselic"] as const;
+// A preset may also define optional per-lens cobain/grohl/novoselic entries:
+// a lens key replaces the whole band-members entry for that lens (never
+// merged); lenses without a key fall back to band-members.
 
 function agentName(seat: string): string[] {
   return seat === "band-members" ? [...BAND_LENS_SEATS] : [seat];
@@ -53,8 +57,10 @@ export function applyPreset(
   if (!presets) return [];
   const seatMap = presets[preset as keyof typeof presets];
   if (!seatMap) return [];
+  assertValidSeatPreset(seatMap, preset);
   const applied: string[] = [];
   for (const seat of SEATS) {
+    if (seat === "band-members") continue;
     const ref = seatMap[seat];
     if (!ref) continue;
     for (const name of agentName(seat)) {
@@ -64,6 +70,16 @@ export function applyPreset(
       if (ref.variant) agent.variant = ref.variant;
       applied.push(name);
     }
+  }
+  for (const lens of BAND_LENS_SEATS) {
+    const ref = seatMap[lens] ?? seatMap["band-members"];
+    if (!ref) continue;
+    if (!config.agent) config.agent = {};
+    const agent = (config.agent[lens] ??= {});
+    agent.model = ref.model;
+    if (ref.variant) agent.variant = ref.variant;
+    else delete agent.variant;
+    applied.push(lens);
   }
   return applied;
 }
@@ -95,10 +111,17 @@ export function resolveSeatModels(
   if (!presets) return out;
   const seatMap = presets[preset as keyof typeof presets];
   if (!seatMap) return out;
+  assertValidSeatPreset(seatMap, preset);
   for (const seat of SEATS) {
+    if (seat === "band-members") continue;
     const ref = seatMap[seat];
     if (!ref || !ref.model) continue;
     for (const name of agentName(seat)) out[name] = ref.model;
+  }
+  for (const lens of BAND_LENS_SEATS) {
+    const ref = seatMap[lens] ?? seatMap["band-members"];
+    if (!ref || !ref.model) continue;
+    out[lens] = ref.model;
   }
   return out;
 }

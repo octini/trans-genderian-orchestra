@@ -48,6 +48,64 @@ export const SEATS = [
   "band-members",
 ] as const;
 
+// Per-lens band seats (see docs/spec/band.md §4). Not in SEATS: they ride the
+// shared band-members entry unless a preset defines a per-lens override.
+export const BAND_LENS_SEATS = ["cobain", "grohl", "novoselic"] as const;
+
+/**
+ * Selectable-variant working set per band-relevant model (tgo-arf decision
+ * 2026-09-11). Source: orchestrator packet — highest working variant per lens:
+ * spark ceiling xhigh (max is partner-preview, not on Go; docs/ROSTER.md),
+ * deepseek-v4.1-flash selectable high/max (exact dotted ID), qwen3.8-flash
+ * high (max broken upstream: anomalyco/opencode#45987 budgetTokens
+ * truncation, still open). No runtime selectable map exists in the codebase
+ * (model IDs are otherwise free-form drift), so this static table is the
+ * fail-closed list for per-lens overrides: unknown model IDs on lens keys
+ * are rejected at load, never silently fallen back.
+ */
+export const SELECTABLE_VARIANTS: Record<string, readonly string[]> = {
+  "opencode-go/muse-spark-1.3-contributor": ["minimal", "low", "medium", "high", "xhigh"],
+  "opencode-go/deepseek-v4.1-flash": ["high", "max"],
+  "opencode-go/qwen3.8-flash": ["none", "high"],
+};
+
+export function assertValidSeatPreset(
+  seatMap: Record<string, { model?: unknown; variant?: unknown } | undefined | null> | undefined | null,
+  presetLabel: string
+): void {
+  if (!seatMap || typeof seatMap !== "object") return;
+  const lensKeys = new Set<string>(BAND_LENS_SEATS as readonly string[]);
+  for (const [seat, ref] of Object.entries(seatMap)) {
+    if (!ref || typeof ref !== "object") continue;
+    const model = (ref as { model?: unknown }).model;
+    const variant = (ref as { variant?: unknown }).variant;
+    if (typeof model !== "string" || model.length === 0) {
+      throw new Error(`preset "${presetLabel}" seat "${seat}": model must be a non-empty string`);
+    }
+    const allowed = SELECTABLE_VARIANTS[model];
+    if (!allowed) {
+      if (lensKeys.has(seat)) {
+        throw new Error(
+          `preset "${presetLabel}" seat "${seat}": unknown model "${model}" for per-lens override (known: ${Object.keys(SELECTABLE_VARIANTS).join(", ")})`
+        );
+      }
+      // Core seats: unknown model IDs pass through (model-name drift tolerance).
+      continue;
+    }
+    if (variant === undefined) continue;
+    if (typeof variant !== "string" || variant.length === 0) {
+      throw new Error(
+        `preset "${presetLabel}" seat "${seat}" model "${model}": variant must be a non-empty string when present`
+      );
+    }
+    if (!allowed.includes(variant)) {
+      throw new Error(
+        `preset "${presetLabel}" seat "${seat}" model "${model}": unknown variant "${variant}" (selectable: ${allowed.join("/")})`
+      );
+    }
+  }
+}
+
 export const PRESET_NAMES = ["balanced", "cheap", "frontier"] as const;
 
 const modelRef = z.object({
@@ -62,6 +120,15 @@ const seatPreset = z.object({
   dylan: modelRef,
   nirvana: modelRef,
   "band-members": modelRef,
+  cobain: modelRef.optional(),
+  grohl: modelRef.optional(),
+  novoselic: modelRef.optional(),
+}).strict().superRefine((val, ctx) => {
+  try {
+    assertValidSeatPreset(val, "preset");
+  } catch (err) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: String((err as Error)?.message ?? err) });
+  }
 });
 
 const boardConfig = z.object({

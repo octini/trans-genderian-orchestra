@@ -22,6 +22,8 @@ Three judgment axes, chosen for efficacy — theming is naming only (prompt cont
 
 Each lens = a **~50-100 token steering paragraph**.
 
+Per-lens model overrides are opt-in per preset (`cobain`/`grohl`/`novoselic` keys); a lens without an override falls back to the shared `band-members` entry.
+
 ## 3. Reconciliation
 
 Output contract:

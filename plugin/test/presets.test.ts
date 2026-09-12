@@ -114,18 +114,95 @@ describe("applyPreset", () => {
 
   test("band-members preset entry maps to the lens agents", async () => {
     const cfg = await loadTgoConfig({ preset: "balanced" });
+    const balanced = { ...cfg.presets!.balanced };
+    delete balanced.cobain;
+    delete balanced.grohl;
+    delete balanced.novoselic;
+    const presets = { ...cfg.presets!, balanced };
     const agent: Record<string, Record<string, unknown>> = {
       cobain: {},
       grohl: {},
       novoselic: {},
     };
-    const applied = applyPreset({ agent }, "balanced", cfg.presets);
+    const applied = applyPreset({ agent }, "balanced", presets);
     expect(applied.sort()).toEqual(
       ["bernstein", "horowitz", "nas", "dylan", "nirvana", "cobain", "grohl", "novoselic"].sort()
     );
     for (const lens of BAND_LENS_SEATS) {
       expect(agent[lens].model).toBe(cfg.presets!.balanced["band-members"].model);
     }
+  });
+
+  test("per-lens override wins for that lens only", async () => {
+    const cfg = await loadTgoConfig({ preset: "balanced" });
+    const balanced = {
+      ...cfg.presets!.balanced,
+      grohl: { model: "opencode-go/qwen3.8-flash", variant: "high" },
+    };
+    delete balanced.cobain;
+    delete balanced.novoselic;
+    const presets = { ...cfg.presets!, balanced };
+    const agent: Record<string, Record<string, unknown>> = {
+      cobain: {},
+      grohl: {},
+      novoselic: {},
+    };
+    const applied = applyPreset({ agent }, "balanced", presets);
+    expect(applied.sort()).toEqual(
+      ["bernstein", "horowitz", "nas", "dylan", "nirvana", "cobain", "grohl", "novoselic"].sort()
+    );
+    expect(agent.grohl.model).toBe("opencode-go/qwen3.8-flash");
+    expect(agent.grohl.variant).toBe("high");
+    expect(agent.cobain.model).toBe(cfg.presets!.balanced["band-members"].model);
+    expect(agent.cobain.variant).toBe(cfg.presets!.balanced["band-members"].variant);
+    expect(agent.novoselic.model).toBe(cfg.presets!.balanced["band-members"].model);
+  });
+
+  test("per-lens override replaces the entry: no variant inheritance from band-members", async () => {
+    const cfg = await loadTgoConfig({ preset: "balanced" });
+    const presets = {
+      ...cfg.presets!,
+      balanced: {
+        ...cfg.presets!.balanced,
+        grohl: { model: "opencode-go/qwen3.8-flash" },
+      },
+    };
+    const agent: Record<string, Record<string, unknown>> = {
+      grohl: { model: "old", variant: "xhigh" },
+    };
+    applyPreset({ agent }, "balanced", presets);
+    expect(agent.grohl.model).toBe("opencode-go/qwen3.8-flash");
+    expect(agent.grohl.variant).toBeUndefined();
+  });
+
+  test("balanced builtins resolve exactly per the decided mapping", async () => {
+    const cfg = await loadTgoConfig({ preset: "balanced" });
+    expect(cfg.presets!.balanced.cobain).toEqual({
+      model: "opencode-go/muse-spark-1.3-contributor",
+      variant: "xhigh",
+    });
+    expect(cfg.presets!.balanced.grohl).toEqual({ model: "opencode-go/qwen3.8-flash", variant: "high" });
+    expect(cfg.presets!.balanced.novoselic).toEqual({
+      model: "opencode-go/deepseek-v4.1-flash",
+      variant: "max",
+    });
+    const agent: Record<string, Record<string, unknown>> = {};
+    applyPreset({ agent }, "balanced", cfg.presets);
+    expect(agent.cobain).toEqual({ model: "opencode-go/muse-spark-1.3-contributor", variant: "xhigh" });
+    expect(agent.grohl).toEqual({ model: "opencode-go/qwen3.8-flash", variant: "high" });
+    expect(agent.novoselic).toEqual({ model: "opencode-go/deepseek-v4.1-flash", variant: "max" });
+  });
+
+  test("malformed per-lens variant throws instead of falling back", async () => {
+    const cfg = await loadTgoConfig({ preset: "balanced" });
+    const presets = {
+      ...cfg.presets!,
+      balanced: {
+        ...cfg.presets!.balanced,
+        grohl: { model: "opencode-go/qwen3.8-flash", variant: "max" },
+      },
+    };
+    expect(() => applyPreset({ agent: {} }, "balanced", presets)).toThrow(/unknown variant/);
   });
 
   test("creates missing agent entries and applies preset to all seats", async () => {

@@ -32,6 +32,7 @@ export function hashString(s: string): string {
 export interface DefSnapshot {
   promptHash: string;
   model: string;
+  variant?: string;
   preset: string;
   seatFrontmatterHash: string;
   seatFileFound: boolean;
@@ -92,6 +93,7 @@ export function buildDefSnapshot(opts: {
   seatFrontmatter: string;
   seatFileFound: boolean;
   model: string;
+  variant?: string;
   preset: string;
   capturedAt?: string;
 }): DefSnapshot {
@@ -106,6 +108,7 @@ export function buildDefSnapshot(opts: {
     seatFrontmatterHash: hashString(opts.seatFrontmatter),
     seatFileFound: opts.seatFileFound,
     model: opts.model,
+    ...(opts.variant !== undefined ? { variant: opts.variant } : {}),
     preset: opts.preset,
     capturedAt: opts.capturedAt ?? new Date().toISOString(),
   };
@@ -117,6 +120,7 @@ export function buildDefSnapshotFromPrompt(opts: {
   seatFrontmatter: string;
   seatFileFound?: boolean;
   model: string;
+  variant?: string;
   preset: string;
   capturedAt?: string;
 }): DefSnapshot {
@@ -128,6 +132,7 @@ export function buildDefSnapshotFromPrompt(opts: {
     seatFrontmatterHash: hashString(opts.seatFrontmatter),
     seatFileFound: opts.seatFileFound ?? true,
     model: opts.model,
+    ...(opts.variant !== undefined ? { variant: opts.variant } : {}),
     preset: opts.preset,
     capturedAt: opts.capturedAt ?? new Date().toISOString(),
   };
@@ -207,6 +212,7 @@ export async function readDefSnapshot(repoRoot: string, issueId: string): Promis
     const promptHash = parsed.promptHash;
     const seatFrontmatterHash = parsed.seatFrontmatterHash;
     const model = parsed.model;
+    const variant = parsed.variant;
     const preset = parsed.preset;
     const capturedAt = parsed.capturedAt;
     const seatFileFound = parsed.seatFileFound;
@@ -220,10 +226,13 @@ export async function readDefSnapshot(repoRoot: string, issueId: string): Promis
     if (seatFileFound === undefined) found = true;
     else if (typeof seatFileFound === "boolean") found = seatFileFound;
     else return undefined;
+    // variant is additive (tgo-arf): legacy snapshots without it read as variant: absent.
+    if (variant !== undefined && (typeof variant !== "string" || variant.length === 0)) return undefined;
     return {
       promptHash: promptHash as string,
       seatFrontmatterHash: seatFrontmatterHash as string,
       model: model as string,
+      ...(typeof variant === "string" ? { variant } : {}),
       preset: preset as string,
       seatFileFound: found,
       capturedAt: capturedAt as string,
@@ -241,6 +250,7 @@ export async function ensureDefSnapshot(opts: {
   seatFrontmatter: string;
   seatFileFound: boolean;
   model: string;
+  variant?: string;
   preset: string;
   useLatestDefinitions?: boolean;
   capturedAt?: string;
@@ -255,6 +265,7 @@ export async function ensureDefSnapshot(opts: {
       seatFrontmatter: opts.seatFrontmatter,
       seatFileFound: opts.seatFileFound,
       model: opts.model,
+      variant: opts.variant,
       preset: opts.preset,
       capturedAt: opts.capturedAt,
     });
@@ -264,6 +275,7 @@ export async function ensureDefSnapshot(opts: {
       seatFrontmatter: opts.seatFrontmatter,
       seatFileFound: opts.seatFileFound,
       model: opts.model,
+      variant: opts.variant,
       preset: opts.preset,
       capturedAt: opts.capturedAt,
     });

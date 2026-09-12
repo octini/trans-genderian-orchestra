@@ -36,14 +36,14 @@ Seat→model maps are called **presets**: named data files, not code, so model-n
 | Nas | `opencode-go/muse-spark-1.3-contributor` (xhigh) | `opencode-go/muse-spark-1.3-contributor` (xhigh) | `opencode-go/muse-spark-1.3-contributor` (xhigh) |
 | Dylan | `opencode-go/muse-spark-1.3-contributor` (xhigh) | `opencode-go/muse-spark-1.3-contributor` (xhigh) | `opencode-go/muse-spark-1.3-contributor` (xhigh) |
 | Nirvana synth | `opencode-go/glm-5.3-flash` (max) | `opencode-go/muse-spark-1.3-contributor` (xhigh) | `opencode-go/grok-4.6` (xhigh) |
-| Band members | `opencode-go/muse-spark-1.3-contributor` (xhigh) | `opencode-go/muse-spark-1.3-contributor` (xhigh) | `opencode-go/muse-spark-1.3-contributor` (xhigh) |
+| Band members | per-lens opt-in: cobain `muse-spark-1.3-contributor` (xhigh) / grohl `qwen3.8-flash` (high) / novoselic `deepseek-v4.1-flash` (max); unset lenses share `band-members` | `opencode-go/muse-spark-1.3-contributor` (xhigh, shared) | `opencode-go/muse-spark-1.3-contributor` (xhigh, shared) |
 
 The routing rationale, from the spec:
 
-- **Balanced = split routing** — Bernstein/Horowitz/Nirvana-synth → `glm-5.3-flash` (max); Nas/Dylan/band-members → `muse-spark-1.3-contributor` (xhigh); cheap remains all-Spark.
+- **Balanced = split routing** — Bernstein/Horowitz/Nirvana-synth → `glm-5.3-flash` (max); Nas/Dylan → `muse-spark-1.3-contributor` (xhigh); band lenses per-lens opt-in (cobain Spark xhigh, grohl `qwen3.8-flash` high, novoselic `deepseek-v4.1-flash` max), unset lenses share `band-members` (Spark xhigh); cheap remains all-Spark.
 - **Cheap = Muse Spark on every seat (xhigh)** — the 226,600/mo cap makes cost a non-issue; all six cheap entries route to `muse-spark-1.3-contributor` at effort `xhigh`.
 - **Frontier = best-performance-period (light month)** — Bernstein → `glm-5.3` (max, best Go agentic); Horowitz → `kimi-k3` (max, best Go long-horizon coder); Nirvana → `grok-4.6` (xhigh, best knowledge-work synth); Dylan/Nas/band-members → `muse-spark-1.3-contributor` (xhigh). Frontier caps are tight (Grok 4.6 = 845, Kimi K3 = 490, GLM-5.3 = 1,080 req/mo) — assume a light-usage month; they throttle if a frontier month gets heavy.
-- **Variant support (verified in `~/.cache/opencode/models.json`):** Muse Spark and Grok 4.6 top out at `xhigh` (no `max`); `glm-5.3` and `kimi-k3` support `max`.
+- **Variant support (verified in `~/.cache/opencode/models.json`):** Muse Spark and Grok 4.6 top out at `xhigh` (no `max`); `glm-5.3` and `kimi-k3` support `max`; `deepseek-v4.1-flash` selectable high/max, `qwen3.8-flash` high (`max` broken upstream: anomalyco/opencode#45987).
 
 Switching presets at runtime is a prose nudge, not a config edit: say "go cheap" or "use frontier for this" and Bernstein sets the active preset, which takes effect at the next plugin load. Partial overrides are possible via the `presets` config option. Magic-context historian follows the active preset's Dylan model + variant by default (`magicContext.historianSync: follow`, `off` disables); failure-type signals (build/test/dependency/deploy/env/watchdog) guide reroute, installer pre-flight and prompt baseline are in `docs/SETUP.md`.
 

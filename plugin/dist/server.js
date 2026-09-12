@@ -14660,6 +14660,35 @@ function resolveAgentsDir(opts) {
   const subdir = opts.agentsSubdir ?? "agent";
   return path.join(configDir, subdir);
 }
+function assertValidSeatPreset(seatMap, presetLabel) {
+  if (!seatMap || typeof seatMap !== "object")
+    return;
+  const lensKeys = new Set(BAND_LENS_SEATS);
+  for (const [seat, ref] of Object.entries(seatMap)) {
+    if (!ref || typeof ref !== "object")
+      continue;
+    const model = ref.model;
+    const variant = ref.variant;
+    if (typeof model !== "string" || model.length === 0) {
+      throw new Error(`preset "${presetLabel}" seat "${seat}": model must be a non-empty string`);
+    }
+    const allowed = SELECTABLE_VARIANTS[model];
+    if (!allowed) {
+      if (lensKeys.has(seat)) {
+        throw new Error(`preset "${presetLabel}" seat "${seat}": unknown model "${model}" for per-lens override (known: ${Object.keys(SELECTABLE_VARIANTS).join(", ")})`);
+      }
+      continue;
+    }
+    if (variant === undefined)
+      continue;
+    if (typeof variant !== "string" || variant.length === 0) {
+      throw new Error(`preset "${presetLabel}" seat "${seat}" model "${model}": variant must be a non-empty string when present`);
+    }
+    if (!allowed.includes(variant)) {
+      throw new Error(`preset "${presetLabel}" seat "${seat}" model "${model}": unknown variant "${variant}" (selectable: ${allowed.join("/")})`);
+    }
+  }
+}
 function estimateTokens(text) {
   const normalized = text.replace(/\s+/g, " ").trim();
   const words = normalized.length === 0 ? 0 : normalized.split(" ").length;
@@ -14715,7 +14744,7 @@ async function validateAgentDir(agentDir, log) {
   }
   return checked;
 }
-var MAX_PROMPT_TOKENS = 1000, BD_ENV, SEATS, PRESET_NAMES, modelRef, seatPreset, boardConfig, styleConfig, setupConfig, watchdogConfig, sessionReuseConfig, terminationConfig, selfUpdateConfig, runsConfig, metricsConfig, recursionConfig, costConfig, magicContextConfig, tgoConfigSchema;
+var MAX_PROMPT_TOKENS = 1000, BD_ENV, SEATS, BAND_LENS_SEATS, SELECTABLE_VARIANTS, PRESET_NAMES, modelRef, seatPreset, boardConfig, styleConfig, setupConfig, watchdogConfig, sessionReuseConfig, terminationConfig, selfUpdateConfig, runsConfig, metricsConfig, recursionConfig, costConfig, magicContextConfig, tgoConfigSchema;
 var init_config = __esm(() => {
   init_zod();
   BD_ENV = {
@@ -14731,6 +14760,12 @@ var init_config = __esm(() => {
     "nirvana",
     "band-members"
   ];
+  BAND_LENS_SEATS = ["cobain", "grohl", "novoselic"];
+  SELECTABLE_VARIANTS = {
+    "opencode-go/muse-spark-1.3-contributor": ["minimal", "low", "medium", "high", "xhigh"],
+    "opencode-go/deepseek-v4.1-flash": ["high", "max"],
+    "opencode-go/qwen3.8-flash": ["none", "high"]
+  };
   PRESET_NAMES = ["balanced", "cheap", "frontier"];
   modelRef = exports_external.object({
     model: exports_external.string().min(1),
@@ -14742,7 +14777,16 @@ var init_config = __esm(() => {
     nas: modelRef,
     dylan: modelRef,
     nirvana: modelRef,
-    "band-members": modelRef
+    "band-members": modelRef,
+    cobain: modelRef.optional(),
+    grohl: modelRef.optional(),
+    novoselic: modelRef.optional()
+  }).strict().superRefine((val, ctx) => {
+    try {
+      assertValidSeatPreset(val, "preset");
+    } catch (err) {
+      ctx.addIssue({ code: exports_external.ZodIssueCode.custom, message: String(err?.message ?? err) });
+    }
   });
   boardConfig = exports_external.object({
     enabled: exports_external.boolean().default(true),
@@ -14884,6 +14928,7 @@ function buildDefSnapshot(opts) {
     seatFrontmatterHash: hashString(opts.seatFrontmatter),
     seatFileFound: opts.seatFileFound,
     model: opts.model,
+    ...opts.variant !== undefined ? { variant: opts.variant } : {},
     preset: opts.preset,
     capturedAt: opts.capturedAt ?? new Date().toISOString()
   };
@@ -14897,6 +14942,7 @@ function buildDefSnapshotFromPrompt(opts) {
     seatFrontmatterHash: hashString(opts.seatFrontmatter),
     seatFileFound: opts.seatFileFound ?? true,
     model: opts.model,
+    ...opts.variant !== undefined ? { variant: opts.variant } : {},
     preset: opts.preset,
     capturedAt: opts.capturedAt ?? new Date().toISOString()
   };
@@ -14980,6 +15026,7 @@ async function readDefSnapshot(repoRoot, issueId) {
     const promptHash = parsed.promptHash;
     const seatFrontmatterHash = parsed.seatFrontmatterHash;
     const model = parsed.model;
+    const variant = parsed.variant;
     const preset = parsed.preset;
     const capturedAt = parsed.capturedAt;
     const seatFileFound = parsed.seatFileFound;
@@ -15000,10 +15047,13 @@ async function readDefSnapshot(repoRoot, issueId) {
       found = seatFileFound;
     else
       return;
+    if (variant !== undefined && (typeof variant !== "string" || variant.length === 0))
+      return;
     return {
       promptHash,
       seatFrontmatterHash,
       model,
+      ...typeof variant === "string" ? { variant } : {},
       preset,
       seatFileFound: found,
       capturedAt
@@ -15024,6 +15074,7 @@ async function ensureDefSnapshot(opts) {
       seatFrontmatter: opts.seatFrontmatter,
       seatFileFound: opts.seatFileFound,
       model: opts.model,
+      variant: opts.variant,
       preset: opts.preset,
       capturedAt: opts.capturedAt
     });
@@ -15033,6 +15084,7 @@ async function ensureDefSnapshot(opts) {
       seatFrontmatter: opts.seatFrontmatter,
       seatFileFound: opts.seatFileFound,
       model: opts.model,
+      variant: opts.variant,
       preset: opts.preset,
       capturedAt: opts.capturedAt
     });
@@ -20518,7 +20570,6 @@ async function runShellCommand(cmd) {
 init_config();
 var PRESET_MEMORY_KEY = "tgo.preset";
 var BD_MEMORIES_COMMAND = "bd memories --json";
-var BAND_LENS_SEATS = ["cobain", "grohl", "novoselic"];
 function agentName(seat) {
   return seat === "band-members" ? [...BAND_LENS_SEATS] : [seat];
 }
@@ -20555,8 +20606,11 @@ function applyPreset(config2, preset, presets) {
   const seatMap = presets[preset];
   if (!seatMap)
     return [];
+  assertValidSeatPreset(seatMap, preset);
   const applied = [];
   for (const seat of SEATS) {
+    if (seat === "band-members")
+      continue;
     const ref = seatMap[seat];
     if (!ref)
       continue;
@@ -20570,6 +20624,20 @@ function applyPreset(config2, preset, presets) {
       applied.push(name);
     }
   }
+  for (const lens of BAND_LENS_SEATS) {
+    const ref = seatMap[lens] ?? seatMap["band-members"];
+    if (!ref)
+      continue;
+    if (!config2.agent)
+      config2.agent = {};
+    const agent = config2.agent[lens] ??= {};
+    agent.model = ref.model;
+    if (ref.variant)
+      agent.variant = ref.variant;
+    else
+      delete agent.variant;
+    applied.push(lens);
+  }
   return applied;
 }
 function resolveSeatModels(preset, presets) {
@@ -20579,12 +20647,21 @@ function resolveSeatModels(preset, presets) {
   const seatMap = presets[preset];
   if (!seatMap)
     return out;
+  assertValidSeatPreset(seatMap, preset);
   for (const seat of SEATS) {
+    if (seat === "band-members")
+      continue;
     const ref = seatMap[seat];
     if (!ref || !ref.model)
       continue;
     for (const name of agentName(seat))
       out[name] = ref.model;
+  }
+  for (const lens of BAND_LENS_SEATS) {
+    const ref = seatMap[lens] ?? seatMap["band-members"];
+    if (!ref || !ref.model)
+      continue;
+    out[lens] = ref.model;
   }
   return out;
 }
@@ -25483,16 +25560,21 @@ ${truncated}`, synthetic: true }] }
               throw new Error(`host-authoritative seat resolution failed for preset "${activePreset}" — subagent_type missing`);
             }
             let model;
+            let variant;
             const presetMap = config2.presets?.[activePreset];
             if (!presetMap) {
               throw new Error(`host-authoritative model resolution failed for preset "${activePreset}" seat "${seatName}" — preset not found`);
             }
             const direct = presetMap[seatName];
-            if (direct?.model)
+            if (direct?.model) {
               model = direct.model;
-            else if (["cobain", "grohl", "novoselic"].includes(seatName) && presetMap["band-members"]?.model) {
+              variant = direct.variant;
+            } else if (["cobain", "grohl", "novoselic"].includes(seatName) && presetMap["band-members"]?.model) {
               model = presetMap["band-members"].model;
+              variant = presetMap["band-members"].variant;
             }
+            if (typeof variant !== "string" || variant.length === 0)
+              variant = undefined;
             if (!model || model === "unknown" || model.trim().length === 0) {
               throw new Error(`host-authoritative model resolution failed for preset "${activePreset}" seat "${seatName}"`);
             }
@@ -25526,6 +25608,7 @@ ${truncated}`, synthetic: true }] }
               seatFrontmatter,
               seatFileFound,
               model,
+              variant,
               preset: activePreset,
               useLatestDefinitions: useLatest
             });

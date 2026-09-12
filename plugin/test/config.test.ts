@@ -168,3 +168,63 @@ describe("config schema", () => {
     expect(cfg.style.reinforcement).toBe(true);
   });
 });
+
+describe("per-lens band preset keys", () => {
+  function sixSeats(extra: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      bernstein: { model: "opencode-go/glm-5.3-flash" },
+      horowitz: { model: "opencode-go/glm-5.3-flash" },
+      nas: { model: "opencode-go/muse-spark-1.3-contributor" },
+      dylan: { model: "opencode-go/muse-spark-1.3-contributor" },
+      nirvana: { model: "opencode-go/glm-5.3-flash" },
+      "band-members": { model: "opencode-go/muse-spark-1.3-contributor" },
+      ...extra,
+    };
+  }
+
+  test("accepts the decided lens mapping", async () => {
+    const cfg = await loadTgoConfig({
+      presets: {
+        balanced: sixSeats({
+          cobain: { model: "opencode-go/muse-spark-1.3-contributor", variant: "xhigh" },
+          grohl: { model: "opencode-go/qwen3.8-flash", variant: "high" },
+          novoselic: { model: "opencode-go/deepseek-v4.1-flash", variant: "max" },
+        }),
+      },
+    });
+    expect(cfg.presets!.balanced.cobain?.model).toBe("opencode-go/muse-spark-1.3-contributor");
+    expect(cfg.presets!.balanced.grohl?.variant).toBe("high");
+    expect(cfg.presets!.balanced.novoselic?.variant).toBe("max");
+  });
+
+  test("rejects an unknown seat key", () => {
+    expect(() =>
+      loadTgoConfig({ presets: { balanced: sixSeats({ ringo: { model: "future/model-x" } }) } })
+    ).toThrow();
+  });
+
+  test("rejects qwen/max (broken upstream)", () => {
+    expect(() =>
+      loadTgoConfig({
+        presets: {
+          balanced: sixSeats({ grohl: { model: "opencode-go/qwen3.8-flash", variant: "max" } }),
+        },
+      })
+    ).toThrow(/unknown variant/);
+  });
+
+  test("rejects an unknown model on a per-lens key", () => {
+    expect(() =>
+      loadTgoConfig({
+        presets: { balanced: sixSeats({ grohl: { model: "future/model-x" } }) },
+      })
+    ).toThrow(/unknown model/);
+  });
+
+  test("core seats keep model-name drift tolerance", async () => {
+    const cfg = await loadTgoConfig({
+      presets: { balanced: sixSeats({ bernstein: { model: "future/model-x" } }) },
+    });
+    expect(cfg.presets!.balanced.bernstein.model).toBe("future/model-x");
+  });
+});

@@ -166,6 +166,22 @@ describe("seat model resolution", () => {
     expect(models.novoselic).toBe("opencode-go/grok-4.6");
   });
 
+  test("per-lens overrides expand per lens", () => {
+    const presets = {
+      balanced: {
+        bernstein: { model: "opencode-go/glm-5.3-flash", variant: "max" },
+        "band-members": { model: "opencode-go/muse-spark-1.3-contributor", variant: "xhigh" },
+        grohl: { model: "opencode-go/qwen3.8-flash", variant: "high" },
+        novoselic: { model: "opencode-go/deepseek-v4.1-flash", variant: "max" },
+      },
+    } as never;
+    const models = resolveSeatModels("balanced", presets);
+    expect(models.bernstein).toBe("opencode-go/glm-5.3-flash");
+    expect(models.cobain).toBe("opencode-go/muse-spark-1.3-contributor");
+    expect(models.grohl).toBe("opencode-go/qwen3.8-flash");
+    expect(models.novoselic).toBe("opencode-go/deepseek-v4.1-flash");
+  });
+
   test("empty/unknown preset → empty map", () => {
     expect(Object.keys(resolveSeatModels("nope", undefined as never)).length).toBe(0);
   });

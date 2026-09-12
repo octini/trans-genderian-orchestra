@@ -5,7 +5,10 @@
     "nas":           { "model": "opencode-go/muse-spark-1.3-contributor", "variant": "xhigh" },
     "dylan":         { "model": "opencode-go/muse-spark-1.3-contributor", "variant": "xhigh" },
     "nirvana":       { "model": "opencode-go/glm-5.3-flash",               "variant": "max" },
-    "band-members":  { "model": "opencode-go/muse-spark-1.3-contributor", "variant": "xhigh" }
+    "band-members":  { "model": "opencode-go/muse-spark-1.3-contributor", "variant": "xhigh" },
+    "cobain":        { "model": "opencode-go/muse-spark-1.3-contributor", "variant": "xhigh" },
+    "grohl":         { "model": "opencode-go/qwen3.8-flash",               "variant": "high" },
+    "novoselic":     { "model": "opencode-go/deepseek-v4.1-flash",         "variant": "max" }
   },
   "cheap": {
     "bernstein":     { "model": "opencode-go/muse-spark-1.3-contributor", "variant": "xhigh" },
