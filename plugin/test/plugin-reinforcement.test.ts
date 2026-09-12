@@ -42,11 +42,13 @@ describe("plugin completion observer boundary", () => {
     expect(output).toContain("BEADS SNAPSHOT");
   });
 
-  test("denies snapshot reads for child and missing-parent sessions", async () => {
+  test("denies snapshot reads for child sessions; missing-parent sessions read as primary", async () => {
     const hooks = await TgoPlugin(input(), {});
     const snapshot = hooks.tool?.tgo_beads_snapshot as { execute: (args: unknown, context: { sessionID: string }) => Promise<string> };
     expect(await snapshot.execute({}, { sessionID: "delegated" })).toContain("only from a primary session");
-    expect(await snapshot.execute({}, { sessionID: "missing" })).toContain("only from a primary session");
+    // Host contract (opencode 1.18.x): session.get omits parentID for root
+    // sessions, so absent parentID = primary and the snapshot is served.
+    expect(await snapshot.execute({}, { sessionID: "missing" })).toContain("BEADS SNAPSHOT");
   });
 
   test("tool boundary validates tiny, standard, and heavy packets while bypassing ordinary tools", { timeout: 20000 }, async () => {
@@ -179,17 +181,35 @@ describe("plugin completion observer boundary", () => {
     )).rejects.toThrow("identified primary session");
   });
 
-  test("fails closed when parentID is missing", async () => {
+  test("treats missing parentID as primary (host omits it for root sessions)", { timeout: 20000 }, async () => {
+    ensureTmpTestClaimedFixture("tgo-missing-parent");
     const hooks = await TgoPlugin({
       ...input(),
       client: { app: { log: async () => ({}) }, session: { get: async () => ({ data: {} }) } },
     } as never, {});
+    // Missing parentID now passes the primary-session gate, so a claimed
+    // standard packet dispatches without the primary-session refusal.
     await expect(hooks["tool.execute.before"]!(
       { sessionID: "unknown", callID: "call", tool: "task" } as never,
-      { args: { touchSet: ["src/value.ts"], delegationPacket: {
+      { args: { touchSet: ["src/value.ts"], subagent_type: "dylan", delegationPacket: {
         Objective: "x", Files: ["src/value.ts"], Interfaces: "same", Constraints: "bounded",
         Verification: "test", exitGate: true, issueId: "tgo-missing-parent", issueStatusObserved: "in_progress", issueAssigneeObserved: "ryangking", claimExitCode: 0,
         delegationId: "d-missing-parent", beadsOperator: "Bernstein",
+      } } } as never,
+    )).resolves.toBeUndefined();
+  });
+
+  test("fails closed when session.get throws (primary identity unavailable)", async () => {
+    const hooks = await TgoPlugin({
+      ...input(),
+      client: { app: { log: async () => ({}) }, session: { get: async () => { throw new Error("host down"); } } },
+    } as never, {});
+    await expect(hooks["tool.execute.before"]!(
+      { sessionID: "unknown", callID: "call", tool: "task" } as never,
+      { args: { touchSet: ["src/value.ts"], subagent_type: "dylan", delegationPacket: {
+        Objective: "x", Files: ["src/value.ts"], Interfaces: "same", Constraints: "bounded",
+        Verification: "test", exitGate: true, issueId: "tgo-throws", issueStatusObserved: "in_progress", issueAssigneeObserved: "ryangking", claimExitCode: 0,
+        delegationId: "d-throws", beadsOperator: "Bernstein",
       } } } as never,
     )).rejects.toThrow("identified primary session");
   });

@@ -568,10 +568,13 @@ export class BoardController {
       else console.warn(`${msg}: ${String(err)}`, { sessionID: input.sessionID });
       return undefined;
     });
+    // Host contract (opencode 1.18.x): parentID is emitted only for delegated
+    // sessions; absent/undefined/null = root/primary. Fail closed on
+    // session.get errors (session === undefined yields false).
     const isPrimary = Boolean(
       session?.data &&
-        Object.prototype.hasOwnProperty.call(session.data, "parentID") &&
-        session.data.parentID === null
+        typeof session.data === "object" &&
+        (session.data as { parentID?: unknown }).parentID == null
     );
     const eligible = isPrimary && (await this.shouldInject(client, input.agent));
     this.sessionEligibility.set(input.sessionID, eligible);

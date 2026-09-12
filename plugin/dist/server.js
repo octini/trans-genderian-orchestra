@@ -18049,7 +18049,7 @@ class BoardController {
         console.warn(`${msg}: ${String(err)}`, { sessionID: input.sessionID });
       return;
     });
-    const isPrimary = Boolean(session?.data && Object.prototype.hasOwnProperty.call(session.data, "parentID") && session.data.parentID === null);
+    const isPrimary = Boolean(session?.data && typeof session.data === "object" && session.data.parentID == null);
     const eligible = isPrimary && await this.shouldInject(client, input.agent);
     this.sessionEligibility.set(input.sessionID, eligible);
   }
@@ -18622,7 +18622,7 @@ class ConcisionController {
       return;
     });
     const data = res?.data;
-    const primary = Boolean(data && Object.prototype.hasOwnProperty.call(data, "parentID") && data.parentID === null);
+    const primary = Boolean(data && typeof data === "object" && data.parentID == null);
     this.primaryCache.set(sessionID, primary);
     return primary;
   }
@@ -19465,7 +19465,7 @@ class StyleReinforcementController {
       return;
     });
     const data = result?.data;
-    const primary = Boolean(data && Object.prototype.hasOwnProperty.call(data, "parentID") && data.parentID === null);
+    const primary = Boolean(data && typeof data === "object" && data.parentID == null);
     this.primaryCache.set(sessionID, primary);
     return primary;
   }
@@ -19559,7 +19559,7 @@ class SessionReconciler {
   }
 }
 function isPrimarySessionData(data) {
-  return Boolean(data && typeof data === "object" && Object.prototype.hasOwnProperty.call(data, "parentID") && data.parentID === null);
+  return Boolean(data && typeof data === "object" && data.parentID == null);
 }
 
 // src/plugin.ts
@@ -20937,10 +20937,8 @@ async function authorizeLifecycleSession(client, sessionID) {
     const result = await client.session.get({ path: { id: sessionID } });
     if (!result?.data || typeof result.data !== "object")
       return false;
-    if (!Object.prototype.hasOwnProperty.call(result.data, "parentID"))
-      return false;
     const parentID = result.data.parentID;
-    return parentID === null;
+    return parentID == null;
   } catch {
     return false;
   }

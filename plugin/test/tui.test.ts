@@ -42,12 +42,22 @@ describe("renderer-only Beads TUI", () => {
     expect(renderBeadsTui(empty)).toContain("No ready");
   });
 
-  test("rejects missing and inherited parentID authorization data", () => {
-    expect(isPrimarySessionData({})).toBe(false);
-    expect(isPrimarySessionData(Object.create({ parentID: null }))).toBe(false);
-    expect(isPrimarySessionData({ parentID: undefined })).toBe(false);
-    expect(isPrimarySessionData({ parentID: "child" })).toBe(false);
+  test("authorizes root sessions with absent, undefined, or null parentID", () => {
+    // Host contract (opencode 1.18.x): session.get omits parentID for root
+    // sessions (JSON serialization drops undefined fields), so
+    // absent/undefined/null = primary. Data arrives via JSON.parse (own
+    // properties only), so a plain property read is the check: an inherited
+    // parentID cannot occur on the wire. Pinned: inherited null reads as
+    // primary, inherited non-null still denies.
+    expect(isPrimarySessionData({})).toBe(true);
+    expect(isPrimarySessionData({ parentID: undefined })).toBe(true);
     expect(isPrimarySessionData({ parentID: null })).toBe(true);
+    expect(isPrimarySessionData({ parentID: "child" })).toBe(false);
+    expect(isPrimarySessionData(null)).toBe(false);
+    expect(isPrimarySessionData(undefined)).toBe(false);
+    expect(isPrimarySessionData("ses_x")).toBe(false);
+    expect(isPrimarySessionData(Object.create({ parentID: null }))).toBe(true);
+    expect(isPrimarySessionData(Object.create({ parentID: "ses_parent" }))).toBe(false);
   });
 
   test("merges duplicate records without losing metadata or edges", async () => {

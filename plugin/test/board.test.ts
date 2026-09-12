@@ -263,7 +263,7 @@ describe("BoardController", () => {
     expect(messages.some((m) => isBoardMessage(m))).toBe(false);
   });
 
-  test("requires an explicit primary session identity", async () => {
+  test("treats absent parentID as primary; only child sessions are denied", async () => {
     const ctrl = new BoardController({ run: fakeRunner() });
     const client = {
       app: agentClient.app,
@@ -283,7 +283,9 @@ describe("BoardController", () => {
     for (const sessionID of ["child", "missing", "primary"]) {
       const messages = [{ ...msg("user", "go"), info: { ...msg("user", "go").info, sessionID } }];
       await ctrl.transform(messages);
-      expect(messages.some((message) => isBoardMessage(message)), sessionID).toBe(sessionID === "primary");
+      // Host contract (opencode 1.18.x): session.get omits parentID for root
+      // sessions, so "missing" ({}) counts as primary; only "child" is denied.
+      expect(messages.some((message) => isBoardMessage(message)), sessionID).toBe(sessionID !== "child");
     }
   });
 

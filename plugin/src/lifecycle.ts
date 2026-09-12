@@ -38,9 +38,13 @@ export async function authorizeLifecycleSession(
   try {
     const result = await client.session.get({ path: { id: sessionID } });
     if (!result?.data || typeof result.data !== "object") return false;
-    if (!Object.prototype.hasOwnProperty.call(result.data, "parentID")) return false;
+    // Host contract (opencode 1.18.x): session.get emits parentID only for
+    // delegated sessions (non-null string); root/primary sessions omit it
+    // (absent/undefined/null). hasOwnProperty cannot be required because JSON
+    // serialization drops undefined root fields; session.get data arrives via
+    // JSON.parse, which yields own properties only.
     const parentID = (result.data as { parentID?: unknown }).parentID;
-    return parentID === null;
+    return parentID == null;
   } catch {
     return false;
   }

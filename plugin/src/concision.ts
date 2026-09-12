@@ -97,8 +97,11 @@ export class ConcisionController {
       return undefined;
     });
     const data = res?.data;
+    // Host contract (opencode 1.18.x): parentID is emitted only for delegated
+    // sessions; absent/undefined/null = root/primary. Fail closed on
+    // session.get errors (res === undefined yields false).
     const primary = Boolean(
-      data && Object.prototype.hasOwnProperty.call(data, "parentID") && data.parentID === null
+      data && typeof data === "object" && (data as { parentID?: unknown }).parentID == null
     );
     this.primaryCache.set(sessionID, primary);
     return primary;

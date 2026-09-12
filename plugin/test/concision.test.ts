@@ -186,10 +186,34 @@ describe("ConcisionController", () => {
     expect(output.system).toEqual(["existing"]);
   });
 
-  test("does not append when parentID is missing", async () => {
+  test("appends when parentID is missing (host omits it for root sessions)", async () => {
     const ctrl = new ConcisionController({});
     const output = makeOutput();
     const appended = await ctrl.transform(fakeClient({ missing: {} }), { sessionID: "missing" }, output);
+    expect(appended).toBe(true);
+    expect(output.system.length).toBe(2);
+    expect(output.system[1]).toContain("house style");
+  });
+
+  test("does not append when session data is unavailable (fail closed)", async () => {
+    const ctrl = new ConcisionController({});
+    const output = makeOutput();
+    const appended = await ctrl.transform(client, { sessionID: "unknown-session" }, output);
+    expect(appended).toBe(false);
+    expect(output.system).toEqual(["existing"]);
+  });
+
+  test("does not append when session.get throws (fail closed)", async () => {
+    const throwing: SessionClient = {
+      session: {
+        get: async () => {
+          throw new Error("host down");
+        },
+      },
+    };
+    const ctrl = new ConcisionController({});
+    const output = makeOutput();
+    const appended = await ctrl.transform(throwing, { sessionID: "s1" }, output);
     expect(appended).toBe(false);
     expect(output.system).toEqual(["existing"]);
   });

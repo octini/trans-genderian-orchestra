@@ -113,11 +113,20 @@ describe("generation-time style reinforcement", () => {
     expect(await controller.noteCompletion(delegated, { sessionID: "delegated", messageID: "m", responseLineageID: "turn", candidate: drift, taskContext: context })).toBe(false);
   });
 
-  test("does not reinforce when parentID is missing", async () => {
+  test("reinforces when parentID is missing (host omits it for root sessions)", async () => {
     const controller = new StyleReinforcementController({ productionEnabled: true });
     const missing = { session: { get: async () => ({ data: {} }) } };
-    expect(await controller.noteCompletion(missing, { sessionID: "missing", messageID: "m", responseLineageID: "turn", candidate: drift, taskContext: context })).toBe(false);
-    expect(await controller.appendPending(missing, "missing", [])).toBe(false);
+    expect(await controller.noteCompletion(missing, { sessionID: "missing", messageID: "m", responseLineageID: "turn", candidate: drift, taskContext: context })).toBe(true);
+    expect(await controller.appendPending(missing, "missing", [])).toBe(true);
+  });
+
+  test("does not reinforce when session data is unavailable or session.get throws (fail closed)", async () => {
+    const nodata = new StyleReinforcementController({ productionEnabled: true });
+    const noData = { session: { get: async () => ({ data: undefined }) } };
+    expect(await nodata.noteCompletion(noData, { sessionID: "nodata", messageID: "m", responseLineageID: "turn", candidate: drift, taskContext: context })).toBe(false);
+    const throwing = new StyleReinforcementController({ productionEnabled: true });
+    const throws = { session: { get: async () => { throw new Error("host down"); } } };
+    expect(await throwing.noteCompletion(throws, { sessionID: "throws", messageID: "m", responseLineageID: "turn", candidate: drift, taskContext: context })).toBe(false);
   });
 
   test("off-switch prevails over pending — appendPending suppressed", async () => {

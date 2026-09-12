@@ -58,16 +58,17 @@ export class SessionReconciler {
 }
 
 /**
- * Primary sessions are exactly the top-level ones: opencode marks them by a
- * `parentID` that is present but null, while subagents carry a parent id. The
- * own-property check keeps inherited fakes (e.g. `Object.create({parentID:
- * null})`) from passing as primary.
+ * Primary sessions are the root ones: opencode 1.18.x emits `parentID` only
+ * for delegated sessions (non-null string), while root/primary sessions omit
+ * it (absent/undefined/null). No own-property check: session.get data arrives
+ * via JSON.parse, which yields own properties only, and JSON serialization
+ * drops undefined root fields — requiring hasOwnProperty denied every real
+ * primary session. The plain property read is safe for that reason.
  */
 export function isPrimarySessionData(data: unknown): boolean {
   return Boolean(
     data &&
       typeof data === "object" &&
-      Object.prototype.hasOwnProperty.call(data, "parentID") &&
-      (data as { parentID?: unknown }).parentID === null
+      (data as { parentID?: unknown }).parentID == null
   );
 }

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { evaluateClosure, verifyClaimObserved } from "../src/lifecycle";
+import { authorizeLifecycleSession, evaluateClosure, verifyClaimObserved, type LifecycleSessionClient } from "../src/lifecycle";
 import { evaluateLiveDispatchGate } from "../src/verify-claim";
 import { parseTaskReport } from "../src/report";
 
@@ -181,6 +181,33 @@ describe("closure metadata validation", () => {
     const watchdogGate = evaluateClosure("standard", lifecycle, watchdogReport);
     expect(watchdogGate.recovery).toBe("reroute");
     expect(watchdogGate.recovery).not.toBe("retry");
+  });
+});
+
+describe("authorizeLifecycleSession primary-session gate", () => {
+  const clientFor = (data: unknown): LifecycleSessionClient => ({
+    session: { get: async () => ({ data }) },
+  });
+  test("authorizes absent, undefined, or null parentID as primary", async () => {
+    // Host contract (opencode 1.18.x): session.get omits parentID for root sessions.
+    await expect(authorizeLifecycleSession(clientFor({}), "s")).resolves.toBe(true);
+    await expect(authorizeLifecycleSession(clientFor({ parentID: undefined }), "s")).resolves.toBe(true);
+    await expect(authorizeLifecycleSession(clientFor({ parentID: null }), "s")).resolves.toBe(true);
+  });
+  test("denies delegated sessions with a non-null parentID", async () => {
+    await expect(authorizeLifecycleSession(clientFor({ parentID: "ses_abc" }), "s")).resolves.toBe(false);
+  });
+  test("fails closed on throws, missing client, and non-object data", async () => {
+    const throwing: LifecycleSessionClient = {
+      session: { get: async () => { throw new Error("host down"); } },
+    };
+    await expect(authorizeLifecycleSession(throwing, "s")).resolves.toBe(false);
+    await expect(authorizeLifecycleSession({}, "s")).resolves.toBe(false);
+    await expect(authorizeLifecycleSession({ session: {} }, "s")).resolves.toBe(false);
+    await expect(authorizeLifecycleSession(clientFor(undefined), "s")).resolves.toBe(false);
+    await expect(authorizeLifecycleSession(clientFor(null), "s")).resolves.toBe(false);
+    await expect(authorizeLifecycleSession(clientFor("ses_x"), "s")).resolves.toBe(false);
+    await expect(authorizeLifecycleSession(clientFor({}), "")).resolves.toBe(false);
   });
 });
 

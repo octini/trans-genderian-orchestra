@@ -185,8 +185,11 @@ export class StyleReinforcementController {
       return undefined;
     });
     const data = result?.data;
+    // Host contract (opencode 1.18.x): parentID is emitted only for delegated
+    // sessions; absent/undefined/null = root/primary. Fail closed on
+    // session.get errors (result === undefined yields false).
     const primary = Boolean(
-      data && Object.prototype.hasOwnProperty.call(data, "parentID") && data.parentID === null
+      data && typeof data === "object" && (data as { parentID?: unknown }).parentID == null
     );
     this.primaryCache.set(sessionID, primary);
     return primary;
