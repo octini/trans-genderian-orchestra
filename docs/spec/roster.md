@@ -83,3 +83,5 @@ This classifier only supplies the routing result. Downstream tiny bypass and hea
 ## 7. Delegation depth
 
 `subagent_depth: 2` caps all delegation. Nirvana's shape: orchestrator(0) → nirvana(1) → lens(2). Specialists may not spawn further general-purpose subagents.
+
+**Lens runtime bounds (tgo-4r5; detail in `docs/spec/band.md` §7):** per-seat watchdog defaults of 3min wall + 3min idle per lens (explicit `watchdog.seats` overrides win; global caps unchanged). Skip-on-failure: nirvana synthesizes from surviving lenses, names the missing/overlong lens in the Band Summary, never retries, never stalls. Output cap: lenses hold `steps: 1` + a ≈100-token contract, and the host truncates lens task output handed to the parent at 2000 chars.
