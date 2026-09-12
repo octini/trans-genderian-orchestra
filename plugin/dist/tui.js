@@ -14677,7 +14677,7 @@ function assertValidSeatPreset(seatMap, presetLabel) {
     }
   }
 }
-var BD_ENV, SEATS, BAND_LENS_SEATS, SELECTABLE_VARIANTS, PRESET_NAMES, modelRef, seatPreset, boardConfig, styleConfig, setupConfig, watchdogConfig, sessionReuseConfig, terminationConfig, selfUpdateConfig, runsConfig, metricsConfig, recursionConfig, costConfig, magicContextConfig, tgoConfigSchema;
+var BD_ENV, SEATS, BAND_LENS_SEATS, SELECTABLE_VARIANTS, PRESET_NAMES, modelRef, seatPreset, boardConfig, styleConfig, setupConfig, watchdogSeatCaps, watchdogConfig, sessionReuseConfig, terminationConfig, selfUpdateConfig, runsConfig, metricsConfig, recursionConfig, costConfig, magicContextConfig, tgoConfigSchema;
 var init_config = __esm(() => {
   init_zod();
   BD_ENV = {
@@ -14734,13 +14734,18 @@ var init_config = __esm(() => {
     enabled: exports_external.boolean().default(true),
     autoInstallBeads: exports_external.boolean().default(true)
   });
+  watchdogSeatCaps = exports_external.object({
+    wallClockMs: exports_external.number().int().positive().optional(),
+    idleMs: exports_external.number().int().positive().optional()
+  }).strict();
   watchdogConfig = exports_external.object({
     enabled: exports_external.boolean().default(true),
     wallClockMs: exports_external.number().int().positive().default(30 * 60 * 1000),
     idleMs: exports_external.number().int().positive().default(15 * 60 * 1000),
     checkMs: exports_external.number().int().positive().default(10 * 1000),
     stuckLoopTools: exports_external.number().int().positive().default(20),
-    stuckLoopMs: exports_external.number().int().positive().default(5 * 60 * 1000)
+    stuckLoopMs: exports_external.number().int().positive().default(5 * 60 * 1000),
+    seats: exports_external.record(exports_external.string(), watchdogSeatCaps).optional().default({})
   });
   sessionReuseConfig = exports_external.object({
     enabled: exports_external.boolean().default(true),
@@ -14789,7 +14794,8 @@ var init_config = __esm(() => {
       idleMs: 15 * 60 * 1000,
       checkMs: 10 * 1000,
       stuckLoopTools: 20,
-      stuckLoopMs: 5 * 60 * 1000
+      stuckLoopMs: 5 * 60 * 1000,
+      seats: {}
     })),
     sessionReuse: sessionReuseConfig.optional().default(() => ({ enabled: true, maxContextTokens: 1e5 })),
     termination: terminationConfig.optional().default(() => ({ enabled: true })),
@@ -14881,6 +14887,7 @@ function classifyFailureType(input) {
 }
 var FAILURE_TYPE_PATTERNS, FAILURE_TYPE_HINTS, FAILURE_PRIORITY, RECOVERY_REASON_TO_FAILURE_TYPE;
 var init_fit = __esm(() => {
+  init_config();
   FAILURE_TYPE_PATTERNS = {
     watchdog: [
       /watchdog.{0,40}abort/i,

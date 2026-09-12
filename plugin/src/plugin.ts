@@ -4,7 +4,7 @@ import { BoardController, type BoardMessage } from "./board";
 import { ConcisionController } from "./concision";
 import { StyleReinforcementController } from "./style-reinforcement";
 import { isPrimarySessionData, SessionReconciler } from "./session";
-import { TaskFitController, classifyRouting } from "./fit";
+import { TaskFitController, capLensTaskOutput, classifyRouting } from "./fit";
 import { WatchdogController } from "./watchdog";
 import { parseTaskReport } from "./report";
 import { SetupController } from "./setup";
@@ -328,6 +328,7 @@ export const TgoPlugin: Plugin = async (
         appLog("warn", `progress handback failed: ${String(e)}`);
       }
     },
+    seatOf: (sessionID: string) => board.shimState.agents.get(sessionID),
     notifyParent: async (parentID, text) => {
       await client.session.prompt({
         path: { id: parentID },
@@ -1966,6 +1967,10 @@ export const TgoPlugin: Plugin = async (
         parsedForFit = report;
       }
       await fit.normalize(input, output, parsedForFit);
+      // tgo-4r5: cap band-lens task output handed to the parent (non-lens untouched).
+      try {
+        capLensTaskOutput(input, output);
+      } catch {}
     },
 
     "experimental.chat.messages.transform": async (_input, output) => {

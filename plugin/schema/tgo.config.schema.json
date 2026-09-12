@@ -114,6 +114,27 @@
           "type": "integer",
           "exclusiveMinimum": 0,
           "default": 300000
+        },
+        "seats": {
+          "description": "Per-seat watchdog cap overrides keyed by seat name. Each entry may set wallClockMs and/or idleMs (positive integers); unset fields fall back to the lens default (3min for band lens seats) or the global caps. Fail-closed: non-positive numbers and unknown fields are rejected.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "wallClockMs": {
+                "description": "Max total busy time for this seat's delegated sessions before abort.",
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              "idleMs": {
+                "description": "Max silent time while this seat's delegation is busy before abort.",
+                "type": "integer",
+                "exclusiveMinimum": 0
+              }
+            },
+            "additionalProperties": false
+          },
+          "default": {}
         }
       },
       "additionalProperties": false

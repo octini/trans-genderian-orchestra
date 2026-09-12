@@ -1,8 +1,8 @@
 {
   "_header": "Prompt assembly baseline — captures rendered seat prompt skeleton (section order + stable markers). Do not hand-edit. To update after intentional changes: UPDATE_PROMPT_BASELINE=1 bun test plugin/test/prompt-baseline.test.ts (see docs/SETUP.md). \"generated\" is an audit stamp only — unhashed and uncompared, expected to diff on every update.",
   "_normalization": "Normalized before hashing: strip dates, versions/npm versions, absolute paths/home dirs, token counts via normalizeForHash in plugin/src/prompt-baseline.ts (placeholders <DATE>/<VERSION>/<PATH>/<TOKENS>), canonicalize line endings/whitespace.",
-  "generated": "2026-09-11T21:34:08.786Z",
-  "wholeHash": "dbeea8efb747acbdfaa281c2073163b4475c48add7717d16035341ac7eec480c",
+  "generated": "2026-09-12T03:38:54.369Z",
+  "wholeHash": "10a8615567ed6eb88d68cac75c3c6c4008274c6b17a02e9b1192ea8f2239046b",
   "seats": {
     "bernstein.md": {
       "sections": [
@@ -21,7 +21,7 @@
         "## Rules",
         "## TGO house style — active every turn"
       ],
-      "hash": "e5425d21dfb781eebbf1da68dd89ea22dab1f0b3912fdb0b5263120a08254006"
+      "hash": "ed4f11b76a46f4554ba6b5ca760d2cdd4f932e9081a296d26f2cb47acb9e34b1"
     },
     "dylan.md": {
       "sections": [
@@ -40,7 +40,7 @@
         "## Rules",
         "## TGO house style — active every turn"
       ],
-      "hash": "58acc2d1d16a189e2c45c836d10d5e9725b699c1b8edc1b310fadfb467c88856"
+      "hash": "f58165d8e5a448537ce46848d920b18de24d780397598cb8b925bd778cf0fe33"
     },
     "horowitz.md": {
       "sections": [
@@ -70,7 +70,7 @@
         "## Example",
         "## TGO house style — active every turn"
       ],
-      "hash": "2c76812ad5dcc627c37c840dfb0c933c1fbd17bcd87416de84de7a69a3175bac"
+      "hash": "8d56571eca5d11dda710765bc67f1f7b51830c6fe5233b985148b95543107254"
     },
     "novoselic.md": {
       "sections": [
@@ -79,7 +79,7 @@
         "## Rules",
         "## TGO house style — active every turn"
       ],
-      "hash": "03889d3dd10a97af7b41b1aef23bb6a9a5c89ba47f0950d4162fa789913526fe"
+      "hash": "5a2befcd84cc69c413befe85ba96747d9986c7acd6ee558770e9e87f695016df"
     }
   }
 }

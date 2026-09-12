@@ -47,3 +47,7 @@ Nirvana is **ephemeral: no beads issues** (user decision). Its output is a repor
 ## 6. Permissions
 
 Nirvana + band members are **tool-less**. Nirvana's only tool is `task` → its band members. No AFT/magic-context recall for band seats.
+
+## 7. Lens runtime bounds (tgo-4r5)
+
+Lens deadlines: per-seat watchdog defaults of 3min wall + 3min idle per lens (explicit `watchdog.seats` overrides win; global caps unchanged). Skip-on-failure: nirvana synthesizes from surviving lenses, names the missing/overlong lens in the Band Summary, never retries, never stalls. Output cap: lenses hold `steps: 1` + a ≈100-token contract, and the host truncates lens task output handed to the parent at 2000 chars.

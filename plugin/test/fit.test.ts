@@ -4,6 +4,9 @@ import {
   LANE_REJECTION_PATTERNS,
   REROUTE_NOT_RETRY,
   rerouteSignal,
+  capLensTaskOutput,
+  LENS_OUTPUT_CAP_CHARS,
+  LENS_OUTPUT_TRUNCATION_MARKER,
   TaskFitController,
   type TaskFitInput,
   type TaskFitOutput,
@@ -521,6 +524,39 @@ describe("classifyFailureType — run-path RecoveryFlag fast-path (tgo-21a)", ()
   test("RunEvent-like shapes with issueId but no runId still classify via text (no fast-path capture)", () => {
     expect(classifyFailureType({ note: "watchdog abort: idle", tool: "task", issueId: "tgo-1" })).toBe("watchdog");
   });
+
+describe("capLensTaskOutput (tgo-4r5)", () => {
+  test("truncates overlong lens output with the marker", () => {
+    for (const lens of ["cobain", "grohl", "novoselic"]) {
+      const out = taskOutput("x".repeat(LENS_OUTPUT_CAP_CHARS + 500));
+      const capped = capLensTaskOutput(taskInput({ subagent_type: lens }), out);
+      expect(capped).toBe(true);
+      expect(out.output).toContain(LENS_OUTPUT_TRUNCATION_MARKER);
+      expect(out.output.startsWith("x".repeat(LENS_OUTPUT_CAP_CHARS))).toBe(true);
+    }
+  });
+
+  test("short lens output passes through untouched", () => {
+    const out = taskOutput("terse opinion");
+    expect(capLensTaskOutput(taskInput({ subagent_type: "cobain" }), out)).toBe(false);
+    expect(out.output).toBe("terse opinion");
+  });
+
+  test("non-lens task output passes through untouched", () => {
+    for (const seat of ["dylan", "bernstein", "nirvana", "explore", undefined]) {
+      const out = taskOutput("y".repeat(LENS_OUTPUT_CAP_CHARS + 500));
+      const args = seat === undefined ? undefined : { subagent_type: seat };
+      expect(capLensTaskOutput(taskInput(args), out)).toBe(false);
+      expect(out.output).toBe("y".repeat(LENS_OUTPUT_CAP_CHARS + 500));
+    }
+  });
+
+  test("non-task tools pass through untouched", () => {
+    const out: TaskFitOutput = { title: "bash", output: "z".repeat(LENS_OUTPUT_CAP_CHARS + 1), metadata: {} };
+    expect(capLensTaskOutput({ tool: "bash", sessionID: "s1", callID: "c1", args: { subagent_type: "cobain" } }, out)).toBe(false);
+    expect(out.output).toBe("z".repeat(LENS_OUTPUT_CAP_CHARS + 1));
+  });
+});
 
   test("isRunPathRerouteEnabled: default on, kill switch off", () => {
     expect(isRunPathRerouteEnabled({} as any)).toBe(true);

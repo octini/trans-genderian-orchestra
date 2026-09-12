@@ -147,6 +147,11 @@ const setupConfig = z.object({
   autoInstallBeads: z.boolean().default(true),
 });
 
+const watchdogSeatCaps = z.object({
+  wallClockMs: z.number().int().positive().optional(),
+  idleMs: z.number().int().positive().optional(),
+}).strict();
+
 const watchdogConfig = z.object({
   enabled: z.boolean().default(true),
   wallClockMs: z.number().int().positive().default(30 * 60 * 1000),
@@ -154,6 +159,7 @@ const watchdogConfig = z.object({
   checkMs: z.number().int().positive().default(10 * 1000),
   stuckLoopTools: z.number().int().positive().default(20),
   stuckLoopMs: z.number().int().positive().default(5 * 60 * 1000),
+  seats: z.record(z.string(), watchdogSeatCaps).optional().default({}),
 });
 
 const sessionReuseConfig = z.object({
@@ -214,6 +220,7 @@ export const tgoConfigSchema = z.object({
     checkMs: 10 * 1000,
     stuckLoopTools: 20,
     stuckLoopMs: 5 * 60 * 1000,
+    seats: {},
   })),
   sessionReuse: sessionReuseConfig.optional().default(() => ({ enabled: true, maxContextTokens: 100000 })),
   termination: terminationConfig.optional().default(() => ({ enabled: true })),

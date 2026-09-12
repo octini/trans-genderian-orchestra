@@ -14744,7 +14744,7 @@ async function validateAgentDir(agentDir, log) {
   }
   return checked;
 }
-var MAX_PROMPT_TOKENS = 1000, BD_ENV, SEATS, BAND_LENS_SEATS, SELECTABLE_VARIANTS, PRESET_NAMES, modelRef, seatPreset, boardConfig, styleConfig, setupConfig, watchdogConfig, sessionReuseConfig, terminationConfig, selfUpdateConfig, runsConfig, metricsConfig, recursionConfig, costConfig, magicContextConfig, tgoConfigSchema;
+var MAX_PROMPT_TOKENS = 1000, BD_ENV, SEATS, BAND_LENS_SEATS, SELECTABLE_VARIANTS, PRESET_NAMES, modelRef, seatPreset, boardConfig, styleConfig, setupConfig, watchdogSeatCaps, watchdogConfig, sessionReuseConfig, terminationConfig, selfUpdateConfig, runsConfig, metricsConfig, recursionConfig, costConfig, magicContextConfig, tgoConfigSchema;
 var init_config = __esm(() => {
   init_zod();
   BD_ENV = {
@@ -14801,13 +14801,18 @@ var init_config = __esm(() => {
     enabled: exports_external.boolean().default(true),
     autoInstallBeads: exports_external.boolean().default(true)
   });
+  watchdogSeatCaps = exports_external.object({
+    wallClockMs: exports_external.number().int().positive().optional(),
+    idleMs: exports_external.number().int().positive().optional()
+  }).strict();
   watchdogConfig = exports_external.object({
     enabled: exports_external.boolean().default(true),
     wallClockMs: exports_external.number().int().positive().default(30 * 60 * 1000),
     idleMs: exports_external.number().int().positive().default(15 * 60 * 1000),
     checkMs: exports_external.number().int().positive().default(10 * 1000),
     stuckLoopTools: exports_external.number().int().positive().default(20),
-    stuckLoopMs: exports_external.number().int().positive().default(5 * 60 * 1000)
+    stuckLoopMs: exports_external.number().int().positive().default(5 * 60 * 1000),
+    seats: exports_external.record(exports_external.string(), watchdogSeatCaps).optional().default({})
   });
   sessionReuseConfig = exports_external.object({
     enabled: exports_external.boolean().default(true),
@@ -14856,7 +14861,8 @@ var init_config = __esm(() => {
       idleMs: 15 * 60 * 1000,
       checkMs: 10 * 1000,
       stuckLoopTools: 20,
-      stuckLoopMs: 5 * 60 * 1000
+      stuckLoopMs: 5 * 60 * 1000,
+      seats: {}
     })),
     sessionReuse: sessionReuseConfig.optional().default(() => ({ enabled: true, maxContextTokens: 1e5 })),
     termination: terminationConfig.optional().default(() => ({ enabled: true })),
@@ -15774,9 +15780,12 @@ __export(exports_fit, {
   classifyRouting: () => classifyRouting,
   classifyRecoveryReason: () => classifyRecoveryReason,
   classifyFailureType: () => classifyFailureType,
+  capLensTaskOutput: () => capLensTaskOutput,
   TaskFitController: () => TaskFitController,
   REROUTE_NOT_RETRY: () => REROUTE_NOT_RETRY,
   RECOVERY_REASON_TO_FAILURE_TYPE: () => RECOVERY_REASON_TO_FAILURE_TYPE,
+  LENS_OUTPUT_TRUNCATION_MARKER: () => LENS_OUTPUT_TRUNCATION_MARKER,
+  LENS_OUTPUT_CAP_CHARS: () => LENS_OUTPUT_CAP_CHARS,
   LANE_REJECTION_PATTERNS: () => LANE_REJECTION_PATTERNS,
   FAILURE_TYPE_PATTERNS: () => FAILURE_TYPE_PATTERNS,
   FAILURE_TYPE_LABELS: () => FAILURE_TYPE_LABELS,
@@ -15957,8 +15966,22 @@ ${failureRerouteSignal(failureType, seat)}`;
     return false;
   }
 }
-var REROUTE_NOT_RETRY = "REROUTE-NOT-RETRY", LANE_REJECTION_PATTERNS, FAILURE_TYPE_PATTERNS, FAILURE_TYPE_LABELS, FAILURE_TYPE_HINTS, FAILURE_PRIORITY, RECOVERY_REASON_TO_FAILURE_TYPE, HEAVY_TRIGGERS;
+function capLensTaskOutput(input, output) {
+  if (input.tool !== "task")
+    return false;
+  const sub = input.args?.subagent_type?.trim() ?? "";
+  if (!BAND_LENS_SEATS.includes(sub))
+    return false;
+  if (output.output.length <= LENS_OUTPUT_CAP_CHARS)
+    return false;
+  output.output = `${output.output.slice(0, LENS_OUTPUT_CAP_CHARS)}
+
+${LENS_OUTPUT_TRUNCATION_MARKER}`;
+  return true;
+}
+var REROUTE_NOT_RETRY = "REROUTE-NOT-RETRY", LANE_REJECTION_PATTERNS, FAILURE_TYPE_PATTERNS, FAILURE_TYPE_LABELS, FAILURE_TYPE_HINTS, FAILURE_PRIORITY, RECOVERY_REASON_TO_FAILURE_TYPE, HEAVY_TRIGGERS, LENS_OUTPUT_CAP_CHARS = 2000, LENS_OUTPUT_TRUNCATION_MARKER = "[truncated: lens output cap 2000 chars]";
 var init_fit = __esm(() => {
+  init_config();
   LANE_REJECTION_PATTERNS = [
     /not (my|the) lane/i,
     /out of (my|the) lane/i,
@@ -19620,6 +19643,17 @@ init_fit();
 // src/watchdog.ts
 init_def_snapshot();
 var WATCHDOG_ABORT_MARKER = "## WATCHDOG-ABORT";
+var LENS_WALL_CLOCK_MS = 180000;
+var LENS_IDLE_MS = 180000;
+var LENS_SEATS = new Set(["cobain", "grohl", "novoselic"]);
+function effectiveCapsForSeat(config2, seat) {
+  const override = seat ? config2.seats?.[seat] : undefined;
+  const isLens = !!seat && LENS_SEATS.has(seat);
+  return {
+    wallClockMs: override?.wallClockMs ?? (isLens ? Math.min(config2.wallClockMs, LENS_WALL_CLOCK_MS) : config2.wallClockMs),
+    idleMs: override?.idleMs ?? (isLens ? Math.min(config2.idleMs, LENS_IDLE_MS) : config2.idleMs)
+  };
+}
 function defaultWallNow() {
   return Date.now();
 }
@@ -19895,11 +19929,12 @@ class WatchdogController {
       const distinct = new Set(tracked.stuckWindow).size;
       const windowElapsed = windowSize > 0 && tracked.stuckWindowTimes.length > 0 ? checkNow - tracked.stuckWindowTimes[0] : 0;
       const isStuckLoop = tracked.toolInFlight === 0 && windowSize >= this.config.stuckLoopTools && this.config.stuckLoopTools > 0 && distinct < 3 && windowElapsed >= this.config.stuckLoopMs;
+      const caps = effectiveCapsForSeat(this.config, this.deps.seatOf?.(tracked.sessionID));
       if (isStuckLoop) {
         out.push({ sessionID: tracked.sessionID, parentID: tracked.parentID, state: "stuck", reason: "stuck-loop" });
-      } else if (!wallClockExempt && wallElapsed >= this.config.wallClockMs) {
+      } else if (!wallClockExempt && wallElapsed >= caps.wallClockMs) {
         out.push({ sessionID: tracked.sessionID, parentID: tracked.parentID, state: "aborted", reason: "wall-clock" });
-      } else if (idleElapsed >= this.config.idleMs) {
+      } else if (idleElapsed >= caps.idleMs) {
         out.push({ sessionID: tracked.sessionID, parentID: tracked.parentID, state: "idle", reason: "idle" });
       }
     }
@@ -19949,11 +19984,12 @@ class WatchdogController {
       const distinct = new Set(tracked.stuckWindow).size;
       const windowElapsed = windowSize > 0 && tracked.stuckWindowTimes.length > 0 ? now2 - tracked.stuckWindowTimes[0] : 0;
       const isStuckLoop = tracked.toolInFlight === 0 && windowSize >= this.config.stuckLoopTools && this.config.stuckLoopTools > 0 && distinct < 3 && windowElapsed >= this.config.stuckLoopMs;
+      const caps = effectiveCapsForSeat(this.config, this.deps.seatOf?.(tracked.sessionID));
       if (isStuckLoop) {
         await this.abort(tracked, "stuck-loop", windowElapsed);
-      } else if (!wallClockExempt && wallElapsed >= this.config.wallClockMs) {
+      } else if (!wallClockExempt && wallElapsed >= caps.wallClockMs) {
         await this.abort(tracked, "wall-clock", wallElapsed);
-      } else if (idleElapsed >= this.config.idleMs) {
+      } else if (idleElapsed >= caps.idleMs) {
         await this.abort(tracked, "idle", idleElapsed);
       }
     }
@@ -24421,6 +24457,7 @@ var TgoPlugin = async ({ client, $, project, directory, worktree }, options) => 
         appLog("warn", `progress handback failed: ${String(e)}`);
       }
     },
+    seatOf: (sessionID) => board.shimState.agents.get(sessionID),
     notifyParent: async (parentID, text) => {
       await client.session.prompt({
         path: { id: parentID },
@@ -25980,6 +26017,9 @@ ${truncated}`, synthetic: true }] }
         parsedForFit = report;
       }
       await fit.normalize(input, output, parsedForFit);
+      try {
+        capLensTaskOutput(input, output);
+      } catch {}
     },
     "experimental.chat.messages.transform": async (_input, output) => {
       try {

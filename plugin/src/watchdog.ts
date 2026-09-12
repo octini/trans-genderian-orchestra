@@ -3,6 +3,11 @@ export { hashString };
 
 export type WatchdogStatusType = "idle" | "busy" | "retry";
 
+export interface WatchdogSeatCaps {
+  wallClockMs?: number;
+  idleMs?: number;
+}
+
 export interface WatchdogConfig {
   enabled: boolean;
   wallClockMs: number;
@@ -10,6 +15,7 @@ export interface WatchdogConfig {
   checkMs: number;
   stuckLoopTools: number;
   stuckLoopMs: number;
+  seats?: Record<string, WatchdogSeatCaps>;
 }
 
 export interface WatchdogAbortSignal {
@@ -23,6 +29,9 @@ export interface WatchdogDeps {
   log: (level: "info" | "warn" | "error", message: string, extra?: Record<string, unknown>) => void;
   abort: (sessionID: string, reason: "wall-clock" | "idle" | "stuck-loop") => Promise<void>;
   notifyParent: (parentID: string, text: string) => Promise<void>;
+  // Resolves a tracked session to its seat name (same agents/shimState map the
+  // host uses for lane checks). Unresolvable → global caps (never wedged).
+  seatOf?: (sessionID: string) => string | undefined;
   // Injectable clocks for testing. Defaults read the real wall/uptime clocks.
   wallNow?: () => number;
   uptimeNow?: () => number;
@@ -70,6 +79,29 @@ interface TrackedSession {
 
 export const WATCHDOG_ABORT_REASON_STUCK_LOOP = "stuck-loop";
 export const WATCHDOG_ABORT_MARKER = "## WATCHDOG-ABORT";
+
+// Per-lens deadline (tgo-4r5): terse single-opinion band lenses must not hold a
+// band hostage — a 429 storm degrades to a two-lens band, never a stalled
+// review. Lens seats default to 3min wall + 3min idle, capped below the
+// global caps (a tighter global still wins via min). Global caps are untouched
+// for long sessions; explicit per-seat overrides win outright (validated
+// positive at config load).
+export const LENS_WALL_CLOCK_MS = 180_000;
+export const LENS_IDLE_MS = 180_000;
+const LENS_SEATS: ReadonlySet<string> = new Set(["cobain", "grohl", "novoselic"]);
+
+export function effectiveCapsForSeat(
+  config: WatchdogConfig,
+  seat: string | undefined
+): { wallClockMs: number; idleMs: number } {
+  const override = seat ? config.seats?.[seat] : undefined;
+  const isLens = !!seat && LENS_SEATS.has(seat);
+  return {
+    wallClockMs:
+      override?.wallClockMs ?? (isLens ? Math.min(config.wallClockMs, LENS_WALL_CLOCK_MS) : config.wallClockMs),
+    idleMs: override?.idleMs ?? (isLens ? Math.min(config.idleMs, LENS_IDLE_MS) : config.idleMs),
+  };
+}
 
 // The host slept during a tick gap when the monotonic (sleep-excluded) uptime
 // advanced by far less than the wall-clock gap. Date.now() and busySince/
@@ -407,11 +439,12 @@ export class WatchdogController {
       const distinct = new Set(tracked.stuckWindow).size;
       const windowElapsed = windowSize > 0 && tracked.stuckWindowTimes.length > 0 ? checkNow - tracked.stuckWindowTimes[0]! : 0;
       const isStuckLoop = tracked.toolInFlight === 0 && windowSize >= this.config.stuckLoopTools && this.config.stuckLoopTools > 0 && distinct < 3 && windowElapsed >= this.config.stuckLoopMs;
+      const caps = effectiveCapsForSeat(this.config, this.deps.seatOf?.(tracked.sessionID));
       if (isStuckLoop) {
         out.push({ sessionID: tracked.sessionID, parentID: tracked.parentID, state: "stuck", reason: "stuck-loop" });
-      } else if (!wallClockExempt && wallElapsed >= this.config.wallClockMs) {
+      } else if (!wallClockExempt && wallElapsed >= caps.wallClockMs) {
         out.push({ sessionID: tracked.sessionID, parentID: tracked.parentID, state: "aborted", reason: "wall-clock" });
-      } else if (idleElapsed >= this.config.idleMs) {
+      } else if (idleElapsed >= caps.idleMs) {
         out.push({ sessionID: tracked.sessionID, parentID: tracked.parentID, state: "idle", reason: "idle" });
       }
     }
@@ -493,11 +526,12 @@ export class WatchdogController {
         this.config.stuckLoopTools > 0 &&
         distinct < 3 &&
         windowElapsed >= this.config.stuckLoopMs;
+      const caps = effectiveCapsForSeat(this.config, this.deps.seatOf?.(tracked.sessionID));
       if (isStuckLoop) {
         await this.abort(tracked, "stuck-loop", windowElapsed);
-      } else if (!wallClockExempt && wallElapsed >= this.config.wallClockMs) {
+      } else if (!wallClockExempt && wallElapsed >= caps.wallClockMs) {
         await this.abort(tracked, "wall-clock", wallElapsed);
-      } else if (idleElapsed >= this.config.idleMs) {
+      } else if (idleElapsed >= caps.idleMs) {
         await this.abort(tracked, "idle", idleElapsed);
       }
     }

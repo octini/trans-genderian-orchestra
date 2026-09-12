@@ -140,6 +140,43 @@ describe("config schema", () => {
     expect(cfg.watchdog?.idleMs).toBe(500);
   });
 
+  test("watchdog seats default to empty (global caps apply)", async () => {
+    const cfg = await loadTgoConfig({});
+    expect(cfg.watchdog?.seats).toEqual({});
+  });
+
+  test("watchdog accepts a valid per-seat override", async () => {
+    const cfg = await loadTgoConfig({
+      watchdog: { seats: { cobain: { wallClockMs: 60_000 }, grohl: { idleMs: 30_000 } } },
+    });
+    expect(cfg.watchdog?.seats?.cobain?.wallClockMs).toBe(60_000);
+    expect(cfg.watchdog?.seats?.grohl?.idleMs).toBe(30_000);
+    // Global caps byte-unchanged alongside seats.
+    expect(cfg.watchdog?.wallClockMs).toBe(30 * 60 * 1000);
+    expect(cfg.watchdog?.idleMs).toBe(15 * 60 * 1000);
+  });
+
+  test("watchdog rejects a non-positive per-seat cap (fail-closed)", () => {
+    expect(() =>
+      loadTgoConfig({ watchdog: { seats: { cobain: { wallClockMs: -1 } } } })
+    ).toThrow();
+    expect(() =>
+      loadTgoConfig({ watchdog: { seats: { grohl: { idleMs: 0 } } } })
+    ).toThrow();
+  });
+
+  test("watchdog rejects unknown fields in a per-seat entry (fail-closed)", () => {
+    expect(() =>
+      loadTgoConfig({ watchdog: { seats: { cobain: { wallClockMs: 60_000, bogus: 1 } } } })
+    ).toThrow();
+  });
+
+  test("watchdog rejects a non-object per-seat entry (fail-closed)", () => {
+    expect(() =>
+      loadTgoConfig({ watchdog: { seats: { cobain: 60_000 } } })
+    ).toThrow();
+  });
+
   test("board refreshMs accepts a positive integer", async () => {
     const cfg = await loadTgoConfig({ board: { refreshMs: 1000 } });
     expect(cfg.board?.refreshMs).toBe(1000);

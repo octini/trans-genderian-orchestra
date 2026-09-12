@@ -1,3 +1,5 @@
+import { BAND_LENS_SEATS } from "./config";
+
 export const REROUTE_NOT_RETRY = "REROUTE-NOT-RETRY";
 
 export const LANE_REJECTION_PATTERNS: RegExp[] = [
@@ -366,4 +368,21 @@ export class TaskFitController {
 
     return false;
   }
+}
+
+// ── Lens output cap (tgo-4r5) ─────────────────────────────────────────────
+// Band lenses hold a ~100-token terse contract, but the parent is handed the
+// raw task text — an overlong lens floods nirvana's synthesis context. Cap
+// the handed-over text at 2000 chars (mirror the termination residual guard's
+// slice style). Non-lens task output passes through untouched.
+export const LENS_OUTPUT_CAP_CHARS = 2000;
+export const LENS_OUTPUT_TRUNCATION_MARKER = "[truncated: lens output cap 2000 chars]";
+
+export function capLensTaskOutput(input: TaskFitInput, output: TaskFitOutput): boolean {
+  if (input.tool !== "task") return false;
+  const sub = input.args?.subagent_type?.trim() ?? "";
+  if (!(BAND_LENS_SEATS as readonly string[]).includes(sub)) return false;
+  if (output.output.length <= LENS_OUTPUT_CAP_CHARS) return false;
+  output.output = `${output.output.slice(0, LENS_OUTPUT_CAP_CHARS)}\n\n${LENS_OUTPUT_TRUNCATION_MARKER}`;
+  return true;
 }

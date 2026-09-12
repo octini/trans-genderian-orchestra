@@ -2,6 +2,7 @@ import { test, expect, describe } from "bun:test";
 import {
   WatchdogController,
   WATCHDOG_ABORT_MARKER,
+  effectiveCapsForSeat,
   toolSignature,
   type WatchdogConfig,
 } from "../src/watchdog";
@@ -791,5 +792,93 @@ describe("WatchdogController", () => {
     expect(toolSignature("read", { path: "foo.ts" })).toBe("read:foo.ts:b5c9292a");
   });
 
+});
+
+describe("per-seat watchdog caps (tgo-4r5)", () => {
+  test("lens seats resolve to 3min when no override is given", () => {
+    const cfg = makeConfig({ wallClockMs: 30 * 60_000, idleMs: 15 * 60_000 });
+    for (const lens of ["cobain", "grohl", "novoselic"]) {
+      expect(effectiveCapsForSeat(cfg, lens)).toEqual({ wallClockMs: 180_000, idleMs: 180_000 });
+    }
+  });
+
+  test("explicit per-seat override wins over the lens default", () => {
+    const cfg = makeConfig({
+      wallClockMs: 30 * 60_000,
+      idleMs: 15 * 60_000,
+      seats: { cobain: { wallClockMs: 60_000 } },
+    });
+    // Overridden field wins; the other field keeps the lens default.
+    expect(effectiveCapsForSeat(cfg, "cobain")).toEqual({ wallClockMs: 60_000, idleMs: 180_000 });
+    expect(effectiveCapsForSeat(cfg, "grohl")).toEqual({ wallClockMs: 180_000, idleMs: 180_000 });
+  });
+
+  test("unknown and unresolvable seats fall back to global caps", () => {
+    const cfg = makeConfig({ wallClockMs: 30 * 60_000, idleMs: 15 * 60_000 });
+    expect(effectiveCapsForSeat(cfg, "ringo")).toEqual({ wallClockMs: 30 * 60_000, idleMs: 15 * 60_000 });
+    expect(effectiveCapsForSeat(cfg, undefined)).toEqual({ wallClockMs: 30 * 60_000, idleMs: 15 * 60_000 });
+  });
+
+  test("core seats are unaffected (global caps)", () => {
+    const cfg = makeConfig({ wallClockMs: 30 * 60_000, idleMs: 15 * 60_000 });
+    for (const seat of ["dylan", "bernstein", "nirvana", "nas", "horowitz"]) {
+      expect(effectiveCapsForSeat(cfg, seat)).toEqual({ wallClockMs: 30 * 60_000, idleMs: 15 * 60_000 });
+    }
+  });
+
+  test("a tighter global still wins for lens seats via min", () => {
+    const cfg = makeConfig({ wallClockMs: 60_000, idleMs: 30_000 });
+    expect(effectiveCapsForSeat(cfg, "grohl")).toEqual({ wallClockMs: 60_000, idleMs: 30_000 });
+  });
+
+  test("controller aborts a lens session at the 3min default while a core seat survives", async () => {
+    let wall = 1_000_000;
+    let uptime = 500_000;
+    const mk = (seat: string) => {
+      const { deps, aborts } = makeDeps();
+      const wd = new WatchdogController(
+        makeConfig({ wallClockMs: 30 * 60_000, idleMs: 15 * 60_000, checkMs: 1_000 }),
+        { ...deps, wallNow: () => wall, uptimeNow: () => uptime, seatOf: () => seat }
+      );
+      return { wd, aborts };
+    };
+    const lens = mk("cobain");
+    const core = mk("dylan");
+    lens.wd.noteSessionCreated({ id: "s-lens", parentID: "p" });
+    core.wd.noteSessionCreated({ id: "s-core", parentID: "p" });
+    lens.wd.noteStatus("s-lens", "busy");
+    core.wd.noteStatus("s-core", "busy");
+    // 181s of awake silence: past the 3min lens caps, far short of globals.
+    wall += 181_000;
+    uptime += 181_000;
+    await lens.wd.check();
+    await core.wd.check();
+    expect(lens.aborts).toEqual(["s-lens"]);
+    expect(core.aborts).toEqual([]);
+    lens.wd.dispose();
+    core.wd.dispose();
+  });
+
+  test("controller honors an explicit per-seat override", async () => {
+    let wall = 1_000_000;
+    let uptime = 500_000;
+    const { deps, aborts } = makeDeps();
+    const wd = new WatchdogController(
+      makeConfig({
+        wallClockMs: 30 * 60_000,
+        idleMs: 15 * 60_000,
+        checkMs: 1_000,
+        seats: { grohl: { wallClockMs: 60_000, idleMs: 60_000 } },
+      }),
+      { ...deps, wallNow: () => wall, uptimeNow: () => uptime, seatOf: () => "grohl" }
+    );
+    wd.noteSessionCreated({ id: "s-grohl", parentID: "p" });
+    wd.noteStatus("s-grohl", "busy");
+    wall += 61_000;
+    uptime += 61_000;
+    await wd.check();
+    expect(aborts).toEqual(["s-grohl"]);
+    wd.dispose();
+  });
 });
 
